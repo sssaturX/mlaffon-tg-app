@@ -1,0 +1,209 @@
+import {
+  pgTable,
+  text,
+  integer,
+  bigint,
+  timestamp,
+  uuid,
+  boolean,
+  jsonb,
+  uniqueIndex,
+  index,
+} from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    telegramId: bigint("telegram_id", { mode: "bigint" }).notNull().unique(),
+    username: text("username"),
+    firstName: text("first_name"),
+    lastName: text("last_name"),
+    photoUrl: text("photo_url"),
+    referralCode: text("referral_code").notNull().unique(),
+    /** FK users.id — без .references() из-за циклического вывода типов TS */
+    referredById: uuid("referred_by_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("users_referred_by_idx").on(t.referredById)]
+);
+
+export const userBalances = pgTable("user_balances", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  coins: integer("coins").notNull().default(0),
+  lifetimeEarned: integer("lifetime_earned").notNull().default(0),
+});
+
+export const userStreaks = pgTable("user_streaks", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  currentStreak: integer("current_streak").notNull().default(0),
+  lastActivityUtcDate: text("last_activity_utc_date"),
+});
+
+export const tasks = pgTable("tasks", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  reward: integer("reward").notNull(),
+  platform: text("platform").notNull(),
+  type: text("type").notNull(),
+  validationType: text("validation_type").notNull(),
+  /** Правила Helix/Kick: { helix?: {...}, kick?: {...} } */
+  meta: jsonb("meta"),
+  active: boolean("active").notNull().default(true),
+});
+
+export const userTasks = pgTable(
+  "user_tasks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    status: text("status").notNull(),
+    periodKey: text("period_key"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("user_tasks_unique_daily").on(t.userId, t.taskId, t.periodKey),
+  ]
+);
+
+export const transactions = pgTable(
+  "transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    amount: integer("amount").notNull(),
+    kind: text("kind").notNull(),
+    referenceType: text("reference_type"),
+    referenceId: text("reference_id"),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    meta: jsonb("meta"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("transactions_user_idx").on(t.userId)]
+);
+
+export const platformAccounts = pgTable(
+  "platform_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    externalUserId: text("external_user_id"),
+    displayName: text("display_name"),
+    accessTokenEnc: text("access_token_enc"),
+    refreshTokenEnc: text("refresh_token_enc"),
+    /** OAuth scopes granted */
+    scopes: jsonb("scopes"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [uniqueIndex("platform_accounts_user_platform").on(t.userId, t.platform)]
+);
+
+export const referrals = pgTable(
+  "referrals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    referrerId: uuid("referrer_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    refereeId: uuid("referee_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" })
+      .unique(),
+    qualifiedAt: timestamp("qualified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("referrals_referrer_idx").on(t.referrerId)]
+);
+
+export const shopItems = pgTable("shop_items", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  kind: text("kind").notNull(),
+  priceCoins: integer("price_coins").notNull(),
+  meta: jsonb("meta"),
+  active: boolean("active").notNull().default(true),
+});
+
+export const userInventory = pgTable(
+  "user_inventory",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => shopItems.id, { onDelete: "cascade" }),
+    quantity: integer("quantity").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [uniqueIndex("user_inventory_unique").on(t.userId, t.itemId)]
+);
+
+export const fortuneSpins = pgTable(
+  "fortune_spins",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    utcDate: text("utc_date").notNull(),
+    freeUsed: boolean("free_used").notNull().default(false),
+    paidCount: integer("paid_count").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [uniqueIndex("fortune_spins_user_day").on(t.userId, t.utcDate)]
+);
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  balance: one(userBalances, {
+    fields: [users.id],
+    references: [userBalances.userId],
+  }),
+  streak: one(userStreaks, {
+    fields: [users.id],
+    references: [userStreaks.userId],
+  }),
+  platformAccounts: many(platformAccounts),
+}));

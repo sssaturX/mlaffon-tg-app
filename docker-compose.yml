@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mlaffon
+      POSTGRES_PASSWORD: mlaffon
+      POSTGRES_DB: mlaffon
+    ports:
+      - "5432:5432"
+    volumes:
+      - mlaffon_pg:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - mlaffon_redis:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  mlaffon_pg:
+  mlaffon_redis:
