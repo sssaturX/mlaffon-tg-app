@@ -10,6 +10,7 @@ const EXCLUDED_FROM_WEEKLY_BASE = [
   "referral_weekly_l1",
   "referral_weekly_l2",
   "promo_code",
+  "drop_reward",
   "admin",
 ] as const;
 

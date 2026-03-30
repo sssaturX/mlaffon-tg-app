@@ -16,6 +16,11 @@ import {
   getParticipantCountsForGiveawayIds,
   listGiveawayParticipantsWithUsernames,
 } from "../services/giveaways.js";
+import {
+  getAdminDropStatus,
+  startDrop,
+  stopActiveDrops,
+} from "../services/drops.js";
 import { signAdminToken, verifyAdminToken } from "../lib/adminJwt.js";
 
 function parseBearer(req: { headers: { authorization?: string } }): string | null {
@@ -374,5 +379,46 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       }
       throw e;
     }
+  });
+
+  app.get("/api/admin/drops", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    return getAdminDropStatus();
+  });
+
+  const startDropBody = z.object({
+    code: z.string().min(4).max(16),
+    durationSeconds: z.number().int().min(30).max(86400),
+    maxWinners: z.number().int().min(1).max(1_000_000),
+    rewardMin: z.number().int().min(1),
+    rewardMax: z.number().int().min(1),
+  });
+
+  app.post("/api/admin/drops/start", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const parsed = startDropBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    try {
+      const { id } = await startDrop(parsed.data);
+      return { ok: true, id };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "code_invalid") {
+        return reply.status(400).send({
+          error: { code: "code_invalid", message: "Код — минимум 4 цифры" },
+        });
+      }
+      throw e;
+    }
+  });
+
+  app.post("/api/admin/drops/stop", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    await stopActiveDrops();
+    return { ok: true };
   });
 }

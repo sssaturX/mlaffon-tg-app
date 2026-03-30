@@ -130,11 +130,32 @@ export function App() {
   const [promoMaxUses, setPromoMaxUses] = useState(100);
   const [promoCreditPlatform, setPromoCreditPlatform] = useState<"split" | "twitch" | "kick">("split");
 
-  const [tab, setTab] = useState<"giveaways" | "promos" | "users">("giveaways");
+  const [tab, setTab] = useState<"giveaways" | "promos" | "users" | "drops">("giveaways");
   const [adminUsers, setAdminUsers] = useState<AdminUserRow[] | null>(null);
   const [usersTotal, setUsersTotal] = useState(0);
   const [usersOffset, setUsersOffset] = useState(0);
   const USERS_PAGE = 50;
+
+  type AdminDropStatus = {
+    active: boolean;
+    drop: {
+      id: string;
+      code: string;
+      rewardMin: number;
+      rewardMax: number;
+      maxWinners: number;
+      winnersCount: number;
+      startedAt: string;
+      endsAt: string;
+    } | null;
+  };
+
+  const [dropStatus, setDropStatus] = useState<AdminDropStatus | null>(null);
+  const [dropCode, setDropCode] = useState("4821");
+  const [dropDurationSec, setDropDurationSec] = useState(120);
+  const [dropMaxWinners, setDropMaxWinners] = useState(100);
+  const [dropRewardMin, setDropRewardMin] = useState(10);
+  const [dropRewardMax, setDropRewardMax] = useState(100);
 
   /**
    * Только с `includeJsonContentType: true` для запросов с JSON-телом.
@@ -245,6 +266,10 @@ export function App() {
   useEffect(() => {
     if (token && tab === "users") void loadAdminUsers(usersOffset);
   }, [token, tab, usersOffset, loadAdminUsers]);
+
+  useEffect(() => {
+    if (token && tab === "drops") void loadDropStatus();
+  }, [token, tab, loadDropStatus]);
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
@@ -848,6 +873,158 @@ export function App() {
               </div>
             </>
           )}
+        </>
+      ) : null}
+
+      {tab === "drops" ? (
+        <>
+          <h2 style={{ marginTop: 0 }}>Стрим-дропы</h2>
+          <p className="muted">
+            Код вводят в приложении в модалке. Награда случайная в диапазоне (50/50 Twitch/Kick). До{" "}
+            {5} попыток на человека, пауза 3 с между попытками.
+          </p>
+          {dropStatus === null ? (
+            <p className="muted">Загрузка…</p>
+          ) : (
+            <div className="card stack" style={{ marginBottom: 16 }}>
+              <p style={{ margin: 0 }}>
+                <strong>Статус:</strong>{" "}
+                {dropStatus.active && dropStatus.drop ? (
+                  <>
+                    активен · код <code>{dropStatus.drop.code}</code> · победителей{" "}
+                    {dropStatus.drop.winnersCount} / {dropStatus.drop.maxWinners} · до{" "}
+                    {new Date(dropStatus.drop.endsAt).toLocaleString("ru-RU")}
+                  </>
+                ) : (
+                  "нет активного дропа"
+                )}
+              </p>
+            </div>
+          )}
+          <form
+            className="card stack"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!token) return;
+              setLoading(true);
+              setErr(null);
+              try {
+                const r = await fetch(`${apiBase()}/api/admin/drops/start`, {
+                  method: "POST",
+                  headers: authHeaders(true),
+                  body: JSON.stringify({
+                    code: dropCode.replace(/\D/g, "").slice(0, 8),
+                    durationSeconds: dropDurationSec,
+                    maxWinners: dropMaxWinners,
+                    rewardMin: dropRewardMin,
+                    rewardMax: dropRewardMax,
+                  }),
+                });
+                const j = (await r.json()) as { ok?: boolean; error?: { message?: string } };
+                if (!r.ok) {
+                  setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                  return;
+                }
+                await loadDropStatus();
+              } catch {
+                setErr("Сеть недоступна");
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            <div>
+              <label htmlFor="dcode">Код (цифры, мин. 4)</label>
+              <input
+                id="dcode"
+                inputMode="numeric"
+                value={dropCode}
+                onChange={(e) => setDropCode(e.target.value)}
+                required
+              />
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="ddur">Длительность (сек)</label>
+                <input
+                  id="ddur"
+                  type="number"
+                  min={30}
+                  max={86400}
+                  value={dropDurationSec}
+                  onChange={(e) => setDropDurationSec(Number(e.target.value))}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="dmax">Лимит победителей</label>
+                <input
+                  id="dmax"
+                  type="number"
+                  min={1}
+                  value={dropMaxWinners}
+                  onChange={(e) => setDropMaxWinners(Number(e.target.value))}
+                  required
+                />
+              </div>
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="dmin">Награда от (монет)</label>
+                <input
+                  id="dmin"
+                  type="number"
+                  min={1}
+                  value={dropRewardMin}
+                  onChange={(e) => setDropRewardMin(Number(e.target.value))}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="dmaxr">Награда до (монет)</label>
+                <input
+                  id="dmaxr"
+                  type="number"
+                  min={1}
+                  value={dropRewardMax}
+                  onChange={(e) => setDropRewardMax(Number(e.target.value))}
+                  required
+                />
+              </div>
+            </div>
+            <button type="submit" className="primary" disabled={loading}>
+              Запустить дроп
+            </button>
+          </form>
+          <button
+            type="button"
+            className="secondary"
+            style={{ marginTop: 12 }}
+            disabled={loading}
+            onClick={async () => {
+              if (!token) return;
+              setLoading(true);
+              setErr(null);
+              try {
+                const r = await fetch(`${apiBase()}/api/admin/drops/stop`, {
+                  method: "POST",
+                  headers: authHeaders(),
+                });
+                const j = (await r.json()) as { error?: { message?: string } };
+                if (!r.ok) {
+                  setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                  return;
+                }
+                await loadDropStatus();
+              } catch {
+                setErr("Сеть недоступна");
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            Остановить дроп
+          </button>
         </>
       ) : null}
     </>

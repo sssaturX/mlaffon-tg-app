@@ -1,12 +1,17 @@
-import { Coins } from "lucide-react";
+import { Coins, Gift } from "lucide-react";
 import { useActivePlatform } from "../context/PlatformContext";
 
 export function ScreenHeader({
   title,
   balance,
+  dropActive,
+  onDropClick,
 }: {
   title: string;
   balance: number | null;
+  /** Показать кнопку «дроп» (пульс, если идёт активный дроп). */
+  dropActive?: boolean;
+  onDropClick?: () => void;
 }) {
   const { activePlatform, setActivePlatform } = useActivePlatform();
 
@@ -14,6 +19,17 @@ export function ScreenHeader({
     <header className="screen-header">
       <h1 className="screen-header__title">{title}</h1>
       <div className="screen-header__controls">
+        {onDropClick ? (
+          <button
+            type="button"
+            className={`drop-header-btn ${dropActive ? "drop-header-btn--pulse" : ""}`}
+            onClick={onDropClick}
+            aria-label="Активный дроп"
+            title="Активный дроп"
+          >
+            <Gift size={18} strokeWidth={2.2} aria-hidden />
+          </button>
+        ) : null}
         <div className="platform-toggle" role="group" aria-label="Платформа">
           <button
             type="button"

@@ -40,6 +40,7 @@ import Profile from "./pages/Profile";
 import OAuthReturn from "./pages/OAuthReturn";
 import OAuthBrowserDone from "./pages/OAuthBrowserDone";
 import GiveawayPage from "./pages/Giveaway";
+import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 
 const devAuth =
   import.meta.env.VITE_ALLOW_DEV === "1" || import.meta.env.DEV;
@@ -237,6 +238,18 @@ function AppShell({
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStep, setTourStep] = useState(0);
 
+  const [dropSnap, setDropSnap] = useState<DropSnapshot | null>(null);
+  const [dropOpen, setDropOpen] = useState(false);
+
+  const loadDrop = useCallback(async () => {
+    if (!getToken()) {
+      setDropSnap(null);
+      return;
+    }
+    const r = await api<DropSnapshot>("/api/v1/drops/active");
+    if (r.ok) setDropSnap(r.data);
+  }, []);
+
   useEffect(() => {
     if (!me || onboardingOpen) return;
     if (!hasSeenTour()) setTourOpen(true);
@@ -261,6 +274,35 @@ function AppShell({
     };
   }, [activePlatform]);
 
+  useEffect(() => {
+    if (!me) return;
+    void loadDrop();
+    const t = window.setInterval(() => void loadDrop(), 8000);
+    return () => clearInterval(t);
+  }, [me, loadDrop]);
+
+  useEffect(() => {
+    if (!dropSnap?.hasActiveDrop || dropSnap.won) return;
+    try {
+      const k = `mlaffon_drop_auto_${dropSnap.dropId}`;
+      if (!sessionStorage.getItem(k)) {
+        sessionStorage.setItem(k, "1");
+        setDropOpen(true);
+      }
+    } catch {
+      setDropOpen(true);
+    }
+  }, [dropSnap]);
+
+  useEffect(() => {
+    if (dropOpen && me) void loadDrop();
+  }, [dropOpen, me, loadDrop]);
+
+  const openDrop = useCallback(() => {
+    void loadDrop();
+    setDropOpen(true);
+  }, [loadDrop]);
+
   return (
     <>
       {!online && (
@@ -282,6 +324,10 @@ function AppShell({
         <ScreenHeader
           title={routeTitle(location.pathname)}
           balance={headerBalance}
+          dropActive={
+            dropSnap?.hasActiveDrop === true && !dropSnap.won
+          }
+          onDropClick={me ? openDrop : undefined}
         />
 
         <main className="app-main">
@@ -364,6 +410,19 @@ function AppShell({
           ) : null}
         </div>
       </div>
+
+      {me ? (
+        <DropOverlay
+          open={dropOpen}
+          onClose={() => setDropOpen(false)}
+          snapshot={dropSnap}
+          onAfterClaim={async () => {
+            await loadDrop();
+            await refreshMe();
+          }}
+          onRefreshSnapshot={loadDrop}
+        />
+      ) : null}
     </>
   );
 }

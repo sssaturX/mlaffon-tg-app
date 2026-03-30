@@ -272,6 +272,50 @@ export const promoRedemptions = pgTable(
   (t) => [uniqueIndex("promo_redemptions_user_promo").on(t.userId, t.promoId)]
 );
 
+export const drops = pgTable(
+  "drops",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** Код со стрима (обычно 4 цифры). */
+    code: text("code").notNull(),
+    rewardMin: integer("reward_min").notNull(),
+    rewardMax: integer("reward_max").notNull(),
+    maxWinners: integer("max_winners").notNull(),
+    winnersCount: integer("winners_count").notNull().default(0),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("drops_active_idx").on(t.active)]
+);
+
+export const dropUserStates = pgTable(
+  "drop_user_states",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    dropId: uuid("drop_id")
+      .notNull()
+      .references(() => drops.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    attemptsCount: integer("attempts_count").notNull().default(0),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    won: boolean("won").notNull().default(false),
+    rewardCoins: integer("reward_coins"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("drop_user_states_drop_user").on(t.dropId, t.userId),
+    index("drop_user_states_user_idx").on(t.userId),
+  ]
+);
+
 export const appSettings = pgTable("app_settings", {
   key: text("key").primaryKey(),
   value: jsonb("value").notNull(),

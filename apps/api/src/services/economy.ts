@@ -11,7 +11,8 @@ export type CreditReason =
   | "streak_bonus"
   | "fortune_wheel"
   | "admin"
-  | "promo_code";
+  | "promo_code"
+  | "drop_reward";
 
 /** Куда зачислить / откуда списать монеты. */
 export type EconomyPlatform = "twitch" | "kick";
