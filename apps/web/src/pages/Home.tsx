@@ -29,12 +29,6 @@ type HomePublic = {
     participantCount: number;
     drawnAt: string | null;
   }[];
-  cashback: {
-    enabled: boolean;
-    title: string;
-    imageUrl: string | null;
-    body: string;
-  };
   faq: { q: string; a: string }[];
 };
 
@@ -307,22 +301,6 @@ export default function Home({
               </div>
             </Link>
           ))}
-        </div>
-      )}
-
-      {pub && pub.cashback.enabled && (
-        <div className="card stack cashback-card" style={{ marginTop: 8 }}>
-          <h2 style={{ margin: 0, fontSize: 16 }}>{pub.cashback.title}</h2>
-          {pub.cashback.imageUrl && (
-            <img
-              src={pub.cashback.imageUrl}
-              alt=""
-              style={{ width: "100%", borderRadius: 12, maxHeight: 220, objectFit: "cover" }}
-            />
-          )}
-          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-            {pub.cashback.body}
-          </p>
         </div>
       )}
 

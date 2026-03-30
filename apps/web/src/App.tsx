@@ -41,6 +41,7 @@ import OAuthReturn from "./pages/OAuthReturn";
 import OAuthBrowserDone from "./pages/OAuthBrowserDone";
 import GiveawayPage from "./pages/Giveaway";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
+import { DropTicker } from "./components/DropTicker";
 
 const devAuth =
   import.meta.env.VITE_ALLOW_DEV === "1" || import.meta.env.DEV;
@@ -303,6 +304,25 @@ function AppShell({
     setDropOpen(true);
   }, [loadDrop]);
 
+  const [dropSecTick, setDropSecTick] = useState(0);
+  useEffect(() => {
+    setDropSecTick(0);
+  }, [dropSnap?.hasActiveDrop ? dropSnap?.dropId : null]);
+
+  useEffect(() => {
+    if (!dropSnap?.hasActiveDrop || dropSnap.won) return;
+    const id = window.setInterval(() => setDropSecTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [dropSnap]);
+
+  const dropSecondsLeft =
+    dropSnap?.hasActiveDrop && !dropSnap.won
+      ? Math.max(0, dropSnap.remainingSeconds - dropSecTick)
+      : 0;
+
+  const showDropTicker =
+    Boolean(me) && dropSnap?.hasActiveDrop === true && !dropSnap.won;
+
   return (
     <>
       {!online && (
@@ -310,6 +330,10 @@ function AppShell({
           Нет сети — проверьте подключение
         </div>
       )}
+
+      {showDropTicker ? (
+        <DropTicker secondsLeft={dropSecondsLeft} onOpen={openDrop} />
+      ) : null}
 
       <OnboardingModal open={onboardingOpen} onClose={onCloseOnboarding} />
 
@@ -324,10 +348,6 @@ function AppShell({
         <ScreenHeader
           title={routeTitle(location.pathname)}
           balance={headerBalance}
-          dropActive={
-            dropSnap?.hasActiveDrop === true && !dropSnap.won
-          }
-          onDropClick={me ? openDrop : undefined}
         />
 
         <main className="app-main">

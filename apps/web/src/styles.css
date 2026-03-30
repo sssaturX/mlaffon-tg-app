@@ -1899,31 +1899,69 @@ h2 {
   }
 }
 
-.drop-header-btn {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* Бегущая строка дропа (под offline-баннером) */
+.drop-ticker {
+  position: sticky;
+  top: 0;
+  z-index: 55;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid hsla(265, 70%, 45%, 0.35);
+  background: linear-gradient(
+    90deg,
+    hsl(265, 35%, 12%) 0%,
+    hsl(230, 40%, 14%) 50%,
+    hsl(265, 35%, 12%) 100%
+  );
   cursor: pointer;
+  overflow: hidden;
+  min-height: 40px;
 }
 
-.drop-header-btn--pulse {
-  animation: drop-header-pulse 1.6s ease-in-out infinite;
-  border-color: hsla(265, 80%, 55%, 0.5);
+.drop-ticker__fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  z-index: 2;
+  pointer-events: none;
 }
 
-@keyframes drop-header-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 hsla(265, 80%, 55%, 0.25);
+.drop-ticker__fade--left {
+  left: 0;
+  background: linear-gradient(90deg, hsl(265, 35%, 11%), transparent);
+}
+
+.drop-ticker__fade--right {
+  right: 0;
+  background: linear-gradient(270deg, hsl(265, 35%, 11%), transparent);
+}
+
+.drop-ticker__track {
+  display: flex;
+  width: max-content;
+  animation: drop-ticker-marquee 22s linear infinite;
+  padding: 10px 0;
+}
+
+.drop-ticker__text {
+  flex-shrink: 0;
+  padding: 0 48px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #e8e9ff;
+  white-space: nowrap;
+}
+
+@keyframes drop-ticker-marquee {
+  0% {
+    transform: translateX(0);
   }
-  50% {
-    box-shadow: 0 0 14px 2px hsla(265, 80%, 55%, 0.35);
+  100% {
+    transform: translateX(-33.333%);
   }
 }

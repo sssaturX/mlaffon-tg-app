@@ -90,6 +90,20 @@ type GiveawayDetailResponse = {
   } | null;
 };
 
+type AdminDropStatus = {
+  active: boolean;
+  drop: {
+    id: string;
+    code: string;
+    rewardMin: number;
+    rewardMax: number;
+    maxWinners: number;
+    winnersCount: number;
+    startedAt: string;
+    endsAt: string;
+  } | null;
+};
+
 export function App() {
   const [token, setToken] = useState<string | null>(() => {
     try {
@@ -135,20 +149,6 @@ export function App() {
   const [usersTotal, setUsersTotal] = useState(0);
   const [usersOffset, setUsersOffset] = useState(0);
   const USERS_PAGE = 50;
-
-  type AdminDropStatus = {
-    active: boolean;
-    drop: {
-      id: string;
-      code: string;
-      rewardMin: number;
-      rewardMax: number;
-      maxWinners: number;
-      winnersCount: number;
-      startedAt: string;
-      endsAt: string;
-    } | null;
-  };
 
   const [dropStatus, setDropStatus] = useState<AdminDropStatus | null>(null);
   const [dropCode, setDropCode] = useState("4821");
@@ -254,6 +254,19 @@ export function App() {
     },
     [token, authHeaders]
   );
+
+  const loadDropStatus = useCallback(async () => {
+    if (!token) return;
+    setErr(null);
+    const r = await fetch(`${apiBase()}/api/admin/drops`, { headers: authHeaders() });
+    const j = (await r.json()) as AdminDropStatus & { error?: { message?: string } };
+    if (!r.ok) {
+      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+      if (r.status === 401) setToken(null);
+      return;
+    }
+    setDropStatus({ active: j.active, drop: j.drop ?? null });
+  }, [token, authHeaders]);
 
   useEffect(() => {
     if (token) {
