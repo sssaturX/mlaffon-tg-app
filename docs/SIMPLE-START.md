@@ -1,16 +1,20 @@
 # Простой запуск на сервере (всё в одном месте)
 
 **Репозиторий:** `/opt/mlaffon/mlaffon-tg-app`  
-**Домены:** основной мини-приложения — `mlaffon.fun`; админка — **`admin.mlaffon.fun`** (отдельный поддомен, тот же API по `/api/*`). В `apps/api/.env`: `PUBLIC_WEB_URL=https://mlaffon.fun`, OAuth redirect на этот домен. Для входа в админку задайте **`ADMIN_EMAIL`**, **`ADMIN_PASSWORD`**, **`ADMIN_PASSPHRASE`** (и при желании **`ADMIN_JWT_SECRET`** или общий **`JWT_SECRET`**).
+**Домены:** основной мини-приложения — `mlaffon.fun`; админка — `**admin.mlaffon.fun`** (отдельный поддомен, тот же API по `/api/*`). В `apps/api/.env`: `PUBLIC_WEB_URL=https://mlaffon.fun`, OAuth redirect на этот домен. Для входа в админку задайте `**ADMIN_EMAIL**`, `**ADMIN_PASSWORD**`, `**ADMIN_PASSPHRASE**` (и при желании `**ADMIN_JWT_SECRET**` или общий `**JWT_SECRET**`).
+
+**Админка запускается тем же сценарием**, что и основной сайт: `npm run build` собирает `apps/admin/dist`, Caddy отдаёт её на `admin.mlaffon.fun`, отдельного systemd для админки нет. Нужны DNS на поддомен (§8), права на `apps/admin/dist` (§6) и `**ADMIN_*`** в `.env` (§2).
 
 **Соответствие «как локально»:**
 
-| Локально | На сервере |
-|----------|------------|
-| `docker compose up -d` | То же |
-| `npm run dev` (API + Vite) | `npm run build` → API из `dist` + статика из **`apps/web/dist`** + **`apps/admin/dist`** |
-| `npm run worker -w api` | Отдельный процесс `node dist/worker.js` (через systemd) |
+
+| Локально                     | На сервере                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `docker compose up -d`       | То же                                                                                                  |
+| `npm run dev` (API + Vite)   | `npm run build` → API из `dist` + статика из `**apps/web/dist`** + `**apps/admin/dist**`               |
+| `npm run worker -w api`      | Отдельный процесс `node dist/worker.js` (через systemd)                                                |
 | Браузер → Vite прокси `/api` | **Caddy** отдаёт **два** сайта (`mlaffon.fun` и `admin.mlaffon.fun`) и шлёт `/api` на `127.0.0.1:3001` |
+
 
 Нужны: **Ubuntu**, **Node.js 20+**, **Docker** + Compose, **Caddy**. Один раз откройте порты **22, 80, 443** (ufw).
 
@@ -20,7 +24,7 @@
 
 ```bash
 export REPO=/opt/mlaffon/mlaffon-tg-app
-export VITE_BOT_USERNAME=ИмяБотаБезСобаки
+export VITE_BOT_USERNAME=MlaffonBot
 ```
 
 `VITE_BOT_USERNAME` — как в Telegram, **без** `@`.
@@ -63,8 +67,8 @@ sudo systemctl disable nginx
 
 ## 2. Код и `.env`
 
-Репозиторий уже должен лежать в `$REPO`. Файл **`$REPO/apps/api/.env`** заполните (как в `.env.example` в корне репо): `DATABASE_URL`, `REDIS_URL`, Telegram, секреты, **`PORT=3001`**, **`PUBLIC_WEB_URL=https://mlaffon.fun`**, Twitch/Kick redirect на `https://mlaffon.fun/api/v1/.../callback`.  
-Для **админки** (вход на `https://admin.mlaffon.fun`): **`ADMIN_EMAIL`**, **`ADMIN_PASSWORD`**, **`ADMIN_PASSPHRASE`**; для подписи JWT — **`ADMIN_JWT_SECRET`** или общий **`JWT_SECRET`**.  
+Репозиторий уже должен лежать в `$REPO`. Файл `**$REPO/apps/api/.env**` заполните (как в `.env.example` в корне репо): `DATABASE_URL`, `REDIS_URL`, Telegram, секреты, `**PORT=3001**`, `**PUBLIC_WEB_URL=https://mlaffon.fun**`, Twitch/Kick redirect на `https://mlaffon.fun/api/v1/.../callback`.  
+Для **админки** (вход на `https://admin.mlaffon.fun`): `**ADMIN_EMAIL`**, `**ADMIN_PASSWORD**`, `**ADMIN_PASSPHRASE**`; для подписи JWT — `**ADMIN_JWT_SECRET**` или общий `**JWT_SECRET**`.  
 **Прод:** не включайте `ALLOW_DEV_AUTH=1`.
 
 ---
@@ -91,7 +95,7 @@ npm ci
 npm run build
 ```
 
-Должны появиться каталоги **`apps/api/dist`**, **`apps/web/dist`** и **`apps/admin/dist`** (команда `npm run build` в корне собирает API, веб и админку).
+Должны появиться каталоги `**apps/api/dist**`, `**apps/web/dist**` и `**apps/admin/dist**` (команда `npm run build` в корне собирает API, веб и админку).
 
 ---
 
@@ -147,16 +151,16 @@ curl -s http://127.0.0.1:3001/health
 
 ### A) Caddy сам получает сертификат (Let's Encrypt) — **основной вариант**
 
-Репозиторийный **`deploy/Caddyfile`** уже без ручных PEM: Caddy сам запрашивает и продлевает сертификат у Let’s Encrypt.
+Репозиторийный `**deploy/Caddyfile`** уже без ручных PEM: Caddy сам запрашивает и продлевает сертификат у Let’s Encrypt.
 
-Перед копированием конфига (по желанию): в **`deploy/Caddyfile`** раскомментируйте строку **`email ...`** в глобальном блоке `{ }` — на эту почту ACME пришлёт напоминания о сроке.
+Перед копированием конфига (по желанию): в `**deploy/Caddyfile**` раскомментируйте строку `**email ...**` в глобальном блоке `{ }` — на эту почту ACME пришлёт напоминания о сроке.
 
 Чеклист:
 
 1. В DNS у домена **A** (и при необходимости **AAAA**) на **IP этого VPS** — иначе выпуск не пройдёт.
-2. Для **админки** на поддомене: **A** (или **CNAME**) **`admin.mlaffon.fun`** → тот же IP (или на `mlaffon.fun`). Без записи Caddy не сможет выдать TLS для админки.
+2. Для **админки** на поддомене: **A** (или **CNAME**) `**admin.mlaffon.fun`** → тот же IP (или на `mlaffon.fun`). Без записи Caddy не сможет выдать TLS для админки.
 3. Порты **80** и **443** открыты (ufw / облако); **80** должен слушать **caddy**, не nginx.
-4. Если раньше стоял **`Caddyfile.manual-certs`**, вернитесь на обычный файл (команды ниже) **или** допишите второй сайт вручную по аналогии с репозиторием.
+4. Если раньше стоял `**Caddyfile.manual-certs`**, вернитесь на обычный файл (команды ниже) **или** допишите второй сайт вручную по аналогии с репозиторием.
 
 ```bash
 sudo cp $REPO/deploy/Caddyfile /etc/caddy/Caddyfile
@@ -167,11 +171,11 @@ sudo systemctl restart caddy
 sudo systemctl status caddy --no-pager
 ```
 
-Первый успешный выпуск может занять до минуты; при ошибках смотрите **`journalctl -u caddy -e`**.
+Первый успешный выпуск может занять до минуты; при ошибках смотрите `**journalctl -u caddy -e**`.
 
 ### B) Сертификат уже выдан (у регистратора / certbot / не через Caddy)
 
-Файлы **`fullchain.pem`** и **`privkey.pem`** должны **лежать на этом сервере** (скопируйте PEM с хостинга регистратора или скачайте архив). Если сертификат только «в панели» без файлов на VPS — сначала положите PEM в каталог, например `/etc/ssl/mlaffon/`.
+Файлы `**fullchain.pem**` и `**privkey.pem**` должны **лежать на этом сервере** (скопируйте PEM с хостинга регистратора или скачайте архив). Если сертификат только «в панели» без файлов на VPS — сначала положите PEM в каталог, например `/etc/ssl/mlaffon/`.
 
 Скопируйте шаблон и **отредактируйте пути** в директиве `tls`:
 
@@ -204,10 +208,12 @@ sudo systemctl restart caddy
 
 **Важно:** покупка домена у регистратора — это **не** то же самое, что «готовые файлы `fullchain.pem` и `privkey.pem` на вашем VPS». У Джино в личном кабинете вы управляете **DNS** (A/AAAA на IP сервера) и, при необходимости, **хостингом**; отдельной кнопки «скачать fullchain для своего VPS» часто **нет**, если вы **не** пользуетесь их хостингом для этого сайта.
 
-| Ситуация | Где «лежат» сертификаты |
-|----------|-------------------------|
+
+| Ситуация                                                           | Где «лежат» сертификаты                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Сайт на **вашем VPS** (как в этом гайде), DNS указывает на этот IP | Файлов у Джино для этого сервера **может не быть**. Выпускайте TLS **на VPS**: [вариант A](#a-caddy-сам-получает-сертификат-lets-encrypt) (Caddy + Let's Encrypt) или **certbot** на том же сервере — тогда пути вида `/etc/letsencrypt/live/ваш-домен/`. |
-| Сайт на **хостинге Джино** (не на вашем VPS) | HTTPS настраивается **у них** на своих машинах; для переноса на VPS нужны **экспортированные PEM** из панели/поддержки **или** новый выпуск на VPS (вариант A). |
+| Сайт на **хостинге Джино** (не на вашем VPS)                       | HTTPS настраивается **у них** на своих машинах; для переноса на VPS нужны **экспортированные PEM** из панели/поддержки **или** новый выпуск на VPS (вариант A).                                                                                           |
+
 
 Практичный путь для `mlaffon.fun` на своём сервере: **A-запись** домена → IP VPS, порты 80/443 открыты → **вариант A** без ручных PEM. Ручные `fullchain.pem` / `privkey.pem` нужны только если сертификат уже выдан **другим** способом и вы **скопировали** файлы на сервер (см. [вариант B](#b-сертификат-уже-выдан-у-регистратора--certbot--не-через-caddy)).
 
@@ -215,7 +221,7 @@ sudo systemctl restart caddy
 
 ### Проверка
 
-В репозитории **`deploy/Caddyfile`** два блока: **`mlaffon.fun`** (статика **`$REPO/apps/web/dist`**) и **`admin.mlaffon.fun`** (статика **`$REPO/apps/admin/dist`**); в обоих **`/api/*`** → **`127.0.0.1:3001`**.
+В репозитории `**deploy/Caddyfile`** два блока: `**mlaffon.fun**` (статика `**$REPO/apps/web/dist**`) и `**admin.mlaffon.fun**` (статика `**$REPO/apps/admin/dist**`); в обоих `**/api/***` → `**127.0.0.1:3001**`.
 
 С сервера (часто так и надо проверять API напрямую):
 
@@ -230,19 +236,19 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://mlaffon.fun/api/v1/me
 curl -sS -o /dev/null -w "%{http_code}\n" https://admin.mlaffon.fun/
 ```
 
-Ожидаемо **401** на `/api/v1/me` без токена; главная админки (SPA) обычно **200**. Ошибка **`curl: (35) ... SSL`** чаще всего из‑за того, что **на VPS ещё нет подходящих PEM** или Caddy пытается **сам** выпустить сертификат (вариант A), пока домен указывает не на этот сервер — тогда используйте вариант **B** с явными путями `tls`.
+Ожидаемо **401** на `/api/v1/me` без токена; главная админки (SPA) обычно **200**. Ошибка `**curl: (35) ... SSL`** чаще всего из‑за того, что **на VPS ещё нет подходящих PEM** или Caddy пытается **сам** выпустить сертификат (вариант A), пока домен указывает не на этот сервер — тогда используйте вариант **B** с явными путями `tls`.
 
 ---
 
 ## 9. Telegram
 
-В **BotFather** у Mini App URL: **`https://mlaffon.fun`**.
+В **BotFather** у Mini App URL: `**https://mlaffon.fun`**.
 
 ---
 
 ## 10. Обновление кода (веб + админка + API)
 
-После **`git pull`** всегда пересобирайте фронты и API одной командой из корня — в сборку входят **`web`** и **`admin`**:
+После `git pull` пересоберите фронты и API из корня (в сборку входят `web` и `admin`):
 
 ```bash
 cd $REPO
@@ -255,9 +261,9 @@ sudo chmod -R o+rX apps/api/dist apps/web/dist apps/admin/dist
 sudo systemctl restart mlaffon-api mlaffon-worker
 ```
 
-**Caddy:** новые файлы в **`apps/web/dist`** и **`apps/admin/dist`** начинают отдаваться **сразу** после сборки и `chmod` — **перезагрузка не нужна**, если не меняли конфиг.
+Новые файлы в `apps/web/dist` и `apps/admin/dist` отдаются сразу после сборки и `chmod` — Caddy перезагружать не нужно, если не меняли сам конфиг.
 
-Если в **`git pull`** попал **обновлённый** `deploy/Caddyfile` (поддомен, пути, прокси), скопируйте и примените:
+Если в `git pull` попал обновлённый `deploy/Caddyfile` (поддомен, пути, прокси):
 
 ```bash
 sudo cp $REPO/deploy/Caddyfile /etc/caddy/Caddyfile
@@ -266,7 +272,28 @@ sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-Проверка: **`https://mlaffon.fun`** (мини-приложение), **`https://admin.mlaffon.fun`** (админка; логин совпадает с **`ADMIN_EMAIL`** / **`ADMIN_PASSWORD`** / **`ADMIN_PASSPHRASE`** в **`apps/api/.env`**).
+Проверка: `https://mlaffon.fun` (мини-приложение), `https://admin.mlaffon.fun` (админка).
+
+### 10.1 Обновление `.env` (без пересборки)
+
+Переменные читает только процесс API при старте. Если поменяли секреты, URL, `ADMIN_*`, OAuth:
+
+```bash
+sudo nano $REPO/apps/api/.env
+# сохранить, затем:
+sudo systemctl restart mlaffon-api mlaffon-worker
+```
+
+`npm run build` для смены `.env` **не нужен**. Убедитесь, что у файла права `640` и владелец как в §6.
+
+### 10.2 HTTPS (SSL) для `admin` и основного домена
+
+Оба сайта описаны в одном `deploy/Caddyfile`: для **`mlaffon.fun`** и **`admin.mlaffon.fun`** Caddy сам запрашивает отдельные сертификаты Let’s Encrypt при первом обращении по HTTPS — **отдельно «включать SSL для админки» не нужно**, если:
+
+1. В DNS есть **A** (или **CNAME**) для **`admin.ваш-домен`** на тот же IP, что и основной сайт.
+2. Порты **80** и **443** открыты, Caddy запущен с актуальным конфигом (§8).
+
+После появления DNS-записи подождите пару минут и откройте `https://admin.ваш-домен` — при ошибке смотрите `journalctl -u caddy -e`.
 
 ---
 

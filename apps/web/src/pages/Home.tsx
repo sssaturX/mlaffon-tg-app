@@ -1,9 +1,9 @@
 import {
+  ChevronDown,
   Coins,
   Flame,
   Gift,
   HelpCircle,
-  TrendingUp,
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -53,7 +53,7 @@ export default function Home({
   const [claiming, setClaiming] = useState<"twitch" | "kick" | null>(null);
   const [pub, setPub] = useState<HomePublic | null>(null);
   const [promo, setPromo] = useState("");
-  const [faqOpen, setFaqOpen] = useState<number | null>(0);
+  const [faqOpen, setFaqOpen] = useState<number | null>(null);
 
   const loadPublic = useCallback(async () => {
     const r = await api<HomePublic>("/api/v1/home/public");
@@ -77,10 +77,6 @@ export default function Home({
 
   const displayName =
     me.firstName ?? (me.username ? `@${me.username}` : "Игрок");
-  const platformCoins =
-    activePlatform === "twitch" ? me.coinsTwitch : me.coinsKick;
-  const platformLifetime =
-    activePlatform === "twitch" ? me.lifetimeTwitch : me.lifetimeKick;
   const streakForPlatform =
     activePlatform === "twitch" ? me.streakTwitch : me.streakKick;
   const streakPct = Math.min(100, (streakForPlatform / STREAK_TARGET) * 100);
@@ -172,26 +168,28 @@ export default function Home({
         </div>
       </div>
 
-      <div className="home-stats">
-        <div className="stat-tile">
-          <div className="stat-tile__label">
-            <Coins size={16} strokeWidth={2} aria-hidden />
-            Монеты ({activePlatform === "twitch" ? "Twitch" : "Kick"})
+      {pub && (
+        <div className="home-stats home-stats--public">
+          <div className="stat-tile">
+            <div className="stat-tile__label">
+              <Users size={16} strokeWidth={2} aria-hidden />
+              Пользователей
+            </div>
+            <div className="stat-tile__value" style={{ color: "var(--accent)" }}>
+              {pub.stats.usersCount.toLocaleString("ru-RU")}
+            </div>
           </div>
-          <div className="stat-tile__value" style={{ color: "var(--accent)" }}>
-            {platformCoins.toLocaleString("ru-RU")}
+          <div className="stat-tile">
+            <div className="stat-tile__label">
+              <Coins size={16} strokeWidth={2} aria-hidden />
+              Монет заработано
+            </div>
+            <div className="stat-tile__value">
+              {pub.stats.coinsEarnedTotal.toLocaleString("ru-RU")}
+            </div>
           </div>
         </div>
-        <div className="stat-tile">
-          <div className="stat-tile__label">
-            <TrendingUp size={16} strokeWidth={2} aria-hidden />
-            Заработано на платформе
-          </div>
-          <div className="stat-tile__value">
-            {platformLifetime.toLocaleString("ru-RU")}
-          </div>
-        </div>
-      </div>
+      )}
 
       <div className="streak-card">
         <div className="streak-card__head">
@@ -332,28 +330,47 @@ export default function Home({
       )}
 
       {pub && pub.faq.length > 0 && (
-        <div className="stack" style={{ marginTop: 8 }}>
-          <div className="row" style={{ alignItems: "center", gap: 8 }}>
-            <HelpCircle size={18} aria-hidden />
-            <h2 style={{ margin: 0, fontSize: 16 }}>FAQ</h2>
-          </div>
-          {pub.faq.map((item, i) => (
-            <div key={i} className="faq-item card">
-              <button
-                type="button"
-                className="faq-item__q"
-                onClick={() => setFaqOpen(faqOpen === i ? null : i)}
-              >
-                {item.q}
-              </button>
-              {faqOpen === i && (
-                <p className="muted" style={{ margin: "0 0 8px", fontSize: 14 }}>
-                  {item.a}
-                </p>
-              )}
+        <section className="faq-section stack" style={{ marginTop: 8 }}>
+          <div className="faq-section__head">
+            <div className="faq-section__icon-wrap" aria-hidden>
+              <HelpCircle size={22} strokeWidth={2} />
             </div>
-          ))}
-        </div>
+            <div>
+              <h2 className="faq-section__title">Вопросы и ответы</h2>
+              <p className="faq-section__sub muted">Нажми на вопрос, чтобы раскрыть</p>
+            </div>
+          </div>
+          <div className="faq-list">
+            {pub.faq.map((item, i) => {
+              const open = faqOpen === i;
+              return (
+                <div
+                  key={i}
+                  className={`faq-item ${open ? "faq-item--open" : ""}`}
+                >
+                  <button
+                    type="button"
+                    className="faq-item__q"
+                    onClick={() => setFaqOpen(open ? null : i)}
+                    aria-expanded={open}
+                  >
+                    <span className="faq-item__q-text">{item.q}</span>
+                    <ChevronDown
+                      size={20}
+                      className="faq-item__chev"
+                      aria-hidden
+                    />
+                  </button>
+                  <div className="faq-item__a-wrap">
+                    <div className="faq-item__a-inner">
+                      <p className="faq-item__a">{item.a}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       <button type="button" className="primary" style={{ marginTop: 12 }} onClick={() => onRefresh()}>
