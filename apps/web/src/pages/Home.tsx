@@ -68,9 +68,6 @@ export default function Home({
     return (
       <div className="card">
         <p className="muted">Загрузка профиля…</p>
-        <button type="button" className="primary" onClick={() => onRefresh()}>
-          Обновить
-        </button>
       </div>
     );
   }
@@ -372,10 +369,6 @@ export default function Home({
           </div>
         </section>
       )}
-
-      <button type="button" className="primary" style={{ marginTop: 12 }} onClick={() => onRefresh()}>
-        Обновить данные
-      </button>
     </div>
   );
 }

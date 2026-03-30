@@ -7,6 +7,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useSearchParams,
 } from "react-router-dom";
 import WebApp from "@twa-dev/sdk";
 import {
@@ -37,11 +38,14 @@ import Shop from "./pages/Shop";
 import Leaderboard from "./pages/Leaderboard";
 import Profile from "./pages/Profile";
 import OAuthReturn from "./pages/OAuthReturn";
+import OAuthBrowserDone from "./pages/OAuthBrowserDone";
 
 const devAuth =
   import.meta.env.VITE_ALLOW_DEV === "1" || import.meta.env.DEV;
 
 export default function App() {
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { showToast } = useToast();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +170,17 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  const oauthPathOk = /^\/oauth\/(twitch|kick)\/?$/.test(location.pathname);
+  const oauthHasResult =
+    searchParams.get("connected") === "1" ||
+    Boolean(searchParams.get("error")?.length);
+  const oauthExternalNoToken =
+    oauthPathOk && oauthHasResult && !getToken();
+
+  if (oauthExternalNoToken) {
+    return <OAuthBrowserDone />;
   }
 
   if (error || !getToken()) {

@@ -295,6 +295,20 @@ sudo systemctl restart mlaffon-api mlaffon-worker
 
 После появления DNS-записи подождите пару минут и откройте `https://admin.ваш-домен` — при ошибке смотрите `journalctl -u caddy -e`.
 
+### 10.3 Быстро обновить только фронт (web + админка)
+
+Статика не в systemd — достаточно пересобрать и выставить права на каталоги `dist` (Caddy сразу отдаёт новые файлы, `systemctl restart` не нужен):
+
+```bash
+cd $REPO
+git pull
+npm ci
+npm run build
+sudo chmod -R o+rX apps/web/dist apps/admin/dist
+```
+
+Если менялись переменные **Vite** (`VITE_BOT_USERNAME` и т.д.), они подставляются **на этапе сборки** — без `npm run build` на сервере фронт не увидит новые значения.
+
 ---
 
 ## Если «ничего не работает»

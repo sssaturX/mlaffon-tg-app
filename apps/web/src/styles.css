@@ -1291,3 +1291,107 @@ h2 {
   align-items: center;
   gap: 10px;
 }
+
+/* OAuth: возврат во внешнем браузере (без токена мини-аппа) */
+.oauth-browser-done__main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+  padding: 20px 14px 40px;
+}
+
+.oauth-browser-done__card {
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+  padding: 28px 22px 24px;
+  border-radius: 20px;
+  border: 1px solid var(--accent-glow);
+  background: linear-gradient(
+    165deg,
+    var(--surface) 0%,
+    var(--bg-elevated) 100%
+  );
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+
+.oauth-browser-done__icon-wrap {
+  margin: 0 auto 16px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-glow);
+}
+
+.oauth-browser-done__icon-wrap--err {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: var(--danger);
+}
+
+.oauth-browser-done__ok {
+  color: var(--accent);
+}
+
+.oauth-browser-done__title {
+  margin: 0 0 12px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.oauth-browser-done__lead {
+  margin: 0 0 20px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  opacity: 0.92;
+}
+
+.oauth-browser-done__err {
+  margin: 0 0 16px;
+  font-size: 14px;
+  text-align: left;
+  word-break: break-word;
+}
+
+.oauth-browser-done__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 18px;
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 14px;
+  margin-bottom: 12px;
+}
+
+.oauth-browser-done__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+  margin-bottom: 16px;
+}
+
+.oauth-browser-done__link:hover {
+  text-decoration: underline;
+}
+
+.oauth-browser-done__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
