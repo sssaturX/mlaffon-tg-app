@@ -5,7 +5,6 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { useEffect, useState } from "react";
 
 const STORAGE_KEY = "mlaffon_tour_v3_done";
 
@@ -119,21 +118,20 @@ function TourVisual({ kind }: { kind: "platform" | "referral" | "home" }) {
 
 export function FirstVisitTour({
   open,
+  step,
+  onStepChange,
   onClose,
 }: {
   open: boolean;
+  step: number;
+  onStepChange: (n: number) => void;
   onClose: () => void;
 }) {
-  const [step, setStep] = useState(0);
-
-  useEffect(() => {
-    if (open) setStep(0);
-  }, [open]);
-
   if (!open) return null;
 
-  const s = STEPS[step]!;
-  const last = step >= STEPS.length - 1;
+  const safeStep = Math.min(Math.max(0, step), STEPS.length - 1);
+  const s = STEPS[safeStep]!;
+  const last = safeStep >= STEPS.length - 1;
 
   return (
     <div
@@ -144,17 +142,17 @@ export function FirstVisitTour({
     >
       <div className="tour-shell">
         <div className="tour-card">
-          <div className="tour-card__steps">
+          <div className="tour-card__steps" aria-hidden>
             {STEPS.map((_, i) => (
               <span
                 key={i}
-                className={`tour-dot ${i === step ? "tour-dot--active" : ""}`}
+                className={`tour-dot ${i === safeStep ? "tour-dot--active" : ""}`}
               />
             ))}
           </div>
           <TourVisual kind={s.visual} />
           <p className="tour-card__step-label">
-            Шаг {step + 1} из {STEPS.length}
+            Шаг {safeStep + 1} из {STEPS.length}
           </p>
           <h2 id="tour-title" className="tour-card__title">
             {s.title}
@@ -186,7 +184,7 @@ export function FirstVisitTour({
                 if (last) {
                   markTourSeen();
                   onClose();
-                } else setStep((x) => x + 1);
+                } else onStepChange(safeStep + 1);
               }}
             >
               {last ? "Понятно" : "Далее"}

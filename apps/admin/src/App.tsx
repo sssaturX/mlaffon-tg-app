@@ -16,6 +16,16 @@ type GiveawayRow = {
   sortOrder: number;
 };
 
+type PromoRow = {
+  id: string;
+  code: string;
+  rewardCoins: number;
+  maxUses: number;
+  usesCount: number;
+  active: boolean;
+  createdAt: string;
+};
+
 export function App() {
   const [token, setToken] = useState<string | null>(() => {
     try {
@@ -31,6 +41,7 @@ export function App() {
   const [err, setErr] = useState<string | null>(null);
 
   const [giveaways, setGiveaways] = useState<GiveawayRow[] | null>(null);
+  const [promos, setPromos] = useState<PromoRow[] | null>(null);
   const [gwTitle, setGwTitle] = useState("");
   const [gwPrize, setGwPrize] = useState("");
   const [gwEnds, setGwEnds] = useState(() => {
@@ -39,6 +50,10 @@ export function App() {
     return d.toISOString().slice(0, 16);
   });
   const [gwImage, setGwImage] = useState("");
+
+  const [promoCode, setPromoCode] = useState("");
+  const [promoReward, setPromoReward] = useState(100);
+  const [promoMaxUses, setPromoMaxUses] = useState(100);
 
   const authHeaders = useCallback((): HeadersInit => {
     const h: HeadersInit = { "Content-Type": "application/json" };
@@ -59,9 +74,25 @@ export function App() {
     setGiveaways(j.giveaways ?? []);
   }, [token, authHeaders]);
 
+  const loadPromos = useCallback(async () => {
+    if (!token) return;
+    setErr(null);
+    const r = await fetch(`${apiOrigin()}/api/admin/promos`, { headers: authHeaders() });
+    const j = (await r.json()) as { promos?: PromoRow[]; error?: { message?: string } };
+    if (!r.ok) {
+      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+      if (r.status === 401) setToken(null);
+      return;
+    }
+    setPromos(j.promos ?? []);
+  }, [token, authHeaders]);
+
   useEffect(() => {
-    if (token) void loadGiveaways();
-  }, [token, loadGiveaways]);
+    if (token) {
+      void loadGiveaways();
+      void loadPromos();
+    }
+  }, [token, loadGiveaways, loadPromos]);
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
@@ -95,6 +126,7 @@ export function App() {
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setGiveaways(null);
+    setPromos(null);
   }
 
   async function createGiveaway(e: React.FormEvent) {
@@ -124,6 +156,36 @@ export function App() {
       setGwTitle("");
       setGwPrize("");
       await loadGiveaways();
+    } catch {
+      setErr("Сеть недоступна");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function createPromo(e: React.FormEvent) {
+    e.preventDefault();
+    if (!token) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      const r = await fetch(`${apiOrigin()}/api/admin/promos`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          code: promoCode.trim(),
+          rewardCoins: promoReward,
+          maxUses: promoMaxUses,
+          active: true,
+        }),
+      });
+      const j = (await r.json()) as { id?: string; error?: { message?: string; code?: string } };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        return;
+      }
+      setPromoCode("");
+      await loadPromos();
     } catch {
       setErr("Сеть недоступна");
     } finally {
@@ -232,6 +294,68 @@ export function App() {
                 до {new Date(g.endsAt).toLocaleString("ru-RU")} ·{" "}
                 {g.active ? "активен" : "выкл"}
               </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h2 style={{ marginTop: 32 }}>Промокоды</h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Код вводят на главной. Разные промокоды — разные суммы; макс. активаций{" "}
+        <strong>0</strong> = без лимита.
+      </p>
+      <form className="card stack" onSubmit={createPromo}>
+        <div>
+          <label htmlFor="pcode">Код (латиница/цифры)</label>
+          <input
+            id="pcode"
+            value={promoCode}
+            onChange={(e) => setPromoCode(e.target.value)}
+            placeholder="SUMMER2026"
+            required
+            autoComplete="off"
+          />
+        </div>
+        <div className="row">
+          <div>
+            <label htmlFor="preward">Монет (бонус)</label>
+            <input
+              id="preward"
+              type="number"
+              min={1}
+              value={promoReward}
+              onChange={(e) => setPromoReward(Number(e.target.value))}
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="pmax">Макс. активаций</label>
+            <input
+              id="pmax"
+              type="number"
+              min={0}
+              value={promoMaxUses}
+              onChange={(e) => setPromoMaxUses(Number(e.target.value))}
+              required
+            />
+          </div>
+        </div>
+        <button type="submit" className="primary" disabled={loading}>
+          Создать промокод
+        </button>
+      </form>
+
+      {promos === null ? (
+        <p className="muted">Загрузка промокодов…</p>
+      ) : promos.length === 0 ? (
+        <p className="muted">Промокодов пока нет.</p>
+      ) : (
+        <ul className="list">
+          {promos.map((p) => (
+            <li key={p.id}>
+              <strong>{p.code}</strong> — {p.rewardCoins} мон. · активаций {p.usesCount}
+              {p.maxUses > 0 ? ` / ${p.maxUses}` : " / ∞"} ·{" "}
+              {p.active ? "активен" : "выкл"}
             </li>
           ))}
         </ul>

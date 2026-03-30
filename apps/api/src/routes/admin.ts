@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { desc, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { giveaways, appSettings } from "../db/schema.js";
+import { giveaways, appSettings, promoCodes } from "../db/schema.js";
 import { signAdminToken, verifyAdminToken } from "../lib/adminJwt.js";
 
 function parseBearer(req: { headers: { authorization?: string } }): string | null {
@@ -133,5 +133,62 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         set: { value: parsed.data, updatedAt: sql`now()` },
       });
     return { ok: true };
+  });
+
+  app.get("/api/admin/promos", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const rows = await db
+      .select()
+      .from(promoCodes)
+      .orderBy(desc(promoCodes.createdAt));
+    return {
+      promos: rows.map((p) => ({
+        id: p.id,
+        code: p.code,
+        rewardCoins: p.rewardCoins,
+        maxUses: p.maxUses,
+        usesCount: p.usesCount,
+        active: p.active,
+        createdAt: p.createdAt.toISOString(),
+      })),
+    };
+  });
+
+  const createPromo = z.object({
+    code: z.string().min(1),
+    rewardCoins: z.number().int().positive(),
+    maxUses: z.number().int().min(0),
+    active: z.boolean().optional(),
+  });
+
+  app.post("/api/admin/promos", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const parsed = createPromo.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const code = parsed.data.code.trim().toUpperCase();
+    try {
+      const [ins] = await db
+        .insert(promoCodes)
+        .values({
+          code,
+          rewardCoins: parsed.data.rewardCoins,
+          maxUses: parsed.data.maxUses,
+          active: parsed.data.active ?? true,
+        })
+        .returning({ id: promoCodes.id });
+      return { id: ins!.id };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/unique|duplicate/i.test(msg)) {
+        return reply.status(409).send({
+          error: { code: "promo_exists", message: "Промокод с таким кодом уже есть" },
+        });
+      }
+      throw e;
+    }
   });
 }

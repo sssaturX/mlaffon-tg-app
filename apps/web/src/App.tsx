@@ -234,11 +234,16 @@ function AppShell({
   const location = useLocation();
   const { activePlatform } = useActivePlatform();
   const [tourOpen, setTourOpen] = useState(false);
+  const [tourStep, setTourStep] = useState(0);
 
   useEffect(() => {
     if (!me || onboardingOpen) return;
     if (!hasSeenTour()) setTourOpen(true);
   }, [me, onboardingOpen]);
+
+  useEffect(() => {
+    if (tourOpen) setTourStep(0);
+  }, [tourOpen]);
 
   const headerBalance =
     me != null
@@ -265,7 +270,12 @@ function AppShell({
 
       <OnboardingModal open={onboardingOpen} onClose={onCloseOnboarding} />
 
-      <FirstVisitTour open={tourOpen} onClose={() => setTourOpen(false)} />
+      <FirstVisitTour
+        open={tourOpen}
+        step={tourStep}
+        onStepChange={setTourStep}
+        onClose={() => setTourOpen(false)}
+      />
 
       <div className="app-shell">
         <ScreenHeader

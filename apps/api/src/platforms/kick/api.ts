@@ -1,6 +1,47 @@
 /**
  * Kick API — базовый URL может отличаться; при ошибке ответа проверка деградирует до «токен валиден».
  */
+
+function parseKickUserPayload(j: unknown): {
+  id: string;
+  username?: string;
+  avatarUrl?: string;
+} | null {
+  const walk = (node: unknown): Record<string, unknown> | null => {
+    if (!node || typeof node !== "object") return null;
+    return node as Record<string, unknown>;
+  };
+
+  const candidates: Record<string, unknown>[] = [];
+  const root = walk(j);
+  if (root) {
+    candidates.push(root);
+    const d = walk(root.data);
+    if (d) {
+      candidates.push(d);
+      const u = walk(d.user);
+      if (u) candidates.push(u);
+    }
+    const u2 = walk(root.user);
+    if (u2) candidates.push(u2);
+  }
+
+  for (const c of candidates) {
+    const idRaw = c.id ?? c.user_id;
+    if (idRaw == null || idRaw === "") continue;
+    const id = String(idRaw);
+    const username = (c.username ?? c.slug ?? c.name ?? c.channel_slug) as
+      | string
+      | undefined;
+    const avatarUrl = (c.profile_picture ??
+      c.profile_picture_url ??
+      c.avatar ??
+      c.profile_pic) as string | undefined;
+    return { id, username: username?.trim() || undefined, avatarUrl };
+  }
+  return null;
+}
+
 export async function kickValidateToken(accessToken: string): Promise<{
   id: string;
   username?: string;
@@ -15,32 +56,9 @@ export async function kickValidateToken(accessToken: string): Promise<{
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (!r.ok) continue;
-      const j = (await r.json()) as {
-        id?: string | number;
-        user_id?: string | number;
-        username?: string;
-        slug?: string;
-        profile_picture?: string;
-        profile_picture_url?: string;
-        avatar?: string;
-        data?: { id?: string; username?: string; profile_picture?: string };
-      };
-      const id = String(
-        j.id ?? j.user_id ?? j.data?.id ?? ""
-      );
-      if (id) {
-        const avatarUrl =
-          j.profile_picture ??
-          j.profile_picture_url ??
-          j.avatar ??
-          j.data?.profile_picture ??
-          undefined;
-        return {
-          id,
-          username: j.username ?? j.slug ?? j.data?.username,
-          avatarUrl,
-        };
-      }
+      const j = (await r.json()) as unknown;
+      const parsed = parseKickUserPayload(j);
+      if (parsed) return parsed;
     } catch {
       /* ignore */
     }

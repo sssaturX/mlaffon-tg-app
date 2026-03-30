@@ -72,8 +72,27 @@ export default function Home({
     );
   }
 
-  const displayName =
-    me.firstName ?? (me.username ? `@${me.username}` : "Игрок");
+  const tgFallback =
+    me.firstName?.trim() ||
+    (me.username ? `@${me.username}` : null) ||
+    "Игрок";
+  const twitchPl = me.platforms.twitch;
+  const kickPl = me.platforms.kick;
+  const heroName =
+    activePlatform === "kick" && kickPl.status === "connected"
+      ? kickPl.displayName?.trim() || tgFallback
+      : activePlatform === "twitch" && twitchPl.status === "connected"
+        ? twitchPl.displayName?.trim() || tgFallback
+        : tgFallback;
+  const heroPhoto =
+    activePlatform === "kick" && kickPl.status === "connected" && kickPl.avatarUrl
+      ? kickPl.avatarUrl
+      : activePlatform === "twitch" &&
+          twitchPl.status === "connected" &&
+          twitchPl.avatarUrl
+        ? twitchPl.avatarUrl
+        : me.photoUrl;
+
   const streakForPlatform =
     activePlatform === "twitch" ? me.streakTwitch : me.streakKick;
   const streakPct = Math.min(100, (streakForPlatform / STREAK_TARGET) * 100);
@@ -145,10 +164,10 @@ export default function Home({
 
       <div className="home-hero">
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          {me.photoUrl ? (
+          {heroPhoto ? (
             <img
               className="avatar avatar-ring"
-              src={me.photoUrl}
+              src={heroPhoto}
               alt=""
             />
           ) : (
@@ -156,7 +175,7 @@ export default function Home({
           )}
           <div>
             <p className="home-hero__greet">Добро пожаловать,</p>
-            <p className="home-hero__name">{displayName}</p>
+            <p className="home-hero__name">{heroName}</p>
             <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
               Режим: {activePlatform === "twitch" ? "Twitch" : "Kick"} · уровень{" "}
               {me.level} · ×{me.rewardMultiplier.toFixed(2)}
@@ -165,32 +184,11 @@ export default function Home({
         </div>
       </div>
 
-      {pub && (
-        <div className="home-stats home-stats--public">
-          <div className="stat-tile">
-            <div className="stat-tile__label">
-              <Users size={16} strokeWidth={2} aria-hidden />
-              Пользователей
-            </div>
-            <div className="stat-tile__value" style={{ color: "var(--accent)" }}>
-              {pub.stats.usersCount.toLocaleString("ru-RU")}
-            </div>
-          </div>
-          <div className="stat-tile">
-            <div className="stat-tile__label">
-              <Coins size={16} strokeWidth={2} aria-hidden />
-              Монет заработано
-            </div>
-            <div className="stat-tile__value">
-              {pub.stats.coinsEarnedTotal.toLocaleString("ru-RU")}
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="streak-card">
         <div className="streak-card__head">
-          <Flame size={22} color="var(--accent)" aria-hidden />
+          <div className="streak-card__flame" aria-hidden>
+            <Flame size={24} color="var(--accent)" strokeWidth={2} />
+          </div>
           <div>
             <p className="streak-card__title">Начни свой стрик!</p>
             <p className="muted" style={{ margin: 0, fontSize: 13 }}>

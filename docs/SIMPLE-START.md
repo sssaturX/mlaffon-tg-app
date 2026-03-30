@@ -248,7 +248,19 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://admin.mlaffon.fun/
 
 ## 10. Обновление кода (веб + админка + API)
 
-После `git pull` пересоберите фронты и API из корня (в сборку входят `web` и `admin`):
+**Один скрипт на сервере** (те же пути, что и в гайде: `REPO=/opt/mlaffon/mlaffon-tg-app`):
+
+```bash
+cd $REPO
+chmod +x deploy/redeploy.sh
+./deploy/redeploy.sh
+```
+
+Опционально: `deploy/deploy.env` (скопируйте из `deploy/deploy.env.example`) — туда `export VITE_BOT_USERNAME=…` для сборки фронта.  
+Без правки БД: `DEPLOY_SKIP_DB=1 ./deploy/redeploy.sh`.  
+Обновить только Caddy из репозитория: `DEPLOY_CADDY=1 ./deploy/redeploy.sh`.
+
+Вручную то же самое:
 
 ```bash
 cd $REPO
