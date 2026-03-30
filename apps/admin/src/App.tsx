@@ -2,8 +2,17 @@ import { useCallback, useEffect, useState } from "react";
 
 const TOKEN_KEY = "mlaffon_admin_token";
 
-function apiOrigin(): string {
-  return (import.meta.env.VITE_API_ORIGIN ?? "").replace(/\/$/, "");
+/**
+ * База URL для запросов к API.
+ * На поддомене admin.* всегда используем тот же origin (`/api/...` → Caddy → 127.0.0.1:3001),
+ * даже если в билде случайно задан VITE_API_ORIGIN на другой хост — иначе логин ломается.
+ */
+function apiBase(): string {
+  const env = (import.meta.env.VITE_API_ORIGIN ?? "").trim().replace(/\/$/, "");
+  if (typeof window !== "undefined" && window.location.hostname.startsWith("admin.")) {
+    return "";
+  }
+  return env;
 }
 
 type GiveawayRow = {
@@ -64,7 +73,7 @@ export function App() {
   const loadGiveaways = useCallback(async () => {
     if (!token) return;
     setErr(null);
-    const r = await fetch(`${apiOrigin()}/api/admin/giveaways`, { headers: authHeaders() });
+    const r = await fetch(`${apiBase()}/api/admin/giveaways`, { headers: authHeaders() });
     const j = (await r.json()) as { giveaways?: GiveawayRow[]; error?: { message?: string } };
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
@@ -77,7 +86,7 @@ export function App() {
   const loadPromos = useCallback(async () => {
     if (!token) return;
     setErr(null);
-    const r = await fetch(`${apiOrigin()}/api/admin/promos`, { headers: authHeaders() });
+    const r = await fetch(`${apiBase()}/api/admin/promos`, { headers: authHeaders() });
     const j = (await r.json()) as { promos?: PromoRow[]; error?: { message?: string } };
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
@@ -99,7 +108,7 @@ export function App() {
     setLoading(true);
     setErr(null);
     try {
-      const r = await fetch(`${apiOrigin()}/api/admin/login`, {
+      const r = await fetch(`${apiBase()}/api/admin/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, passphrase }),
@@ -143,7 +152,7 @@ export function App() {
         active: true,
       };
       if (gwImage.trim()) body.imageUrl = gwImage.trim();
-      const r = await fetch(`${apiOrigin()}/api/admin/giveaways`, {
+      const r = await fetch(`${apiBase()}/api/admin/giveaways`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify(body),
@@ -169,7 +178,7 @@ export function App() {
     setLoading(true);
     setErr(null);
     try {
-      const r = await fetch(`${apiOrigin()}/api/admin/promos`, {
+      const r = await fetch(`${apiBase()}/api/admin/promos`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({

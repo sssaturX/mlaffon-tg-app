@@ -72,26 +72,11 @@ export default function Home({
     );
   }
 
-  const tgFallback =
+  /** В шапке главной всегда Telegram (имя и аватар из TG). Twitch/Kick — в профиле и стрике. */
+  const tgDisplayName =
     me.firstName?.trim() ||
     (me.username ? `@${me.username}` : null) ||
     "Игрок";
-  const twitchPl = me.platforms.twitch;
-  const kickPl = me.platforms.kick;
-  const heroName =
-    activePlatform === "kick" && kickPl.status === "connected"
-      ? kickPl.displayName?.trim() || tgFallback
-      : activePlatform === "twitch" && twitchPl.status === "connected"
-        ? twitchPl.displayName?.trim() || tgFallback
-        : tgFallback;
-  const heroPhoto =
-    activePlatform === "kick" && kickPl.status === "connected" && kickPl.avatarUrl
-      ? kickPl.avatarUrl
-      : activePlatform === "twitch" &&
-          twitchPl.status === "connected" &&
-          twitchPl.avatarUrl
-        ? twitchPl.avatarUrl
-        : me.photoUrl;
 
   const streakForPlatform =
     activePlatform === "twitch" ? me.streakTwitch : me.streakKick;
@@ -139,8 +124,30 @@ export default function Home({
 
   return (
     <div>
+      <div className="home-hero">
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          {me.photoUrl ? (
+            <img
+              className="avatar avatar-ring"
+              src={me.photoUrl}
+              alt=""
+            />
+          ) : (
+            <div className="avatar avatar-ring" />
+          )}
+          <div>
+            <p className="home-hero__greet">Добро пожаловать,</p>
+            <p className="home-hero__name">{tgDisplayName}</p>
+            <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
+              Режим: {activePlatform === "twitch" ? "Twitch" : "Kick"} · уровень{" "}
+              {me.level} · ×{me.rewardMultiplier.toFixed(2)}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {pub && (
-        <div className="home-stats home-stats--public">
+        <div className="home-stats home-stats--public" style={{ marginTop: 12 }}>
           <div className="stat-tile">
             <div className="stat-tile__label">
               <Users size={16} strokeWidth={2} aria-hidden />
@@ -161,28 +168,6 @@ export default function Home({
           </div>
         </div>
       )}
-
-      <div className="home-hero">
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          {heroPhoto ? (
-            <img
-              className="avatar avatar-ring"
-              src={heroPhoto}
-              alt=""
-            />
-          ) : (
-            <div className="avatar avatar-ring" />
-          )}
-          <div>
-            <p className="home-hero__greet">Добро пожаловать,</p>
-            <p className="home-hero__name">{heroName}</p>
-            <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
-              Режим: {activePlatform === "twitch" ? "Twitch" : "Kick"} · уровень{" "}
-              {me.level} · ×{me.rewardMultiplier.toFixed(2)}
-            </p>
-          </div>
-        </div>
-      </div>
 
       <div className="streak-card">
         <div className="streak-card__head">
