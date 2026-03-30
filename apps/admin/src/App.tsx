@@ -41,10 +41,27 @@ type PromoRow = {
   id: string;
   code: string;
   rewardCoins: number;
+  creditPlatform: string;
   maxUses: number;
   usesCount: number;
   active: boolean;
   createdAt: string;
+};
+
+type AdminUserRow = {
+  id: string;
+  telegramId: string;
+  username: string | null;
+  firstName: string | null;
+  createdAt: string;
+  coins: number;
+  twitchCoins: number;
+  kickCoins: number;
+  /** Суммарно за всё время (оба баланса). */
+  lifetimeEarned: number;
+  twitchLifetimeEarned: number;
+  kickLifetimeEarned: number;
+  referralCount: number;
 };
 
 type GiveawayParticipant = {
@@ -111,10 +128,22 @@ export function App() {
   const [promoCode, setPromoCode] = useState("");
   const [promoReward, setPromoReward] = useState(100);
   const [promoMaxUses, setPromoMaxUses] = useState(100);
+  const [promoCreditPlatform, setPromoCreditPlatform] = useState<"split" | "twitch" | "kick">("split");
 
-  const authHeaders = useCallback((): HeadersInit => {
-    const h: HeadersInit = { "Content-Type": "application/json" };
-    if (token) (h as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+  const [tab, setTab] = useState<"giveaways" | "promos" | "users">("giveaways");
+  const [adminUsers, setAdminUsers] = useState<AdminUserRow[] | null>(null);
+  const [usersTotal, setUsersTotal] = useState(0);
+  const [usersOffset, setUsersOffset] = useState(0);
+  const USERS_PAGE = 50;
+
+  /**
+   * Только с `includeJsonContentType: true` для запросов с JSON-телом.
+   * DELETE/POST без body + Content-Type: application/json даёт у Fastify FST_ERR_CTP_EMPTY_JSON_BODY.
+   */
+  const authHeaders = useCallback((includeJsonContentType = false): HeadersInit => {
+    const h: Record<string, string> = {};
+    if (token) h.Authorization = `Bearer ${token}`;
+    if (includeJsonContentType) h["Content-Type"] = "application/json";
     return h;
   }, [token]);
 
@@ -162,6 +191,30 @@ export function App() {
     setPromos(j.promos ?? []);
   }, [token, authHeaders]);
 
+  const loadAdminUsers = useCallback(
+    async (offset: number) => {
+      if (!token) return;
+      setErr(null);
+      const r = await fetch(
+        `${apiBase()}/api/admin/users?limit=${USERS_PAGE}&offset=${offset}`,
+        { headers: authHeaders() }
+      );
+      const j = (await r.json()) as {
+        users?: AdminUserRow[];
+        total?: number;
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setAdminUsers(j.users ?? []);
+      setUsersTotal(j.total ?? 0);
+    },
+    [token, authHeaders]
+  );
+
   const loadGiveawayDetail = useCallback(
     async (id: string) => {
       if (!token) return;
@@ -188,6 +241,10 @@ export function App() {
       void loadPromos();
     }
   }, [token, loadStats, loadGiveaways, loadPromos]);
+
+  useEffect(() => {
+    if (token && tab === "users") void loadAdminUsers(usersOffset);
+  }, [token, tab, usersOffset, loadAdminUsers]);
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
@@ -246,7 +303,7 @@ export function App() {
       if (gwDescription.trim()) body.description = gwDescription.trim();
       const r = await fetch(`${apiBase()}/api/admin/giveaways`, {
         method: "POST",
-        headers: authHeaders(),
+        headers: authHeaders(true),
         body: JSON.stringify(body),
       });
       const j = (await r.json()) as { id?: string; error?: { message?: string } };
@@ -336,12 +393,13 @@ export function App() {
     try {
       const r = await fetch(`${apiBase()}/api/admin/promos`, {
         method: "POST",
-        headers: authHeaders(),
+        headers: authHeaders(true),
         body: JSON.stringify({
           code: promoCode.trim(),
           rewardCoins: promoReward,
           maxUses: promoMaxUses,
           active: true,
+          creditPlatform: promoCreditPlatform,
         }),
       });
       const j = (await r.json()) as { id?: string; error?: { message?: string; code?: string } };
@@ -416,6 +474,33 @@ export function App() {
       </div>
       {err ? <p className="err">{err}</p> : null}
 
+      <nav className="admin-tabs" aria-label="Разделы">
+        <button
+          type="button"
+          className={tab === "giveaways" ? "admin-tab admin-tab--active" : "admin-tab"}
+          onClick={() => setTab("giveaways")}
+        >
+          Розыгрыши
+        </button>
+        <button
+          type="button"
+          className={tab === "promos" ? "admin-tab admin-tab--active" : "admin-tab"}
+          onClick={() => setTab("promos")}
+        >
+          Промокоды
+        </button>
+        <button
+          type="button"
+          className={tab === "users" ? "admin-tab admin-tab--active" : "admin-tab"}
+          onClick={() => {
+            setTab("users");
+            setUsersOffset(0);
+          }}
+        >
+          Пользователи
+        </button>
+      </nav>
+
       <h2>Статистика</h2>
       {stats === null ? (
         <p className="muted">Загрузка…</p>
@@ -440,6 +525,8 @@ export function App() {
         </div>
       )}
 
+      {tab === "giveaways" ? (
+        <>
       <h2>Розыгрыши</h2>
       <form className="card stack" onSubmit={createGiveaway}>
         <div>
@@ -597,13 +684,32 @@ export function App() {
           ))}
         </ul>
       )}
+        </>
+      ) : null}
 
-      <h2 style={{ marginTop: 32 }}>Промокоды</h2>
+      {tab === "promos" ? (
+        <>
+      <h2 style={{ marginTop: 0 }}>Промокоды</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        Код вводят на главной. Разные промокоды — разные суммы; макс. активаций{" "}
+        Код вводят на главной. Куда начислить монеты: <strong>50/50</strong> — как раньше;{" "}
+        <strong>Twitch</strong> / <strong>Kick</strong> — весь бонус на счёт платформы. Макс. активаций{" "}
         <strong>0</strong> = без лимита.
       </p>
       <form className="card stack" onSubmit={createPromo}>
+        <div>
+          <label htmlFor="pcredit">Куда начислить бонус</label>
+          <select
+            id="pcredit"
+            value={promoCreditPlatform}
+            onChange={(e) =>
+              setPromoCreditPlatform(e.target.value as "split" | "twitch" | "kick")
+            }
+          >
+            <option value="split">50/50 Twitch и Kick</option>
+            <option value="twitch">Только Twitch</option>
+            <option value="kick">Только Kick</option>
+          </select>
+        </div>
         <div>
           <label htmlFor="pcode">Код (латиница/цифры)</label>
           <input
@@ -652,13 +758,98 @@ export function App() {
         <ul className="list">
           {promos.map((p) => (
             <li key={p.id}>
-              <strong>{p.code}</strong> — {p.rewardCoins} мон. · активаций {p.usesCount}
+              <strong>{p.code}</strong> — {p.rewardCoins} мон. ·{" "}
+              {(p.creditPlatform ?? "split") === "twitch"
+                ? "Twitch"
+                : (p.creditPlatform ?? "split") === "kick"
+                  ? "Kick"
+                  : "50/50"}
+              {" · "}
+              активаций {p.usesCount}
               {p.maxUses > 0 ? ` / ${p.maxUses}` : " / ∞"} ·{" "}
               {p.active ? "активен" : "выкл"}
             </li>
           ))}
         </ul>
       )}
+        </>
+      ) : null}
+
+      {tab === "users" ? (
+        <>
+          <h2 style={{ marginTop: 0 }}>Пользователи</h2>
+          <p className="muted">Балансы и рефералы (по дате регистрации, новые сверху).</p>
+          {adminUsers === null ? (
+            <p className="muted">Загрузка…</p>
+          ) : (
+            <>
+              <div className="admin-users-wrap">
+                <table className="admin-users-table">
+                  <thead>
+                    <tr>
+                      <th>Пользователь</th>
+                      <th>TG ID</th>
+                      <th>Всего монет</th>
+                      <th>Twitch</th>
+                      <th>Kick</th>
+                      <th>Заработано всего</th>
+                      <th>Twitch всего</th>
+                      <th>Kick всего</th>
+                      <th>Рефералов</th>
+                      <th>Регистрация</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminUsers.map((u) => (
+                      <tr key={u.id}>
+                        <td>
+                          <strong>
+                            {u.username
+                              ? `@${u.username}`
+                              : u.firstName || `${u.id.slice(0, 8)}…`}
+                          </strong>
+                        </td>
+                        <td className="mono">{u.telegramId}</td>
+                        <td>{u.coins.toLocaleString("ru-RU")}</td>
+                        <td>{u.twitchCoins.toLocaleString("ru-RU")}</td>
+                        <td>{u.kickCoins.toLocaleString("ru-RU")}</td>
+                        <td>{u.lifetimeEarned.toLocaleString("ru-RU")}</td>
+                        <td>{u.twitchLifetimeEarned.toLocaleString("ru-RU")}</td>
+                        <td>{u.kickLifetimeEarned.toLocaleString("ru-RU")}</td>
+                        <td>{u.referralCount}</td>
+                        <td className="muted" style={{ whiteSpace: "nowrap" }}>
+                          {new Date(u.createdAt).toLocaleString("ru-RU")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="admin-users-pager">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={usersOffset <= 0}
+                  onClick={() => setUsersOffset(Math.max(0, usersOffset - USERS_PAGE))}
+                >
+                  Назад
+                </button>
+                <span className="muted">
+                  {usersOffset + 1}–{Math.min(usersOffset + adminUsers.length, usersTotal)} из{" "}
+                  {usersTotal}
+                </span>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={usersOffset + adminUsers.length >= usersTotal}
+                  onClick={() => setUsersOffset(usersOffset + USERS_PAGE)}
+                >
+                  Далее
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      ) : null}
     </>
   );
 }

@@ -44,7 +44,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   padding: 10px 12px;
   border-radius: 8px;
@@ -193,4 +194,78 @@ button:disabled {
 .giveaway-admin-detail {
   border-top: 1px solid #2d3139;
   padding-top: 8px;
+}
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 20px;
+}
+
+.admin-tab {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid #2d3139;
+  background: #14161c;
+  color: #e8eaed;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.admin-tab:hover {
+  background: #1a1d26;
+}
+
+.admin-tab--active {
+  border-color: #22c55e;
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.admin-users-wrap {
+  overflow-x: auto;
+  margin: 12px 0;
+  border-radius: 10px;
+  border: 1px solid #2d3139;
+}
+
+.admin-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-users-table th,
+.admin-users-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #2d3139;
+  white-space: nowrap;
+}
+
+.admin-users-table th {
+  background: #14161c;
+  color: #9aa0a6;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.admin-users-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.admin-users-table .mono {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.admin-users-pager {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
 }

@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { promoCodes, promoRedemptions } from "../db/schema.js";
-import { applyCreditSplit } from "./economy.js";
+import { applyCredit, applyCreditSplit } from "./economy.js";
 
 export async function applyPromoForUser(
   userId: string,
@@ -36,14 +36,28 @@ export async function applyPromoForUser(
   if (existing) return { ok: false, error: "already_used" };
 
   const idem = `promo:${userId}:${p.id}`;
-  const credit = await applyCreditSplit({
-    userId,
-    amount: p.rewardCoins,
-    idempotencyKey: idem,
-    kind: "promo_code",
-    referenceType: "promo",
-    referenceId: p.id,
-  });
+  const refId = String(p.id);
+  const platform = p.creditPlatform;
+
+  const credit =
+    platform === "twitch" || platform === "kick"
+      ? await applyCredit({
+          userId,
+          amount: p.rewardCoins,
+          idempotencyKey: idem,
+          kind: "promo_code",
+          platform,
+          referenceType: "promo",
+          referenceId: refId,
+        })
+      : await applyCreditSplit({
+          userId,
+          amount: p.rewardCoins,
+          idempotencyKey: idem,
+          kind: "promo_code",
+          referenceType: "promo",
+          referenceId: refId,
+        });
   if (!credit.ok) {
     return { ok: false, error: "duplicate" };
   }

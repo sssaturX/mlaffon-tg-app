@@ -243,6 +243,8 @@ export const promoCodes = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     code: text("code").notNull().unique(),
     rewardCoins: integer("reward_coins").notNull(),
+    /** split — 50/50 Twitch/Kick; twitch / kick — весь бонус на счёт платформы. */
+    creditPlatform: text("credit_platform").notNull().default("split"),
     maxUses: integer("max_uses").notNull().default(1),
     usesCount: integer("uses_count").notNull().default(0),
     active: boolean("active").notNull().default(true),

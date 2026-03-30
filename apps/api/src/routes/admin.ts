@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   giveaways,
@@ -91,6 +91,71 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       coinsEarnedTotal: coinsEarnedTotal ?? 0,
       activeGiveaways: activeGiveaways ?? 0,
       giveawayEntriesTotal: giveawayEntriesTotal ?? 0,
+    };
+  });
+
+  app.get("/api/admin/users", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const q = req.query as { limit?: string; offset?: string };
+    const limit = Math.min(200, Math.max(1, Number.parseInt(q.limit ?? "50", 10) || 50));
+    const offset = Math.max(0, Number.parseInt(q.offset ?? "0", 10) || 0);
+
+    const [{ total }] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(users);
+
+    const rows = await db
+      .select({
+        id: users.id,
+        telegramId: users.telegramId,
+        username: users.username,
+        firstName: users.firstName,
+        createdAt: users.createdAt,
+        coins: sql<number>`coalesce(${userBalances.coins}, 0)`,
+        twitchCoins: sql<number>`coalesce(${userBalances.twitchCoins}, 0)`,
+        kickCoins: sql<number>`coalesce(${userBalances.kickCoins}, 0)`,
+        lifetimeEarned: sql<number>`coalesce(${userBalances.lifetimeEarned}, 0)`,
+        twitchLifetimeEarned: sql<number>`coalesce(${userBalances.twitchLifetimeEarned}, 0)`,
+        kickLifetimeEarned: sql<number>`coalesce(${userBalances.kickLifetimeEarned}, 0)`,
+      })
+      .from(users)
+      .leftJoin(userBalances, eq(users.id, userBalances.userId))
+      .orderBy(desc(users.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const refRows = await db
+      .select({
+        referrerId: users.referredById,
+        c: sql<number>`count(*)::int`,
+      })
+      .from(users)
+      .where(isNotNull(users.referredById))
+      .groupBy(users.referredById);
+
+    const refMap = new Map<string, number>();
+    for (const r of refRows) {
+      if (r.referrerId) refMap.set(r.referrerId, r.c ?? 0);
+    }
+
+    return {
+      total: total ?? 0,
+      limit,
+      offset,
+      users: rows.map((u) => ({
+        id: u.id,
+        telegramId: String(u.telegramId),
+        username: u.username,
+        firstName: u.firstName,
+        createdAt: u.createdAt.toISOString(),
+        coins: u.coins,
+        twitchCoins: u.twitchCoins,
+        kickCoins: u.kickCoins,
+        lifetimeEarned: u.lifetimeEarned,
+        twitchLifetimeEarned: u.twitchLifetimeEarned,
+        kickLifetimeEarned: u.kickLifetimeEarned,
+        referralCount: refMap.get(u.id) ?? 0,
+      })),
     };
   });
 
@@ -262,6 +327,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         id: p.id,
         code: p.code,
         rewardCoins: p.rewardCoins,
+        creditPlatform: p.creditPlatform,
         maxUses: p.maxUses,
         usesCount: p.usesCount,
         active: p.active,
@@ -275,6 +341,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     rewardCoins: z.number().int().positive(),
     maxUses: z.number().int().min(0),
     active: z.boolean().optional(),
+    creditPlatform: z.enum(["split", "twitch", "kick"]).optional(),
   });
 
   app.post("/api/admin/promos", async (req, reply) => {
@@ -294,6 +361,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           rewardCoins: parsed.data.rewardCoins,
           maxUses: parsed.data.maxUses,
           active: parsed.data.active ?? true,
+          creditPlatform: parsed.data.creditPlatform ?? "split",
         })
         .returning({ id: promoCodes.id });
       return { id: ins!.id };
