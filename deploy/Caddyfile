@@ -1,0 +1,23 @@
+# Скопируйте на сервер, например: sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+# Перезагрузка: sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#
+# Статика — из собранного фронта (после npm run build в корне репозитория).
+# Пользователь caddy должен читать файлы. Если отдаёт 403 — выполните:
+#   sudo chmod o+x /root /root/opt /root/opt/mlaffon /root/opt/mlaffon/mlaffon-tg-app \
+#     /root/opt/mlaffon/mlaffon-tg-app/apps /root/opt/mlaffon/mlaffon-tg-app/apps/web
+#   sudo chmod -R o+rX /root/opt/mlaffon/mlaffon-tg-app/apps/web/dist
+# Либо копируйте dist в /var/www/mlaffon/web и замените root ниже на этот путь.
+
+mlaffon.fun {
+    root * /root/opt/mlaffon/mlaffon-tg-app/apps/web/dist
+    encode gzip
+
+    handle /api/* {
+        reverse_proxy 127.0.0.1:3001
+    }
+
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
+}

@@ -1,6 +1,8 @@
 # Деплой на VPS
 
-Основной вариант: код в **Git** (GitHub / GitLab и т.д.), на сервере **`git clone` / `git pull`**, сборка **`npm run build` прямо на VPS**, **Docker** только для **Postgres и Redis**, **Node** на хосте для API и воркера, **Nginx** — статика и прокси `/api`.
+Основной вариант: код в **Git**, на сервере **`git clone` / `git pull`**, сборка **`npm run build` на VPS**, **Docker** только для **Postgres и Redis** (один раз `docker compose up -d` — контейнеры крутятся в фоне, отдельный терминал не нужен), **Node** для API и воркера через **systemd** (тоже без ручных терминалов). Статику и HTTPS отдаёт **Nginx** или **[Caddy](caddy-mlaffon.md)** — прокси `/api` → `127.0.0.1:3001`.
+
+Локально в dev по-прежнему два процесса: `npm run dev` и `npm run worker -w api`. **На проде** вместо этого — **два systemd-юнита** (см. ниже), не несколько SSH-сессий.
 
 `apps/api/.env` в репозиторий **не коммитьте** — создайте на сервере вручную или один раз скопируйте через `scp`.
 
@@ -76,20 +78,24 @@ npx drizzle-kit push
 npm run db:seed
 ```
 
-### 6. Статика, systemd, Nginx
+### 6. Статика, systemd, веб-сервер (Nginx или Caddy)
 
 ```bash
 sudo cp -r /opt/mlaffon/apps/web/dist/* /var/www/mlaffon/web/
 sudo chown -R www-data:www-data /var/www/mlaffon/web
 ```
 
-Подключите юниты из раздела [Systemd](#systemd-api-и-воркер), конфиг [Nginx](#nginx-https--статика--api), выпустите сертификат **certbot**. В `apps/api/.env` задайте **`PORT=3001`**.
+Подключите юниты из раздела [Systemd](#systemd-api-и-воркер). В `apps/api/.env` задайте **`PORT=3001`**.
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now mlaffon-api mlaffon-worker
-sudo nginx -t && sudo systemctl reload nginx
 ```
+
+**Веб-сервер на выбор:**
+
+- **Nginx** + certbot — конфиг [ниже](#nginx-https--статика--api), затем `sudo nginx -t && sudo systemctl reload nginx`.
+- **Caddy** (HTTPS из коробки) — см. **[docs/caddy-mlaffon.md](caddy-mlaffon.md)**. Не поднимайте одновременно Nginx и Caddy на портах 80/443.
 
 ---
 

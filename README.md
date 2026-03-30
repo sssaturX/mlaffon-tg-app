@@ -26,8 +26,10 @@ npm install
 3. Скопируйте окружение для API:
 
 ```bash
-copy .env.example apps\api\.env
+cp .env.example apps/api/.env
 ```
+
+(На Windows в PowerShell: `copy .env.example apps\api\.env`.)
 
 Отредактируйте `apps/api/.env`: для локальной разработки без бота оставьте `ALLOW_DEV_AUTH=1` и любой `JWT_SECRET`. Задайте `TOKENS_ENCRYPTION_KEY` (например 64 hex-символа) и `REDIS_URL`. Для Twitch/Kick укажите OAuth-клиенты и **точно такие же** redirect URI в консолях разработчика, как в `.env`.
 
@@ -57,6 +59,8 @@ npm run dev
 
 В браузере без Telegram при `ALLOW_DEV_AUTH=1` фронт в dev-режиме вызовет `/api/v1/auth/dev` и создаст тестового пользователя.
 
+**На сервере** отдельные терминалы не обязательны: **Docker** (`docker compose up -d`) работает в фоне; API и воркер запускаются через **systemd** (два сервиса). См. [docs/vps-deploy.md](docs/vps-deploy.md).
+
 ### Задания с `validation_type: api`
 
 Начисление идёт **асинхронно**: `POST /tasks/:id/claim` отвечает **202** со статусом `pending`, воркер дергает Helix/Kick и при успехе начисляет монеты. Нужен запущенный `npm run worker -w api` и Redis.
@@ -67,7 +71,7 @@ npm run dev
 2. Задайте `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, сильный `JWT_SECRET`, отключите `ALLOW_DEV_AUTH`.
 3. Соберите фронт и отдайте статику через CDN или вместе с API.
 
-Деплой на VPS: **`git clone` / `git pull`** на сервере, сборка там же, Docker только для Postgres/Redis, Node + systemd + Nginx — [docs/vps-deploy.md](docs/vps-deploy.md).
+Деплой на VPS: **`git clone` / `git pull`**, сборка на сервере, Docker только для Postgres/Redis, Node + **systemd** + **Nginx** или **Caddy** — [docs/vps-deploy.md](docs/vps-deploy.md). Пример **Caddy** для домена (в т.ч. `mlaffon.fun`): [docs/caddy-mlaffon.md](docs/caddy-mlaffon.md).
 
 ## Структура
 
@@ -82,6 +86,7 @@ npm run dev
 | POST | `/api/v1/auth/telegram` |
 | POST | `/api/v1/auth/dev` (только `ALLOW_DEV_AUTH=1`) |
 | GET | `/api/v1/me` |
+| POST | `/api/v1/stream-streak/claim` |
 | GET | `/api/v1/tasks?platform=` |
 | POST | `/api/v1/tasks/:id/claim` |
 | GET | `/api/v1/leaderboard?sort=&platform=` |
