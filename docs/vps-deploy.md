@@ -1,6 +1,10 @@
 # Деплой на VPS
 
+Если нужен **один короткий чеклист без отвлечений**, начните с **[SIMPLE-START.md](SIMPLE-START.md)**.
+
 Основной вариант: код в **Git**, на сервере **`git clone` / `git pull`**, сборка **`npm run build` на VPS**, **Docker** только для **Postgres и Redis** (один раз `docker compose up -d` — контейнеры крутятся в фоне, отдельный терминал не нужен), **Node** для API и воркера через **systemd** (тоже без ручных терминалов). Статику и HTTPS отдаёт **Nginx** или **[Caddy](caddy-mlaffon.md)** — прокси `/api` → `127.0.0.1:3001`.
+
+**Статика фронта:** отдаётся **напрямую из `apps/web/dist`** внутри каталога репозитория (после `npm run build`). **Не копируем** `dist` в `/var/www` — в конфиге Caddy/Nginx указывается полный путь к `.../apps/web/dist`.
 
 Локально в dev по-прежнему два процесса: `npm run dev` и `npm run worker -w api`. **На проде** вместо этого — **два systemd-юнита** (см. ниже), не несколько SSH-сессий.
 
@@ -12,17 +16,18 @@
 
 ### 1. Репозиторий
 
-Залейте проект в удалённый репозиторий (лучше **приватный**). На сервере клонируйте, например в `/opt/mlaffon`:
+Залейте проект в удалённый репозиторий (лучше **приватный**). На сервере клонируйте так, чтобы корень репо был **`/opt/mlaffon/mlaffon-tg-app`** (все пути в гайде и в `deploy/*.service` рассчитаны на это):
 
 ```bash
-cd /opt
-sudo git clone https://github.com/ВАШ_АКК/mlaffon-tg-app.git mlaffon
-sudo chown -R $USER:$USER /opt/mlaffon
+sudo mkdir -p /opt/mlaffon
+sudo chown $USER:$USER /opt/mlaffon
 cd /opt/mlaffon
-# или SSH: git@github.com:ВАШ_АКК/mlaffon-tg-app.git
+git clone https://github.com/ВАШ_АКК/mlaffon-tg-app.git mlaffon-tg-app
+cd mlaffon-tg-app
+# SSH: git@github.com:ВАШ_АКК/mlaffon-tg-app.git
 ```
 
-### 2. Один раз: система, Docker, Node, UFW, каталог под статику
+### 2. Один раз: система, Docker, Node, UFW
 
 ```bash
 sudo apt update && sudo apt upgrade -y
@@ -39,22 +44,19 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 ```
 
-```bash
-sudo mkdir -p /var/www/mlaffon/web
-sudo chown -R www-data:www-data /var/www/mlaffon
-```
+Отдельный каталог под статику **не нужен** — используется `apps/web/dist` в репозитории. После первой сборки выдайте чтение для веб-сервера (Caddy / `www-data`), см. шаг 6.
 
 ### 3. `apps/api/.env` на сервере
 
 ```bash
-nano /opt/mlaffon/apps/api/.env
+nano /opt/mlaffon/mlaffon-tg-app/apps/api/.env
 ```
 
 Скопируйте структуру из корневого `.env.example`, задайте прод-значения (`DATABASE_URL`, `REDIS_URL`, Telegram, секреты, **`ALLOW_DEV_AUTH` не `1`**, `PUBLIC_WEB_URL=https://ваш-домен`, OAuth redirect **https**). Права:
 
 ```bash
-sudo chown root:www-data /opt/mlaffon/apps/api/.env
-sudo chmod 640 /opt/mlaffon/apps/api/.env
+sudo chown root:www-data /opt/mlaffon/mlaffon-tg-app/apps/api/.env
+sudo chmod 640 /opt/mlaffon/mlaffon-tg-app/apps/api/.env
 ```
 
 ### 4. Postgres и Redis (Docker)
@@ -62,14 +64,14 @@ sudo chmod 640 /opt/mlaffon/apps/api/.env
 В `docker-compose.yml` задайте пароль БД и порты **127.0.0.1** наружу не открывайте. `DATABASE_URL` в `.env` должен совпадать.
 
 ```bash
-cd /opt/mlaffon
+cd /opt/mlaffon/mlaffon-tg-app
 docker compose up -d
 ```
 
 ### 5. Сборка и база
 
 ```bash
-cd /opt/mlaffon
+cd /opt/mlaffon/mlaffon-tg-app
 npm ci
 export VITE_BOT_USERNAME=YourBotName
 npm run build
@@ -78,14 +80,27 @@ npx drizzle-kit push
 npm run db:seed
 ```
 
-### 6. Статика, systemd, веб-сервер (Nginx или Caddy)
+### 6. Права на `dist`, systemd, веб-сервер (Nginx или Caddy)
+
+Корень репозитория: **`/opt/mlaffon/mlaffon-tg-app`**.
+
+Чтобы **Caddy** / **Nginx** и пользователь **`www-data`** (systemd) могли читать файлы:
 
 ```bash
-sudo cp -r /opt/mlaffon/apps/web/dist/* /var/www/mlaffon/web/
-sudo chown -R www-data:www-data /var/www/mlaffon/web
+REPO=/opt/mlaffon/mlaffon-tg-app
+sudo chmod o+x $REPO $REPO/apps $REPO/apps/web $REPO/apps/api
+sudo chmod -R o+rX $REPO/apps/web/dist
+sudo chmod -R o+rX $REPO/apps/api/dist
 ```
 
-Подключите юниты из раздела [Systemd](#systemd-api-и-воркер). В `apps/api/.env` задайте **`PORT=3001`**.
+Установите systemd-юниты из репозитория (пути уже под `$REPO`):
+
+```bash
+sudo cp $REPO/deploy/mlaffon-api.service /etc/systemd/system/
+sudo cp $REPO/deploy/mlaffon-worker.service /etc/systemd/system/
+```
+
+Либо скопируйте блоки вручную из раздела [Systemd](#systemd-api-и-воркер). В `apps/api/.env` задайте **`PORT=3001`**. Убедитесь, что **`npm run build` уже выполнен** (есть каталоги `apps/api/dist` и `apps/web/dist`).
 
 ```bash
 sudo systemctl daemon-reload
@@ -95,7 +110,7 @@ sudo systemctl enable --now mlaffon-api mlaffon-worker
 **Веб-сервер на выбор:**
 
 - **Nginx** + certbot — конфиг [ниже](#nginx-https--статика--api), затем `sudo nginx -t && sudo systemctl reload nginx`.
-- **Caddy** (HTTPS из коробки) — см. **[docs/caddy-mlaffon.md](caddy-mlaffon.md)**. Не поднимайте одновременно Nginx и Caddy на портах 80/443.
+- **Caddy** (HTTPS из коробки) — **[deploy/Caddyfile](../deploy/Caddyfile)** с `root` на `.../apps/web/dist`. Подробности: **[docs/caddy-mlaffon.md](caddy-mlaffon.md)**. Не поднимайте одновременно Nginx и Caddy на портах 80/443.
 
 ---
 
@@ -104,15 +119,18 @@ sudo systemctl enable --now mlaffon-api mlaffon-worker
 На сервере:
 
 ```bash
-cd /opt/mlaffon
+cd /opt/mlaffon/mlaffon-tg-app
 git pull
 npm ci
 export VITE_BOT_USERNAME=YourBotName
 npm run build
 cd apps/api && npx drizzle-kit push
-cd /opt/mlaffon
-sudo cp -r apps/web/dist/* /var/www/mlaffon/web/
+cd /opt/mlaffon/mlaffon-tg-app
+REPO=/opt/mlaffon/mlaffon-tg-app
+sudo chmod -R o+rX $REPO/apps/web/dist $REPO/apps/api/dist
 sudo systemctl restart mlaffon-api mlaffon-worker
+sudo systemctl reload caddy
+# или: sudo systemctl reload nginx
 ```
 
 `db:seed` при обновлении обычно не нужен (только при первой установке или осознанно).
@@ -125,7 +143,7 @@ sudo systemctl restart mlaffon-api mlaffon-worker
 |-----|-----|
 | **Docker** | **Postgres** и **Redis** (`docker compose`). |
 | **Node на хосте** | Собранные `apps/api/dist` — API и воркер (**systemd**). |
-| **Nginx** | Статика из `apps/web/dist` и **прокси** `/api` → `127.0.0.1:3001`. |
+| **Nginx / Caddy** | Статика **напрямую** из `apps/web/dist` (путь в конфиге) и **прокси** `/api` → `127.0.0.1:3001`. |
 
 Отдельного Docker-образа приложения в репо нет — при желании позже можно добавить `Dockerfile` и заменить systemd.
 
@@ -133,13 +151,21 @@ sudo systemctl restart mlaffon-api mlaffon-worker
 
 ## Альтернатива: без Git, архивом с ПК
 
-Если не хотите клонировать на сервер: на ПК `npm ci`, `npm run build`, упакуйте проект в `tar`, перешлите `scp`, на сервере распакуйте в `/opt/mlaffon`, положите `.env`, дальше как выше (Docker, копирование `dist`, systemd, Nginx). См. также перенос схемы БД через SSH-туннель с ПК, если не гоняете `drizzle-kit` на сервере.
+Если не хотите клонировать на сервер: на ПК `npm ci`, `npm run build`, упакуйте проект в `tar`, перешлите `scp`, на сервере распакуйте, положите `.env`, дальше как выше (Docker, **права на `apps/web/dist`**, systemd, Nginx/Caddy). См. также перенос схемы БД через SSH-туннель с ПК, если не гоняете `drizzle-kit` на сервере.
 
 ---
 
 ## Systemd: API и воркер
 
-`which node` — подставьте в `ExecStart` (часто `/usr/bin/node`).
+Готовые файлы в репозитории: **[deploy/mlaffon-api.service](../deploy/mlaffon-api.service)**, **[deploy/mlaffon-worker.service](../deploy/mlaffon-worker.service)** (корень репо **`/opt/mlaffon/mlaffon-tg-app`**). Установка:
+
+```bash
+REPO=/opt/mlaffon/mlaffon-tg-app
+sudo cp $REPO/deploy/mlaffon-api.service /etc/systemd/system/
+sudo cp $REPO/deploy/mlaffon-worker.service /etc/systemd/system/
+```
+
+`which node` — при необходимости замените в `ExecStart` (часто `/usr/bin/node`).
 
 `/etc/systemd/system/mlaffon-api.service`:
 
@@ -152,8 +178,8 @@ After=network.target docker.service
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/opt/mlaffon/apps/api
-EnvironmentFile=/opt/mlaffon/apps/api/.env
+WorkingDirectory=/opt/mlaffon/mlaffon-tg-app/apps/api
+EnvironmentFile=/opt/mlaffon/mlaffon-tg-app/apps/api/.env
 ExecStart=/usr/bin/node dist/index.js
 Restart=on-failure
 RestartSec=5
@@ -173,8 +199,8 @@ After=network.target docker.service
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/opt/mlaffon/apps/api
-EnvironmentFile=/opt/mlaffon/apps/api/.env
+WorkingDirectory=/opt/mlaffon/mlaffon-tg-app/apps/api
+EnvironmentFile=/opt/mlaffon/mlaffon-tg-app/apps/api/.env
 ExecStart=/usr/bin/node dist/worker.js
 Restart=on-failure
 RestartSec=5
@@ -183,11 +209,12 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-Права:
+Права на каталоги и `dist` (см. шаг 6 выше):
 
 ```bash
-sudo chmod o+x /opt /opt/mlaffon /opt/mlaffon/apps /opt/mlaffon/apps/api
-sudo chmod -R o+rX /opt/mlaffon/apps/api/dist
+REPO=/opt/mlaffon/mlaffon-tg-app
+sudo chmod o+x /opt /opt/mlaffon $REPO $REPO/apps $REPO/apps/api $REPO/apps/web
+sudo chmod -R o+rX $REPO/apps/api/dist $REPO/apps/web/dist
 ```
 
 ---
@@ -211,7 +238,8 @@ server {
     ssl_certificate     /etc/letsencrypt/live/app.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/app.example.com/privkey.pem;
 
-    root /var/www/mlaffon/web;
+    # Корень репозитория на сервере — подставьте свой (пример: /opt/mlaffon/mlaffon-tg-app)
+    root /opt/mlaffon/mlaffon-tg-app/apps/web/dist;
     index index.html;
 
     location /api/ {

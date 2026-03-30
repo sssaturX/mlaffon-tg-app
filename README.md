@@ -69,9 +69,10 @@ npm run dev
 
 1. Создайте бота у [@BotFather](https://t.me/BotFather), включите Mini App, укажите URL фронта (HTTPS).
 2. Задайте `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, сильный `JWT_SECRET`, отключите `ALLOW_DEV_AUTH`.
-3. Соберите фронт и отдайте статику через CDN или вместе с API.
+3. Соберите фронт и отдайте статику (на проде **напрямую из `apps/web/dist`**, см. [docs/vps-deploy.md](docs/vps-deploy.md)) или через CDN.
 
-Деплой на VPS: **`git clone` / `git pull`**, сборка на сервере, Docker только для Postgres/Redis, Node + **systemd** + **Nginx** или **Caddy** — [docs/vps-deploy.md](docs/vps-deploy.md). Пример **Caddy** для домена (в т.ч. `mlaffon.fun`): [docs/caddy-mlaffon.md](docs/caddy-mlaffon.md).
+**Простой запуск на сервере (Caddy, systemd, один путь к репо):** [docs/SIMPLE-START.md](docs/SIMPLE-START.md).  
+Подробнее и альтернативы: [docs/vps-deploy.md](docs/vps-deploy.md), Caddy: [docs/caddy-mlaffon.md](docs/caddy-mlaffon.md). Файлы конфигов: [deploy/](deploy/).
 
 ## Структура
 

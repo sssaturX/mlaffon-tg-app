@@ -1,15 +1,17 @@
-# Скопируйте на сервер, например: sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
-# Перезагрузка: sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+# Статика: напрямую из apps/web/dist (без копирования в /var/www).
+# Скопируйте: sudo cp /opt/mlaffon/mlaffon-tg-app/deploy/Caddyfile /etc/caddy/Caddyfile
+# Формат: sudo caddy fmt --overwrite /etc/caddy/Caddyfile
 #
-# Статика — из собранного фронта (после npm run build в корне репозитория).
-# Пользователь caddy должен читать файлы. Если отдаёт 403 — выполните:
-#   sudo chmod o+x /root /root/opt /root/opt/mlaffon /root/opt/mlaffon/mlaffon-tg-app \
-#     /root/opt/mlaffon/mlaffon-tg-app/apps /root/opt/mlaffon/mlaffon-tg-app/apps/web
-#   sudo chmod -R o+rX /root/opt/mlaffon/mlaffon-tg-app/apps/web/dist
-# Либо копируйте dist в /var/www/mlaffon/web и замените root ниже на этот путь.
+# Ошибка: listen tcp :80: address already in use — порт 80 занят (часто Nginx):
+#   sudo ss -tlnp | grep ':80'
+#   sudo systemctl stop nginx && sudo systemctl disable nginx
+#   затем: sudo systemctl enable --now caddy
+#
+# Статика: apps/web/dist после npm run build. При 403 на файлы:
+#   sudo chmod -R o+rX /opt/mlaffon/mlaffon-tg-app/apps/web/dist
 
 mlaffon.fun {
-    root * /root/opt/mlaffon/mlaffon-tg-app/apps/web/dist
+    root * /opt/mlaffon/mlaffon-tg-app/apps/web/dist
     encode gzip
 
     handle /api/* {
