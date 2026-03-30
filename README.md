@@ -67,7 +67,7 @@ npm run dev
 2. Задайте `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, сильный `JWT_SECRET`, отключите `ALLOW_DEV_AUTH`.
 3. Соберите фронт и отдайте статику через CDN или вместе с API.
 
-Пошаговый деплой на VPS (Nginx, Docker для Postgres/Redis, systemd): [docs/vps-deploy.md](docs/vps-deploy.md).
+Деплой на VPS: **`git clone` / `git pull`** на сервере, сборка там же, Docker только для Postgres/Redis, Node + systemd + Nginx — [docs/vps-deploy.md](docs/vps-deploy.md).
 
 ## Структура
 
