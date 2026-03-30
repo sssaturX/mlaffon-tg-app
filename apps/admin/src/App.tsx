@@ -529,6 +529,13 @@ export function App() {
         </button>
         <button
           type="button"
+          className={tab === "drops" ? "admin-tab admin-tab--active" : "admin-tab"}
+          onClick={() => setTab("drops")}
+        >
+          Дропы
+        </button>
+        <button
+          type="button"
           className={tab === "users" ? "admin-tab admin-tab--active" : "admin-tab"}
           onClick={() => {
             setTab("users");
