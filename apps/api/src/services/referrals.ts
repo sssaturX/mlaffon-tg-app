@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { referrals, userBalances } from "../db/schema.js";
-import { applyCredit } from "./economy.js";
+import { applyCreditSplit } from "./economy.js";
 import { gameConfig } from "../config.js";
 
 export async function maybeQualifyReferral(refereeUserId: string): Promise<void> {
@@ -29,7 +29,7 @@ export async function maybeQualifyReferral(refereeUserId: string): Promise<void>
     .where(eq(referrals.id, ref.id));
 
   const idem = `referral_referrer_qualified:${ref.id}`;
-  await applyCredit({
+  await applyCreditSplit({
     userId: ref.referrerId,
     amount: referrerReward,
     idempotencyKey: idem,

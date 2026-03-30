@@ -29,10 +29,16 @@ export async function helixGetOwnUser(accessToken: string): Promise<{
   id: string;
   login: string;
   display_name: string;
+  profile_image_url?: string;
 } | null> {
   const r = await helix(accessToken, "/users");
   const j = (await r.json()) as {
-    data?: { id: string; login: string; display_name: string }[];
+    data?: {
+      id: string;
+      login: string;
+      display_name: string;
+      profile_image_url?: string;
+    }[];
   };
   if (!r.ok) return null;
   return j.data?.[0] ?? null;

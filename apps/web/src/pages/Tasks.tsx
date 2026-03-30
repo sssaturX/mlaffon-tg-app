@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Coins, Lightbulb } from "lucide-react";
 import type { Platform, TaskDto } from "shared";
 import { api, formatApiError } from "../api";
-
-const platforms = ["all", "global", "twitch", "kick"] as const;
+import { useActivePlatform } from "../context/PlatformContext";
 
 function platformPillClass(p: Platform): string {
   if (p === "twitch") return "pill pill--twitch";
@@ -17,18 +16,19 @@ function platformLabel(p: Platform): string {
 }
 
 export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
-  const [pf, setPf] = useState<(typeof platforms)[number]>("all");
+  const { activePlatform } = useActivePlatform();
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const q = pf === "all" ? "" : `?platform=${pf}`;
-    const r = await api<{ tasks: TaskDto[] }>(`/api/v1/tasks${q}`);
+    const r = await api<{ tasks: TaskDto[] }>(
+      `/api/v1/tasks?platform=${activePlatform}`
+    );
     if (r.ok) {
       setTasks(r.data.tasks);
       setMsg(null);
     } else setMsg(formatApiError(r));
-  }, [pf]);
+  }, [activePlatform]);
 
   useEffect(() => {
     void load();
@@ -68,26 +68,10 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
           aria-hidden
         />
         <span>
-          Дополнительные задания могут появляться во время стрима. Подключите
-          Twitch или Kick в профиле для проверок через API.
+          Список заданий для платформы выбранной в шапке ({" "}
+          {activePlatform === "twitch" ? "Twitch" : "Kick"} + общие). Подключите
+          OAuth в профиле для проверок через API.
         </span>
-      </div>
-
-      <div className="filters">
-        {platforms.map((p) => (
-          <button
-            key={p}
-            type="button"
-            className={pf === p ? "on" : ""}
-            onClick={() => setPf(p)}
-          >
-            {p === "all"
-              ? "Все"
-              : p === "global"
-                ? "Global"
-                : p[0]!.toUpperCase() + p.slice(1)}
-          </button>
-        ))}
       </div>
 
       {msg && <p className="muted">{msg}</p>}

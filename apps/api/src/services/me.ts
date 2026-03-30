@@ -16,7 +16,11 @@ export async function buildMeResponse(userId: string): Promise<{
   firstName: string | null;
   photoUrl: string | null;
   coins: number;
+  coinsTwitch: number;
+  coinsKick: number;
   lifetimeEarned: number;
+  lifetimeTwitch: number;
+  lifetimeKick: number;
   level: number;
   rewardMultiplier: number;
   /** Макс. из двух платформенных стриков (для совместимости и топа). */
@@ -27,8 +31,20 @@ export async function buildMeResponse(userId: string): Promise<{
   referralLink: string;
   referralCount: number;
   platforms: {
-    twitch: "connected" | "not_connected";
-    kick: "connected" | "not_connected";
+    twitch:
+      | { status: "not_connected" }
+      | {
+          status: "connected";
+          displayName: string | null;
+          avatarUrl: string | null;
+        };
+    kick:
+      | { status: "not_connected" }
+      | {
+          status: "connected";
+          displayName: string | null;
+          avatarUrl: string | null;
+        };
   };
 }> {
   const streamStreak = await ensureStreamStreakRow(userId);
@@ -52,13 +68,34 @@ export async function buildMeResponse(userId: string): Promise<{
     .from(platformAccounts)
     .where(eq(platformAccounts.userId, userId));
 
-  const has = (p: string) =>
-    pRows.some((r) => r.platform === p) ? "connected" : "not_connected";
+  const row = (p: string) => pRows.find((r) => r.platform === p);
+  const platformDto = (
+    p: string
+  ):
+    | { status: "not_connected" }
+    | {
+        status: "connected";
+        displayName: string | null;
+        avatarUrl: string | null;
+      } => {
+    const r = row(p);
+    if (!r) return { status: "not_connected" };
+    return {
+      status: "connected",
+      displayName: r.displayName ?? null,
+      avatarUrl: r.avatarUrl ?? null,
+    };
+  };
 
   const bot = process.env.TELEGRAM_BOT_USERNAME ?? "YOUR_BOT";
   const referralLink = `https://t.me/${bot}?start=ref_${u.referralCode}`;
 
-  const lifetimeEarned = b?.lifetimeEarned ?? 0;
+  const coinsTwitch = b?.twitchCoins ?? 0;
+  const coinsKick = b?.kickCoins ?? 0;
+  const lifetimeTwitch = b?.twitchLifetimeEarned ?? 0;
+  const lifetimeKick = b?.kickLifetimeEarned ?? 0;
+  const lifetimeEarned = lifetimeTwitch + lifetimeKick;
+  const coins = coinsTwitch + coinsKick;
   const level = computeLevel(lifetimeEarned);
 
   const streakTwitch = streamStreak.twitch;
@@ -71,8 +108,12 @@ export async function buildMeResponse(userId: string): Promise<{
     username: u.username,
     firstName: u.firstName,
     photoUrl: u.photoUrl,
-    coins: b?.coins ?? 0,
+    coins,
+    coinsTwitch,
+    coinsKick,
     lifetimeEarned,
+    lifetimeTwitch,
+    lifetimeKick,
     level,
     rewardMultiplier: computeRewardMultiplier(level),
     streak,
@@ -82,8 +123,8 @@ export async function buildMeResponse(userId: string): Promise<{
     referralLink,
     referralCount: Number(c),
     platforms: {
-      twitch: has("twitch"),
-      kick: has("kick"),
+      twitch: platformDto("twitch"),
+      kick: platformDto("kick"),
     },
   };
 }

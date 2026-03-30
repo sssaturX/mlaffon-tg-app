@@ -184,6 +184,7 @@ async function maybeStreamStreakBonus(
     amount: bonusCoins,
     idempotencyKey: idem,
     kind: "streak_bonus",
+    platform,
     referenceType: "stream_streak",
     referenceId: `${platform}:${newStreak}`,
   });

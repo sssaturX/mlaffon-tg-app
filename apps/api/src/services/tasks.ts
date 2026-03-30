@@ -5,7 +5,7 @@ import { utcDateString } from "./streak.js";
 import { canCompletePlatformTask } from "../platforms/registry.js";
 import { computeLevel, computeRewardMultiplier } from "../config.js";
 import { maybeQualifyReferral } from "./referrals.js";
-import { applyCredit } from "./economy.js";
+import { applyCredit, applyCreditSplit } from "./economy.js";
 import { getTaskVerifyQueue } from "../queue/bullmq.js";
 import type { TaskDto, UserTaskStatus } from "shared";
 
@@ -201,15 +201,38 @@ export async function claimTask(
   const reward = Math.floor(t.reward * mult);
 
   const idem = `task:${userId}:${taskId}:${pk}`;
-  const credit = await applyCredit({
-    userId,
-    amount: reward,
-    idempotencyKey: idem,
-    kind: "task_reward",
-    referenceType: "task",
-    referenceId: taskId,
-    meta: { baseReward: t.reward, level, mult },
-  });
+  const credit =
+    t.platform === "twitch"
+      ? await applyCredit({
+          userId,
+          amount: reward,
+          idempotencyKey: idem,
+          kind: "task_reward",
+          platform: "twitch",
+          referenceType: "task",
+          referenceId: taskId,
+          meta: { baseReward: t.reward, level, mult },
+        })
+      : t.platform === "kick"
+        ? await applyCredit({
+            userId,
+            amount: reward,
+            idempotencyKey: idem,
+            kind: "task_reward",
+            platform: "kick",
+            referenceType: "task",
+            referenceId: taskId,
+            meta: { baseReward: t.reward, level, mult },
+          })
+        : await applyCreditSplit({
+            userId,
+            amount: reward,
+            idempotencyKey: idem,
+            kind: "task_reward",
+            referenceType: "task",
+            referenceId: taskId,
+            meta: { baseReward: t.reward, level, mult },
+          });
 
   if (!credit.ok) return { ok: false, error: "already_completed" };
 

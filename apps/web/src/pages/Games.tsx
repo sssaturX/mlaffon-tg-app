@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, formatApiError } from "../api";
+import { useActivePlatform } from "../context/PlatformContext";
 
 export default function Games({ onRefresh }: { onRefresh: () => void }) {
+  const { activePlatform } = useActivePlatform();
   const [status, setStatus] = useState<{
     utcDate: string;
     freeAvailable: boolean;
@@ -59,9 +61,10 @@ export default function Games({ onRefresh }: { onRefresh: () => void }) {
         {loadErr && <p className="err">{loadErr}</p>}
         {status && (
           <p className="muted">
-            День (UTC): {status.utcDate}. Бесплатный спин:{" "}
+            Платформа: {activePlatform === "twitch" ? "Twitch" : "Kick"}. День
+            (UTC): {status.utcDate}. Бесплатный спин:{" "}
             {status.freeAvailable ? "доступен" : "уже использован"}. Платный:{" "}
-            {status.paidSpinCost} монет.
+            {status.paidSpinCost} монет с баланса этой платформы.
           </p>
         )}
         <div className="row" style={{ flexWrap: "wrap" }}>

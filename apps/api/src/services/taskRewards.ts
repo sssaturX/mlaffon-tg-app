@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { tasks, userBalances, userTasks } from "../db/schema.js";
-import { applyCredit } from "./economy.js";
+import { applyCredit, applyCreditSplit } from "./economy.js";
 import { computeLevel, computeRewardMultiplier } from "../config.js";
 import { maybeQualifyReferral } from "./referrals.js";
 import type { TaskRow } from "./taskVerifyLogic.js";
@@ -24,15 +24,38 @@ export async function grantTaskReward(params: {
   const reward = Math.floor(task.reward * mult);
 
   const idem = `task:${userId}:${task.id}:${periodKey}`;
-  const credit = await applyCredit({
-    userId,
-    amount: reward,
-    idempotencyKey: idem,
-    kind: "task_reward",
-    referenceType: "task",
-    referenceId: task.id,
-    meta: { baseReward: task.reward, level, mult },
-  });
+  const credit =
+    task.platform === "twitch"
+      ? await applyCredit({
+          userId,
+          amount: reward,
+          idempotencyKey: idem,
+          kind: "task_reward",
+          platform: "twitch",
+          referenceType: "task",
+          referenceId: task.id,
+          meta: { baseReward: task.reward, level, mult },
+        })
+      : task.platform === "kick"
+        ? await applyCredit({
+            userId,
+            amount: reward,
+            idempotencyKey: idem,
+            kind: "task_reward",
+            platform: "kick",
+            referenceType: "task",
+            referenceId: task.id,
+            meta: { baseReward: task.reward, level, mult },
+          })
+        : await applyCreditSplit({
+            userId,
+            amount: reward,
+            idempotencyKey: idem,
+            kind: "task_reward",
+            referenceType: "task",
+            referenceId: task.id,
+            meta: { baseReward: task.reward, level, mult },
+          });
 
   if (!credit.ok) {
     if (credit.reason === "duplicate") {

@@ -42,6 +42,14 @@ npm run db:seed
 cd ../..
 ```
 
+Если база уже была с одним полем `coins`, после появления раздельных `twitch_coins` / `kick_coins` один раз перенесите старый баланс (например в Twitch):
+
+```sql
+UPDATE user_balances
+SET twitch_coins = coins, twitch_lifetime_earned = lifetime_earned
+WHERE twitch_coins = 0 AND coins > 0;
+```
+
 5. Запуск **воркера** очереди (отдельный терминал):
 
 ```bash

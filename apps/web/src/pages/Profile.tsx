@@ -171,16 +171,32 @@ export default function Profile({
             <div className="profile-row__icon">
               <Tv size={20} strokeWidth={2} aria-hidden />
             </div>
-            <div>
-              <div style={{ fontWeight: 600 }}>Twitch</div>
-              <div className="muted" style={{ fontSize: 12 }}>
-                {me.platforms.twitch === "connected"
-                  ? "Подключено"
-                  : "Не подключено"}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {me.platforms.twitch.status === "connected" &&
+                me.platforms.twitch.avatarUrl && (
+                  <img
+                    src={me.platforms.twitch.avatarUrl}
+                    alt=""
+                    width={36}
+                    height={36}
+                    style={{
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+              <div>
+                <div style={{ fontWeight: 600 }}>Twitch</div>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {me.platforms.twitch.status === "connected"
+                    ? me.platforms.twitch.displayName ?? "Подключено"
+                    : "Не подключено"}
+                </div>
               </div>
             </div>
           </div>
-          {me.platforms.twitch === "not_connected" ? (
+          {me.platforms.twitch.status === "not_connected" ? (
             <button
               type="button"
               className="primary"
@@ -200,16 +216,32 @@ export default function Profile({
             <div className="profile-row__icon">
               <Radio size={20} strokeWidth={2} aria-hidden />
             </div>
-            <div>
-              <div style={{ fontWeight: 600 }}>Kick</div>
-              <div className="muted" style={{ fontSize: 12 }}>
-                {me.platforms.kick === "connected"
-                  ? "Подключено"
-                  : "Не подключено"}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {me.platforms.kick.status === "connected" &&
+                me.platforms.kick.avatarUrl && (
+                  <img
+                    src={me.platforms.kick.avatarUrl}
+                    alt=""
+                    width={36}
+                    height={36}
+                    style={{
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+              <div>
+                <div style={{ fontWeight: 600 }}>Kick</div>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {me.platforms.kick.status === "connected"
+                    ? me.platforms.kick.displayName ?? "Подключено"
+                    : "Не подключено"}
+                </div>
               </div>
             </div>
           </div>
-          {me.platforms.kick === "not_connected" ? (
+          {me.platforms.kick.status === "not_connected" ? (
             <button
               type="button"
               className="primary"
@@ -230,9 +262,11 @@ export default function Profile({
               <Coins size={20} strokeWidth={2} aria-hidden />
             </div>
             <div>
-              <div style={{ fontWeight: 600 }}>Баланс</div>
+              <div style={{ fontWeight: 600 }}>Балансы</div>
               <div className="muted" style={{ fontSize: 12 }}>
-                {me.coins.toLocaleString("ru-RU")} монет
+                Twitch: {me.coinsTwitch.toLocaleString("ru-RU")} · Kick:{" "}
+                {me.coinsKick.toLocaleString("ru-RU")} · всего{" "}
+                {me.coins.toLocaleString("ru-RU")}
               </div>
             </div>
           </div>
@@ -280,8 +314,10 @@ export default function Profile({
           </p>
         )}
         <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-          Redirect URI в Twitch/Kick и <code>PUBLIC_WEB_URL</code> на API должны
-          совпадать.
+          В консоли Twitch/Kick укажите Redirect URI на ваш домен, например{" "}
+          <code>https://ваш-домен/api/v1/oauth/twitch/callback</code> и
+          аналогично для Kick. <code>PUBLIC_WEB_URL</code> на API — URL фронта
+          (редирект после OAuth на <code>/oauth/…</code>).
         </p>
       </div>
 

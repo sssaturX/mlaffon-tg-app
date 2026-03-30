@@ -23,12 +23,13 @@ function webBase(): string {
   return process.env.PUBLIC_WEB_URL ?? "http://localhost:5173";
 }
 
-function redirectSuccess(platform: string): string {
-  return `${webBase()}/profile?oauth_ok=${platform}`;
+/** Редирект на наш домен: страница `/oauth/:platform` (не только query у /profile). */
+function redirectSuccess(platform: "twitch" | "kick"): string {
+  return `${webBase()}/oauth/${platform}?connected=1`;
 }
 
-function redirectError(msg: string): string {
-  return `${webBase()}/profile?oauth_err=${encodeURIComponent(msg)}`;
+function redirectError(platform: "twitch" | "kick", msg: string): string {
+  return `${webBase()}/oauth/${platform}?error=${encodeURIComponent(msg)}`;
 }
 
 export async function registerOAuthRoutes(app: FastifyInstance) {
@@ -52,7 +53,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
 
   app.get("/api/v1/oauth/twitch/callback", async (req, reply) => {
     if (!(await assertOAuthCallbackRate(req.ip))) {
-      return reply.redirect(redirectError("rate_limited"));
+      return reply.redirect(redirectError("twitch", "rate_limited"));
     }
     const q = req.query as {
       code?: string;
@@ -62,29 +63,32 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
     };
     if (q.error) {
       return reply.redirect(
-        redirectError(q.error_description ?? q.error ?? "oauth_denied")
+        redirectError(
+          "twitch",
+          q.error_description ?? q.error ?? "oauth_denied"
+        )
       );
     }
     if (!q.code || !q.state) {
-      return reply.redirect(redirectError("missing_code"));
+      return reply.redirect(redirectError("twitch", "missing_code"));
     }
 
     const userId = await getRedis().get(`oauth:tw:${q.state}`);
     await getRedis().del(`oauth:tw:${q.state}`);
     if (!userId) {
-      return reply.redirect(redirectError("bad_state"));
+      return reply.redirect(redirectError("twitch", "bad_state"));
     }
 
     const redirectUri = process.env.TWITCH_REDIRECT_URI;
     if (!redirectUri) {
-      return reply.redirect(redirectError("server"));
+      return reply.redirect(redirectError("twitch", "server"));
     }
 
     try {
       const tokens = await exchangeTwitchCode(q.code, redirectUri);
       const me = await helixGetOwnUser(tokens.access_token);
       if (!me) {
-        return reply.redirect(redirectError("helix_user"));
+        return reply.redirect(redirectError("twitch", "helix_user"));
       }
 
       const accessEnc = encryptSecret(tokens.access_token);
@@ -92,6 +96,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
         ? encryptSecret(tokens.refresh_token)
         : null;
       const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
+      const avatarUrl = me.profile_image_url ?? null;
 
       await db
         .insert(platformAccounts)
@@ -100,6 +105,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
           platform: "twitch",
           externalUserId: me.id,
           displayName: me.display_name,
+          avatarUrl,
           accessTokenEnc: accessEnc,
           refreshTokenEnc: refreshEnc,
           scopes: tokens.scope,
@@ -110,6 +116,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
           set: {
             externalUserId: me.id,
             displayName: me.display_name,
+            avatarUrl,
             accessTokenEnc: accessEnc,
             refreshTokenEnc: refreshEnc,
             scopes: tokens.scope,
@@ -121,7 +128,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
       return reply.redirect(redirectSuccess("twitch"));
     } catch (e) {
       app.log.error(e);
-      return reply.redirect(redirectError("token_exchange"));
+      return reply.redirect(redirectError("twitch", "token_exchange"));
     }
   });
 
@@ -155,31 +162,31 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
 
   app.get("/api/v1/oauth/kick/callback", async (req, reply) => {
     if (!(await assertOAuthCallbackRate(req.ip))) {
-      return reply.redirect(redirectError("rate_limited"));
+      return reply.redirect(redirectError("kick", "rate_limited"));
     }
     const q = req.query as { code?: string; state?: string; error?: string };
     if (q.error) {
-      return reply.redirect(redirectError(q.error));
+      return reply.redirect(redirectError("kick", q.error));
     }
     if (!q.code || !q.state) {
-      return reply.redirect(redirectError("missing_code"));
+      return reply.redirect(redirectError("kick", "missing_code"));
     }
 
     const raw = await getRedis().get(`oauth:kick:${q.state}`);
     await getRedis().del(`oauth:kick:${q.state}`);
     if (!raw) {
-      return reply.redirect(redirectError("bad_state"));
+      return reply.redirect(redirectError("kick", "bad_state"));
     }
     let parsed: { userId: string; codeVerifier: string };
     try {
       parsed = JSON.parse(raw) as { userId: string; codeVerifier: string };
     } catch {
-      return reply.redirect(redirectError("bad_state"));
+      return reply.redirect(redirectError("kick", "bad_state"));
     }
 
     const redirectUri = process.env.KICK_REDIRECT_URI;
     if (!redirectUri) {
-      return reply.redirect(redirectError("server"));
+      return reply.redirect(redirectError("kick", "server"));
     }
 
     try {
@@ -190,13 +197,23 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
       );
       const me =
         (await kickValidateToken(tokens.access_token)) ??
-        ({ id: "unknown", username: "kick" } as const);
+        ({
+          id: "unknown",
+          username: "kick",
+          avatarUrl: null as string | null,
+        } as {
+          id: string;
+          username?: string;
+          avatarUrl?: string | null;
+        });
 
       const accessEnc = encryptSecret(tokens.access_token);
       const refreshEnc = tokens.refresh_token
         ? encryptSecret(tokens.refresh_token)
         : null;
       const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
+      const displayName = me.username ?? "Kick";
+      const avatarUrl = me.avatarUrl ?? null;
 
       await db
         .insert(platformAccounts)
@@ -204,7 +221,8 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
           userId: parsed.userId,
           platform: "kick",
           externalUserId: me.id,
-          displayName: me.username ?? "Kick",
+          displayName,
+          avatarUrl,
           accessTokenEnc: accessEnc,
           refreshTokenEnc: refreshEnc,
           scopes: tokens.scope,
@@ -214,7 +232,8 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
           target: [platformAccounts.userId, platformAccounts.platform],
           set: {
             externalUserId: me.id,
-            displayName: me.username ?? "Kick",
+            displayName,
+            avatarUrl,
             accessTokenEnc: accessEnc,
             refreshTokenEnc: refreshEnc,
             scopes: tokens.scope,
@@ -226,7 +245,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
       return reply.redirect(redirectSuccess("kick"));
     } catch (e) {
       app.log.error(e);
-      return reply.redirect(redirectError("token_exchange"));
+      return reply.redirect(redirectError("kick", "token_exchange"));
     }
   });
 }

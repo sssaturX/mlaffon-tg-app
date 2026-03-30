@@ -10,7 +10,7 @@ import {
 } from "../db/schema.js";
 import { referralCode as genReferralCode } from "../lib/nanoid.js";
 import type { TelegramUserPayload } from "../lib/telegram.js";
-import { applyCredit } from "./economy.js";
+import { applyCreditSplit } from "./economy.js";
 import { gameConfig } from "../config.js";
 
 export async function findByReferralCode(code: string) {
@@ -86,7 +86,7 @@ export async function ensureUserFromTelegram(
       refereeId: userId,
     });
     const idem = `referral_referee_join:${userId}`;
-    await applyCredit({
+    await applyCreditSplit({
       userId,
       amount: gameConfig.referral.refereeBonus,
       idempotencyKey: idem,
@@ -97,6 +97,60 @@ export async function ensureUserFromTelegram(
   }
 
   return { userId, created: true };
+}
+
+/**
+ * Привязка реферера по `start_param` для уже существующего пользователя
+ * (первый заход был без ref, позже открыли ссылку с ref_*).
+ * `start_param` доверяем только из проверенного initData на `/auth/telegram`.
+ */
+export async function applyReferralFromStartParam(
+  userId: string,
+  telegramId: bigint,
+  startParam: string | null
+): Promise<void> {
+  if (!startParam?.startsWith("ref_")) return;
+  const code = startParam.slice(4);
+  if (!code) return;
+
+  const refUser = await findByReferralCode(code);
+  if (!refUser || refUser.telegramId === telegramId || refUser.id === userId) {
+    return;
+  }
+
+  const [u] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!u || u.referredById) return;
+
+  const [existingRef] = await db
+    .select({ id: referrals.id })
+    .from(referrals)
+    .where(eq(referrals.refereeId, userId))
+    .limit(1);
+  if (existingRef) return;
+
+  await db
+    .update(users)
+    .set({ referredById: refUser.id, updatedAt: sql`now()` })
+    .where(eq(users.id, userId));
+
+  await db.insert(referrals).values({
+    referrerId: refUser.id,
+    refereeId: userId,
+  });
+
+  const idem = `referral_referee_join:${userId}`;
+  await applyCreditSplit({
+    userId,
+    amount: gameConfig.referral.refereeBonus,
+    idempotencyKey: idem,
+    kind: "referral_referee",
+    referenceType: "referrer",
+    referenceId: refUser.id,
+  });
 }
 
 export async function deleteUserAccount(userId: string) {

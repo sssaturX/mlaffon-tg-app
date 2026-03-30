@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { userStreaks } from "../db/schema.js";
 import { gameConfig } from "../config.js";
-import { applyCredit } from "./economy.js";
+import { applyCreditSplit } from "./economy.js";
 
 export function utcDateString(d = new Date()): string {
   return d.toISOString().slice(0, 10);
@@ -63,7 +63,7 @@ export async function touchActivityAndStreak(userId: string): Promise<{
   const { bonusEveryDays, bonusCoins } = gameConfig.streak;
   if (bonusEveryDays > 0 && newStreak > 0 && newStreak % bonusEveryDays === 0) {
     const idem = `streak_bonus:${userId}:${newStreak}`;
-    await applyCredit({
+    await applyCreditSplit({
       userId,
       amount: bonusCoins,
       idempotencyKey: idem,

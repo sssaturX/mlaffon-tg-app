@@ -30,8 +30,13 @@ export interface MeResponse {
   username: string | null;
   firstName: string | null;
   photoUrl: string | null;
+  /** Сумма Twitch + Kick (всего). */
   coins: number;
+  coinsTwitch: number;
+  coinsKick: number;
   lifetimeEarned: number;
+  lifetimeTwitch: number;
+  lifetimeKick: number;
   level: number;
   rewardMultiplier: number;
   /** Максимум из streakTwitch и streakKick (топ по стрику). */
@@ -44,8 +49,20 @@ export interface MeResponse {
   referralLink: string;
   referralCount: number;
   platforms: {
-    twitch: "connected" | "not_connected";
-    kick: "connected" | "not_connected";
+    twitch:
+      | { status: "not_connected" }
+      | {
+          status: "connected";
+          displayName: string | null;
+          avatarUrl: string | null;
+        };
+    kick:
+      | { status: "not_connected" }
+      | {
+          status: "connected";
+          displayName: string | null;
+          avatarUrl: string | null;
+        };
   };
 }
 

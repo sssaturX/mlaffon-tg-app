@@ -4,6 +4,7 @@
 export async function kickValidateToken(accessToken: string): Promise<{
   id: string;
   username?: string;
+  avatarUrl?: string;
 } | null> {
   const base = process.env.KICK_API_BASE ?? "https://api.kick.com";
   const paths = ["/public/v1/users/me", "/v1/users/me"];
@@ -19,15 +20,25 @@ export async function kickValidateToken(accessToken: string): Promise<{
         user_id?: string | number;
         username?: string;
         slug?: string;
-        data?: { id?: string; username?: string };
+        profile_picture?: string;
+        profile_picture_url?: string;
+        avatar?: string;
+        data?: { id?: string; username?: string; profile_picture?: string };
       };
       const id = String(
         j.id ?? j.user_id ?? j.data?.id ?? ""
       );
       if (id) {
+        const avatarUrl =
+          j.profile_picture ??
+          j.profile_picture_url ??
+          j.avatar ??
+          j.data?.profile_picture ??
+          undefined;
         return {
           id,
           username: j.username ?? j.slug ?? j.data?.username,
+          avatarUrl,
         };
       }
     } catch {

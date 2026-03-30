@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Coins } from "lucide-react";
 import { api, formatApiError } from "../api";
+import { useActivePlatform } from "../context/PlatformContext";
 
 type Item = {
   id: string;
@@ -19,6 +20,7 @@ function shopEmoji(title: string, kind: string): string {
 }
 
 export default function Shop({ onRefresh }: { onRefresh: () => void }) {
+  const { activePlatform } = useActivePlatform();
   const [items, setItems] = useState<Item[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [tab, setTab] = useState<"shop" | "cases">("shop");
@@ -52,7 +54,7 @@ export default function Shop({ onRefresh }: { onRefresh: () => void }) {
     setMsg(null);
     const r = await api<{ coins: number }>("/api/v1/shop/purchase", {
       method: "POST",
-      body: JSON.stringify({ itemId: id }),
+      body: JSON.stringify({ itemId: id, platform: activePlatform }),
     });
     if (r.ok) {
       setMsg(`Куплено. Баланс: ${r.data.coins.toLocaleString("ru-RU")}`);
@@ -87,6 +89,11 @@ export default function Shop({ onRefresh }: { onRefresh: () => void }) {
         <p className="muted">Раздел «Кейсы» скоро появится.</p>
       ) : (
         <>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Оплата с баланса{" "}
+            {activePlatform === "twitch" ? "Twitch" : "Kick"} (переключатель в
+            шапке).
+          </p>
           {msg && <p className="muted">{msg}</p>}
 
           {(() => {

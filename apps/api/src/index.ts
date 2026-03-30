@@ -12,7 +12,11 @@ import {
   verifyTelegramInitData,
 } from "./lib/telegram.js";
 import { signSession } from "./lib/jwt.js";
-import { ensureUserFromTelegram, deleteUserAccount } from "./services/users.js";
+import {
+  applyReferralFromStartParam,
+  ensureUserFromTelegram,
+  deleteUserAccount,
+} from "./services/users.js";
 import { buildMeResponse } from "./services/me.js";
 import { listTasksForUser, claimTask } from "./services/tasks.js";
 import { getLeaderboard, rankOfUser } from "./services/leaderboard.js";
@@ -78,6 +82,7 @@ app.post("/api/v1/auth/telegram", async (req, reply) => {
   }
 
   const { userId } = await ensureUserFromTelegram(user, startParam);
+  await applyReferralFromStartParam(userId, BigInt(user.id), startParam);
   const token = signSession(userId, BigInt(user.id));
 
   return { token, userId };
@@ -173,8 +178,12 @@ app.get("/api/v1/tasks", async (req, reply) => {
     (req.query as { platform?: string }).platform ?? "all"
   );
   let list = await listTasksForUser(userId);
-  if (platform === "twitch" || platform === "kick" || platform === "global") {
-    list = list.filter((t) => t.platform === platform);
+  if (platform === "twitch" || platform === "kick") {
+    list = list.filter(
+      (t) => t.platform === platform || t.platform === "global"
+    );
+  } else if (platform === "global") {
+    list = list.filter((t) => t.platform === "global");
   }
   return { tasks: list };
 });
@@ -349,11 +358,22 @@ app.get("/api/v1/games/fortune", async (req, reply) => {
   return getFortuneStatus(userId);
 });
 
+const fortuneSpinBody = z.object({
+  mode: z.enum(["free", "paid"]).optional(),
+  platform: z.enum(["twitch", "kick"]),
+});
+
 app.post("/api/v1/games/fortune/spin", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
-  const mode = (req.body as { mode?: string })?.mode === "paid" ? "paid" : "free";
-  const res = await spinFortuneWheel(userId, mode);
+  const parsed = fortuneSpinBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return reply.status(400).send({
+      error: { code: "bad_request", message: parsed.error.message },
+    });
+  }
+  const mode = parsed.data.mode === "paid" ? "paid" : "free";
+  const res = await spinFortuneWheel(userId, mode, parsed.data.platform);
   if (!res.ok) {
     return reply.status(400).send({
       error: { code: res.error, message: res.error },
@@ -369,16 +389,22 @@ app.get("/api/v1/shop/items", async (req, reply) => {
   return { items };
 });
 
+const shopPurchaseBody = z.object({
+  itemId: z.string().min(1),
+  platform: z.enum(["twitch", "kick"]),
+});
+
 app.post("/api/v1/shop/purchase", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
-  const itemId = String((req.body as { itemId?: string })?.itemId ?? "");
-  if (!itemId) {
+  const parsed = shopPurchaseBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
     return reply.status(400).send({
-      error: { code: "bad_request", message: "itemId required" },
+      error: { code: "bad_request", message: parsed.error.message },
     });
   }
-  const res = await purchaseItem(userId, itemId);
+  const { itemId, platform } = parsed.data;
+  const res = await purchaseItem(userId, itemId, platform);
   if (!res.ok) {
     return reply.status(400).send({
       error: { code: res.error, message: res.error },

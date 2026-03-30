@@ -65,12 +65,25 @@ export async function getLeaderboard(params: {
       .groupBy(referrals.referrerId),
   ]);
 
-  const balMap = new Map(balances.map((b) => [b.userId, b.coins]));
+  const balMap = new Map(
+    balances.map((b) => {
+      let v = b.coins;
+      if (params.sort === "coins") {
+        if (params.platform === "twitch") v = b.twitchCoins;
+        else if (params.platform === "kick") v = b.kickCoins;
+      }
+      return [b.userId, v] as const;
+    })
+  );
   const strMap = new Map(
-    streaks.map((s) => [
-      s.userId,
-      Math.max(s.twitchCurrent, s.kickCurrent),
-    ])
+    streaks.map((s) => {
+      let v = Math.max(s.twitchCurrent, s.kickCurrent);
+      if (params.sort === "streak") {
+        if (params.platform === "twitch") v = s.twitchCurrent;
+        else if (params.platform === "kick") v = s.kickCurrent;
+      }
+      return [s.userId, v] as const;
+    })
   );
   const refMap = new Map(refCounts.map((r) => [r.referrerId, r.c]));
 

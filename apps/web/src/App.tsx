@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getPlatformTheme } from "./platformTheme";
+import { useActivePlatform } from "./context/PlatformContext";
 import {
   NavLink,
   Navigate,
@@ -34,6 +35,7 @@ import Games from "./pages/Games";
 import Shop from "./pages/Shop";
 import Leaderboard from "./pages/Leaderboard";
 import Profile from "./pages/Profile";
+import OAuthReturn from "./pages/OAuthReturn";
 
 const devAuth =
   import.meta.env.VITE_ALLOW_DEV === "1" || import.meta.env.DEV;
@@ -70,6 +72,11 @@ export default function App() {
   useEffect(() => {
     WebApp.ready();
     WebApp.expand();
+    try {
+      WebApp.requestFullscreen();
+    } catch {
+      /* старые клиенты Telegram без полноэкранного режима */
+    }
   }, []);
 
   useEffect(() => {
@@ -205,18 +212,22 @@ function AppShell({
   refreshMe: () => void;
 }) {
   const location = useLocation();
+  const { activePlatform } = useActivePlatform();
+
+  const headerBalance =
+    me != null
+      ? activePlatform === "twitch"
+        ? me.coinsTwitch
+        : me.coinsKick
+      : null;
 
   useEffect(() => {
-    const theme = getPlatformTheme(me);
-    if (theme === "default") {
-      document.documentElement.removeAttribute("data-platform-theme");
-    } else {
-      document.documentElement.setAttribute("data-platform-theme", theme);
-    }
+    const theme = getPlatformTheme(activePlatform);
+    document.documentElement.setAttribute("data-platform-theme", theme);
     return () => {
       document.documentElement.removeAttribute("data-platform-theme");
     };
-  }, [me]);
+  }, [activePlatform]);
 
   return (
     <>
@@ -231,7 +242,7 @@ function AppShell({
       <div className="app-shell">
         <ScreenHeader
           title={routeTitle(location.pathname)}
-          balance={me?.coins ?? null}
+          balance={headerBalance}
         />
 
         <main className="app-main">
@@ -241,6 +252,10 @@ function AppShell({
             <Route path="/games" element={<Games onRefresh={refreshMe} />} />
             <Route path="/shop" element={<Shop onRefresh={refreshMe} />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route
+              path="/oauth/:platform"
+              element={<OAuthReturn onRefresh={refreshMe} />}
+            />
             <Route
               path="/profile"
               element={

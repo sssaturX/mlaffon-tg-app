@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import type { LeaderboardResponse } from "shared";
 import { api, formatApiError } from "../api";
+import { useActivePlatform } from "../context/PlatformContext";
 
 export default function Leaderboard() {
+  const { activePlatform } = useActivePlatform();
   const [sort, setSort] = useState<"coins" | "streak" | "referrals">("coins");
-  const [platform, setPlatform] = useState<"all" | "twitch" | "kick">("all");
+  const [platform, setPlatform] = useState<"all" | "twitch" | "kick">(
+    activePlatform
+  );
+
+  useEffect(() => {
+    setPlatform(activePlatform);
+  }, [activePlatform]);
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 

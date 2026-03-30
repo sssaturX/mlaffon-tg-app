@@ -38,8 +38,13 @@ export const userBalances = pgTable("user_balances", {
   userId: uuid("user_id")
     .primaryKey()
     .references(() => users.id, { onDelete: "cascade" }),
+  /** Сумма twitch + kick (дублируем для совместимости и топов). */
   coins: integer("coins").notNull().default(0),
   lifetimeEarned: integer("lifetime_earned").notNull().default(0),
+  twitchCoins: integer("twitch_coins").notNull().default(0),
+  kickCoins: integer("kick_coins").notNull().default(0),
+  twitchLifetimeEarned: integer("twitch_lifetime_earned").notNull().default(0),
+  kickLifetimeEarned: integer("kick_lifetime_earned").notNull().default(0),
 });
 
 export const userStreaks = pgTable("user_streaks", {
@@ -129,6 +134,8 @@ export const platformAccounts = pgTable(
     platform: text("platform").notNull(),
     externalUserId: text("external_user_id"),
     displayName: text("display_name"),
+    /** URL аватара с платформы (OAuth / API). */
+    avatarUrl: text("avatar_url"),
     accessTokenEnc: text("access_token_enc"),
     refreshTokenEnc: text("refresh_token_enc"),
     /** OAuth scopes granted */

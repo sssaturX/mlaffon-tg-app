@@ -1,12 +1,13 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { shopItems, userInventory } from "../db/schema.js";
-import { applyDebit } from "./economy.js";
+import { applyDebit, type EconomyPlatform } from "./economy.js";
 import { nanoid } from "nanoid";
 
 export async function purchaseItem(
   userId: string,
-  itemId: string
+  itemId: string,
+  platform: EconomyPlatform
 ): Promise<
   { ok: true; coins: number } | { ok: false; error: string }
 > {
@@ -21,6 +22,7 @@ export async function purchaseItem(
   const debit = await applyDebit({
     userId,
     amount: item.priceCoins,
+    platform,
     idempotencyKey: idem,
     kind: "shop_purchase",
     referenceType: "shop_item",

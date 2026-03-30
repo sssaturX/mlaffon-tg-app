@@ -7,7 +7,11 @@ import {
   userInventory,
 } from "../db/schema.js";
 import { gameConfig } from "../config.js";
-import { applyCredit, applyDebit } from "./economy.js";
+import {
+  applyCredit,
+  applyDebit,
+  type EconomyPlatform,
+} from "./economy.js";
 import { utcDateString } from "./streak.js";
 
 function pickOutcome(): (typeof gameConfig.fortune.outcomes)[number] {
@@ -43,7 +47,8 @@ export async function getFortuneStatus(userId: string): Promise<{
 
 export async function spinFortuneWheel(
   userId: string,
-  mode: "free" | "paid"
+  mode: "free" | "paid",
+  platform: EconomyPlatform
 ): Promise<
   | {
       ok: true;
@@ -69,6 +74,7 @@ export async function spinFortuneWheel(
     const debit = await applyDebit({
       userId,
       amount: cost,
+      platform,
       idempotencyKey: `fortune_paid:${userId}:${day}:${nanoid()}`,
       kind: "fortune_paid",
       referenceType: "fortune",
@@ -89,6 +95,7 @@ export async function spinFortuneWheel(
     const credit = await applyCredit({
       userId,
       amount: coinsDelta,
+      platform,
       idempotencyKey: `fortune_win:${userId}:${day}:${mode}:${nanoid()}`,
       kind: "fortune_wheel",
       referenceType: "fortune",
