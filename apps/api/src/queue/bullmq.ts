@@ -3,6 +3,7 @@ import { Queue } from "bullmq";
 
 let connection: Redis | null = null;
 let taskQueue: Queue | null = null;
+let cronQueue: Queue | null = null;
 
 export function getBullConnection(): Redis {
   if (!connection) {
@@ -20,4 +21,13 @@ export function getTaskVerifyQueue(): Queue {
     });
   }
   return taskQueue;
+}
+
+export function getCronQueue(): Queue {
+  if (!cronQueue) {
+    cronQueue = new Queue("cron", {
+      connection: getBullConnection(),
+    });
+  }
+  return cronQueue;
 }

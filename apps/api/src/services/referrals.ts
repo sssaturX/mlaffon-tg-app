@@ -28,6 +28,8 @@ export async function maybeQualifyReferral(refereeUserId: string): Promise<void>
     .set({ qualifiedAt: sql`now()` })
     .where(eq(referrals.id, ref.id));
 
+  if (referrerReward <= 0) return;
+
   const idem = `referral_referrer_qualified:${ref.id}`;
   await applyCreditSplit({
     userId: ref.referrerId,

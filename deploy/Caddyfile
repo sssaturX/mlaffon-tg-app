@@ -22,9 +22,31 @@
 #
 # Статика: apps/web/dist после npm run build. При 403 на файлы:
 #   sudo chmod -R o+rX /opt/mlaffon/mlaffon-tg-app/apps/web/dist
+#
+# Поддомен admin.* — не второй Caddy: тот же файл, после pull + npm run build:
+#   DNS: A (или CNAME) admin.mlaffon.fun → тот же IP, что и основной домен
+#   sudo chmod -R o+rX /opt/mlaffon/mlaffon-tg-app/apps/admin/dist
+#   sudo cp .../deploy/Caddyfile /etc/caddy/Caddyfile && sudo caddy fmt --overwrite /etc/caddy/Caddyfile
+#   sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+# TLS для admin выдаст Let's Encrypt автоматически (как для основного сайта).
 
 mlaffon.fun {
 	root * /opt/mlaffon/mlaffon-tg-app/apps/web/dist
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Админка: отдельный поддомен, тот же API по /api/*
+admin.mlaffon.fun {
+	root * /opt/mlaffon/mlaffon-tg-app/apps/admin/dist
 	encode gzip
 
 	handle /api/* {

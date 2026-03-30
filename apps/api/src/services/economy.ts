@@ -6,9 +6,12 @@ export type CreditReason =
   | "task_reward"
   | "referral_referrer"
   | "referral_referee"
+  | "referral_weekly_l1"
+  | "referral_weekly_l2"
   | "streak_bonus"
   | "fortune_wheel"
-  | "admin";
+  | "admin"
+  | "promo_code";
 
 /** Куда зачислить / откуда списать монеты. */
 export type EconomyPlatform = "twitch" | "kick";

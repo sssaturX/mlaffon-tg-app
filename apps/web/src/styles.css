@@ -864,3 +864,98 @@ h2 {
   --surface: #132213;
   --surface-hover: #1a2e1a;
 }
+
+.home-stats--public {
+  margin-bottom: 4px;
+}
+
+.input-like {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 15px;
+  outline: none;
+}
+
+.giveaway-card {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.giveaway-card__img {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+}
+
+.giveaway-card__placeholder {
+  height: 120px;
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%);
+}
+
+.giveaway-card__body {
+  padding: 12px 14px 14px;
+}
+
+.giveaway-card__prize {
+  margin: 0;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.giveaway-card__title {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.giveaway-card__timer {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  text-align: center;
+}
+
+.faq-item {
+  padding: 0;
+}
+
+.faq-item__q {
+  width: 100%;
+  padding: 12px 14px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cashback-card {
+  border-color: var(--accent-glow);
+}
+
+.tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.tour-card {
+  max-width: 360px;
+  width: 100%;
+}

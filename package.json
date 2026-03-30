@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "dev": "concurrently -n api,web -c blue,green \"npm run dev -w api\" \"npm run dev -w web\"",
-    "build": "npm run build -w api && npm run build -w web",
+    "build": "npm run build -w api && npm run build -w web && npm run build -w admin",
     "db:generate": "npm run db:generate -w api",
     "db:migrate": "npm run db:migrate -w api",
     "db:seed": "npm run db:seed -w api"

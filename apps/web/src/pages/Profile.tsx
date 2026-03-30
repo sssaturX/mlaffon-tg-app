@@ -47,14 +47,22 @@ export default function Profile({
       await onRefresh();
       await loadRefs();
       if (ok) {
-        showToast(`Подключено: ${ok}`, "success");
+        showToast(
+          ok === "twitch" ? "Twitch подключён" : "Kick подключён",
+          "success",
+        );
         try {
           WebApp.HapticFeedback.notificationOccurred("success");
         } catch {
           /* ignore */
         }
       } else if (err) {
-        showToast(`Не удалось подключить: ${decodeURIComponent(err)}`, "error");
+        const decoded = decodeURIComponent(err);
+        const hint =
+          /redirect_uri|registered\s+URI/i.test(decoded)
+            ? " В консоли Twitch/Kick в OAuth Redirect добавьте URL API: http://localhost:3001/api/v1/oauth/…/callback (порт 3001, не 5173)."
+            : "";
+        showToast(`Не удалось подключить: ${decoded}${hint}`, "error");
         try {
           WebApp.HapticFeedback.notificationOccurred("error");
         } catch {
@@ -314,10 +322,14 @@ export default function Profile({
           </p>
         )}
         <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-          В консоли Twitch/Kick укажите Redirect URI на ваш домен, например{" "}
-          <code>https://ваш-домен/api/v1/oauth/twitch/callback</code> и
-          аналогично для Kick. <code>PUBLIC_WEB_URL</code> на API — URL фронта
-          (редирект после OAuth на <code>/oauth/…</code>).
+          <strong>Redirect в консоли Twitch/Kick</strong> — это всегда{" "}
+          <code>…/api/v1/oauth/…/callback</code> на <strong>сервере API</strong> (локально порт{" "}
+          <strong>3001</strong>), не страница на 5173. Примеры:{" "}
+          <code>http://localhost:3001/api/v1/oauth/twitch/callback</code>,{" "}
+          <code>http://localhost:3001/api/v1/oauth/kick/callback</code>. На проде —{" "}
+          <code>https://ваш-домен/api/v1/oauth/twitch/callback</code>.{" "}
+          <code>PUBLIC_WEB_URL</code> в API — URL фронта (куда вернуть пользователя после успеха:{" "}
+          <code>/oauth/…</code>).
         </p>
       </div>
 

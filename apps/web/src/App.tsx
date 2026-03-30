@@ -28,6 +28,7 @@ import {
 } from "./api";
 import { useToast } from "./context/ToastContext";
 import { OnboardingModal, hasSeenOnboarding } from "./components/OnboardingModal";
+import { FirstVisitTour, hasSeenTour } from "./components/FirstVisitTour";
 import { routeTitle, ScreenHeader } from "./components/ScreenHeader";
 import HomePage from "./pages/Home";
 import Tasks from "./pages/Tasks";
@@ -72,10 +73,14 @@ export default function App() {
   useEffect(() => {
     WebApp.ready();
     WebApp.expand();
+    /* Режим не fullscreen — сверху панель Telegram (закрыть / ⋮). */
     try {
-      WebApp.requestFullscreen();
+      const wa = WebApp as { isFullscreen?: boolean; exitFullscreen?: () => void };
+      if (wa.isFullscreen === true && typeof wa.exitFullscreen === "function") {
+        wa.exitFullscreen();
+      }
     } catch {
-      /* старые клиенты Telegram без полноэкранного режима */
+      /* ignore */
     }
   }, []);
 
@@ -213,6 +218,12 @@ function AppShell({
 }) {
   const location = useLocation();
   const { activePlatform } = useActivePlatform();
+  const [tourOpen, setTourOpen] = useState(false);
+
+  useEffect(() => {
+    if (!me || onboardingOpen) return;
+    if (!hasSeenTour()) setTourOpen(true);
+  }, [me, onboardingOpen]);
 
   const headerBalance =
     me != null
@@ -238,6 +249,8 @@ function AppShell({
       )}
 
       <OnboardingModal open={onboardingOpen} onClose={onCloseOnboarding} />
+
+      <FirstVisitTour open={tourOpen} onClose={() => setTourOpen(false)} />
 
       <div className="app-shell">
         <ScreenHeader

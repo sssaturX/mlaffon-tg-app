@@ -18,9 +18,19 @@ import {
 } from "../platforms/kick/oauth.js";
 import { generatePkcePair } from "../platforms/kick/pkce.js";
 import { kickValidateToken } from "../platforms/kick/api.js";
+import { markReferralPercentEligible } from "../services/referralEligibility.js";
 
 function webBase(): string {
-  return process.env.PUBLIC_WEB_URL ?? "http://localhost:5173";
+  const raw = process.env.PUBLIC_WEB_URL ?? "http://localhost:5173";
+  return raw.replace(/\/+$/, "");
+}
+
+function twitchRedirectUri(): string | undefined {
+  return process.env.TWITCH_REDIRECT_URI?.trim();
+}
+
+function kickRedirectUri(): string | undefined {
+  return process.env.KICK_REDIRECT_URI?.trim();
 }
 
 /** Редирект на наш домен: страница `/oauth/:platform` (не только query у /profile). */
@@ -36,7 +46,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
   app.get("/api/v1/oauth/twitch/url", async (req, reply) => {
     const userId = authUser(req, reply);
     if (!userId) return;
-    const redirectUri = process.env.TWITCH_REDIRECT_URI;
+    const redirectUri = twitchRedirectUri();
     if (!redirectUri) {
       return reply.status(500).send({
         error: {
@@ -79,7 +89,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
       return reply.redirect(redirectError("twitch", "bad_state"));
     }
 
-    const redirectUri = process.env.TWITCH_REDIRECT_URI;
+    const redirectUri = twitchRedirectUri();
     if (!redirectUri) {
       return reply.redirect(redirectError("twitch", "server"));
     }
@@ -125,6 +135,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
           },
         });
 
+      await markReferralPercentEligible(userId);
       return reply.redirect(redirectSuccess("twitch"));
     } catch (e) {
       app.log.error(e);
@@ -135,7 +146,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
   app.get("/api/v1/oauth/kick/url", async (req, reply) => {
     const userId = authUser(req, reply);
     if (!userId) return;
-    const redirectUri = process.env.KICK_REDIRECT_URI;
+    const redirectUri = kickRedirectUri();
     if (!redirectUri) {
       return reply.status(500).send({
         error: {
@@ -184,7 +195,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
       return reply.redirect(redirectError("kick", "bad_state"));
     }
 
-    const redirectUri = process.env.KICK_REDIRECT_URI;
+    const redirectUri = kickRedirectUri();
     if (!redirectUri) {
       return reply.redirect(redirectError("kick", "server"));
     }
@@ -242,6 +253,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
           },
         });
 
+      await markReferralPercentEligible(parsed.userId);
       return reply.redirect(redirectSuccess("kick"));
     } catch (e) {
       app.log.error(e);

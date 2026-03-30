@@ -26,8 +26,12 @@ import { gameConfig } from "./config.js";
 import { getFortuneStatus, spinFortuneWheel } from "./services/fortune.js";
 import { listShopItems, purchaseItem } from "./services/shop.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
+import { registerAdminRoutes } from "./routes/admin.js";
+import { buildHomePublicResponse } from "./services/homePublic.js";
+import { applyPromoForUser } from "./services/promo.js";
 import { assertClaimRateLimits } from "./lib/abuse.js";
 import { claimStreamStreak } from "./services/streamStreak.js";
+import { markReferralPercentEligible } from "./services/referralEligibility.js";
 
 const app = Fastify({ logger: true });
 
@@ -43,8 +47,40 @@ await app.register(rateLimit, {
 
 await registerAuth(app);
 await registerOAuthRoutes(app);
+await registerAdminRoutes(app);
 
 app.get("/health", async () => ({ ok: true }));
+
+app.get("/api/v1/home/public", async () => buildHomePublicResponse());
+
+const promoBody = z.object({
+  code: z.string().min(1),
+});
+
+app.post("/api/v1/promo/apply", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  const parsed = promoBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return reply.status(400).send({
+      error: { code: "bad_request", message: parsed.error.message },
+    });
+  }
+  const r = await applyPromoForUser(userId, parsed.data.code);
+  if (!r.ok) {
+    const status: Record<string, number> = {
+      not_found: 404,
+      exhausted: 410,
+      already_used: 409,
+      empty_code: 400,
+      duplicate: 409,
+    };
+    return reply.status(status[r.error] ?? 400).send({
+      error: { code: r.error, message: r.error },
+    });
+  }
+  return { ok: true, reward: r.reward };
+});
 
 const authBody = z.object({
   initData: z.string().min(1),
@@ -333,6 +369,7 @@ if (process.env.ALLOW_DEV_AUTH === "1") {
         },
       });
 
+    await markReferralPercentEligible(userId);
     return { ok: true, platform, status: "connected" };
   });
 }

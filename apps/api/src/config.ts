@@ -20,6 +20,9 @@ export interface GameConfig {
     referrerReward: number;
     refereeBonus: number;
     qualifyMinLifetimeEarned: number;
+    /** Доля от недельного оборота реферала (после подключения Twitch/Kick). */
+    weeklyPercentL1: number;
+    weeklyPercentL2: number;
   };
   fortune: {
     paidSpinCost: number;
@@ -45,9 +48,11 @@ const defaultConfig: GameConfig = {
     bonusCoins: 50,
   },
   referral: {
-    referrerReward: 100,
+    referrerReward: 0,
     refereeBonus: 25,
     qualifyMinLifetimeEarned: 50,
+    weeklyPercentL1: 0.02,
+    weeklyPercentL2: 0.005,
   },
   fortune: {
     paidSpinCost: 20,

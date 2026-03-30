@@ -2,3 +2,17 @@
 также надо чтобы riderect links для каждой платформы были на нашем домене потому что сейчас непонятно подключилось или нет
 также реф система не работает то есть у нас просто можно и старт параметра брать из init data в тг и сразу открывать мини апку 
 что касаемо еще мини апки то надо чтобы она открывалась на фулл скрин на мобилках ( request fullscreen )
+
+export REPO=/opt/mlaffon/mlaffon-tg-app
+cd $REPO
+
+git pull
+npm ci
+npm run build
+cd apps/api && npx drizzle-kit push
+cd $REPO
+
+sudo chmod -R o+rX apps/api/dist apps/web/dist
+
+sudo systemctl restart mlaffon-api mlaffon-worker
+sudo systemctl reload caddy

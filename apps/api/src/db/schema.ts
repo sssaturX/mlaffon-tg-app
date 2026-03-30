@@ -163,12 +163,70 @@ export const referrals = pgTable(
       .references(() => users.id, { onDelete: "cascade" })
       .unique(),
     qualifiedAt: timestamp("qualified_at", { withTimezone: true }),
+    /** Реферал учитывается в % после подключения Twitch или Kick. */
+    eligibleForPercentAt: timestamp("eligible_for_percent_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
   (t) => [index("referrals_referrer_idx").on(t.referrerId)]
 );
+
+export const giveaways = pgTable("giveaways", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: text("title").notNull(),
+  prizeText: text("prize_text").notNull(),
+  imageUrl: text("image_url"),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  active: boolean("active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const promoCodes = pgTable(
+  "promo_codes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    code: text("code").notNull().unique(),
+    rewardCoins: integer("reward_coins").notNull(),
+    maxUses: integer("max_uses").notNull().default(1),
+    usesCount: integer("uses_count").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("promo_codes_active_idx").on(t.active)]
+);
+
+export const promoRedemptions = pgTable(
+  "promo_redemptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    promoId: uuid("promo_id")
+      .notNull()
+      .references(() => promoCodes.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [uniqueIndex("promo_redemptions_user_promo").on(t.userId, t.promoId)]
+);
+
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
 
 export const shopItems = pgTable("shop_items", {
   id: text("id").primaryKey(),

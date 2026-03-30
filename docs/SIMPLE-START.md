@@ -1,16 +1,16 @@
 # Простой запуск на сервере (всё в одном месте)
 
 **Репозиторий:** `/opt/mlaffon/mlaffon-tg-app`  
-**Домен:** `mlaffon.fun` (в Caddy уже прописан; в `.env` должны быть `PUBLIC_WEB_URL=https://mlaffon.fun` и OAuth redirect на этот домен).
+**Домены:** основной мини-приложения — `mlaffon.fun`; админка — **`admin.mlaffon.fun`** (отдельный поддомен, тот же API по `/api/*`). В `apps/api/.env`: `PUBLIC_WEB_URL=https://mlaffon.fun`, OAuth redirect на этот домен. Для входа в админку задайте **`ADMIN_EMAIL`**, **`ADMIN_PASSWORD`**, **`ADMIN_PASSPHRASE`** (и при желании **`ADMIN_JWT_SECRET`** или общий **`JWT_SECRET`**).
 
 **Соответствие «как локально»:**
 
 | Локально | На сервере |
 |----------|------------|
 | `docker compose up -d` | То же |
-| `npm run dev` (API + Vite) | `npm run build` → API из `dist` + статика из `apps/web/dist` |
+| `npm run dev` (API + Vite) | `npm run build` → API из `dist` + статика из **`apps/web/dist`** + **`apps/admin/dist`** |
 | `npm run worker -w api` | Отдельный процесс `node dist/worker.js` (через systemd) |
-| Браузер → Vite прокси `/api` | **Caddy** отдаёт сайт и шлёт `/api` на `127.0.0.1:3001` |
+| Браузер → Vite прокси `/api` | **Caddy** отдаёт **два** сайта (`mlaffon.fun` и `admin.mlaffon.fun`) и шлёт `/api` на `127.0.0.1:3001` |
 
 Нужны: **Ubuntu**, **Node.js 20+**, **Docker** + Compose, **Caddy**. Один раз откройте порты **22, 80, 443** (ufw).
 
@@ -64,6 +64,7 @@ sudo systemctl disable nginx
 ## 2. Код и `.env`
 
 Репозиторий уже должен лежать в `$REPO`. Файл **`$REPO/apps/api/.env`** заполните (как в `.env.example` в корне репо): `DATABASE_URL`, `REDIS_URL`, Telegram, секреты, **`PORT=3001`**, **`PUBLIC_WEB_URL=https://mlaffon.fun`**, Twitch/Kick redirect на `https://mlaffon.fun/api/v1/.../callback`.  
+Для **админки** (вход на `https://admin.mlaffon.fun`): **`ADMIN_EMAIL`**, **`ADMIN_PASSWORD`**, **`ADMIN_PASSPHRASE`**; для подписи JWT — **`ADMIN_JWT_SECRET`** или общий **`JWT_SECRET`**.  
 **Прод:** не включайте `ALLOW_DEV_AUTH=1`.
 
 ---
@@ -90,7 +91,7 @@ npm ci
 npm run build
 ```
 
-Должны появиться каталоги **`apps/api/dist`** и **`apps/web/dist`**.
+Должны появиться каталоги **`apps/api/dist`**, **`apps/web/dist`** и **`apps/admin/dist`** (команда `npm run build` в корне собирает API, веб и админку).
 
 ---
 
@@ -108,8 +109,8 @@ cd $REPO
 ## 6. Права (чтобы `www-data` и Caddy читали файлы)
 
 ```bash
-sudo chmod o+x /opt /opt/mlaffon $REPO $REPO/apps $REPO/apps/api $REPO/apps/web
-sudo chmod -R o+rX $REPO/apps/api/dist $REPO/apps/web/dist
+sudo chmod o+x /opt /opt/mlaffon $REPO $REPO/apps $REPO/apps/api $REPO/apps/web $REPO/apps/admin
+sudo chmod -R o+rX $REPO/apps/api/dist $REPO/apps/web/dist $REPO/apps/admin/dist
 sudo chown root:www-data $REPO/apps/api/.env
 sudo chmod 640 $REPO/apps/api/.env
 ```
@@ -153,8 +154,9 @@ curl -s http://127.0.0.1:3001/health
 Чеклист:
 
 1. В DNS у домена **A** (и при необходимости **AAAA**) на **IP этого VPS** — иначе выпуск не пройдёт.
-2. Порты **80** и **443** открыты (ufw / облако); **80** должен слушать **caddy**, не nginx.
-3. Если раньше стоял **`Caddyfile.manual-certs`**, вернитесь на обычный файл (команды ниже).
+2. Для **админки** на поддомене: **A** (или **CNAME**) **`admin.mlaffon.fun`** → тот же IP (или на `mlaffon.fun`). Без записи Caddy не сможет выдать TLS для админки.
+3. Порты **80** и **443** открыты (ufw / облако); **80** должен слушать **caddy**, не nginx.
+4. Если раньше стоял **`Caddyfile.manual-certs`**, вернитесь на обычный файл (команды ниже) **или** допишите второй сайт вручную по аналогии с репозиторием.
 
 ```bash
 sudo cp $REPO/deploy/Caddyfile /etc/caddy/Caddyfile
@@ -213,7 +215,7 @@ sudo systemctl restart caddy
 
 ### Проверка
 
-В конфиге: **`mlaffon.fun`**, статика из **`$REPO/apps/web/dist`**, **`/api`** → **`127.0.0.1:3001`**.
+В репозитории **`deploy/Caddyfile`** два блока: **`mlaffon.fun`** (статика **`$REPO/apps/web/dist`**) и **`admin.mlaffon.fun`** (статика **`$REPO/apps/admin/dist`**); в обоих **`/api/*`** → **`127.0.0.1:3001`**.
 
 С сервера (часто так и надо проверять API напрямую):
 
@@ -225,9 +227,10 @@ curl -s http://127.0.0.1:3001/health
 
 ```bash
 curl -sS -o /dev/null -w "%{http_code}\n" https://mlaffon.fun/api/v1/me
+curl -sS -o /dev/null -w "%{http_code}\n" https://admin.mlaffon.fun/
 ```
 
-Ожидаемо **401** без токена. Ошибка **`curl: (35) ... SSL`** чаще всего из‑за того, что **на VPS ещё нет подходящих PEM** или Caddy пытается **сам** выпустить сертификат (вариант A), пока домен указывает не на этот сервер — тогда используйте вариант **B** с явными путями `tls`.
+Ожидаемо **401** на `/api/v1/me` без токена; главная админки (SPA) обычно **200**. Ошибка **`curl: (35) ... SSL`** чаще всего из‑за того, что **на VPS ещё нет подходящих PEM** или Caddy пытается **сам** выпустить сертификат (вариант A), пока домен указывает не на этот сервер — тогда используйте вариант **B** с явными путями `tls`.
 
 ---
 
@@ -237,7 +240,9 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://mlaffon.fun/api/v1/me
 
 ---
 
-## 10. Обновление кода
+## 10. Обновление кода (веб + админка + API)
+
+После **`git pull`** всегда пересобирайте фронты и API одной командой из корня — в сборку входят **`web`** и **`admin`**:
 
 ```bash
 cd $REPO
@@ -246,10 +251,22 @@ npm ci
 npm run build
 cd apps/api && npx drizzle-kit push
 cd $REPO
-sudo chmod -R o+rX apps/api/dist apps/web/dist
+sudo chmod -R o+rX apps/api/dist apps/web/dist apps/admin/dist
 sudo systemctl restart mlaffon-api mlaffon-worker
+```
+
+**Caddy:** новые файлы в **`apps/web/dist`** и **`apps/admin/dist`** начинают отдаваться **сразу** после сборки и `chmod` — **перезагрузка не нужна**, если не меняли конфиг.
+
+Если в **`git pull`** попал **обновлённый** `deploy/Caddyfile` (поддомен, пути, прокси), скопируйте и примените:
+
+```bash
+sudo cp $REPO/deploy/Caddyfile /etc/caddy/Caddyfile
+sudo caddy fmt --overwrite /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
+
+Проверка: **`https://mlaffon.fun`** (мини-приложение), **`https://admin.mlaffon.fun`** (админка; логин совпадает с **`ADMIN_EMAIL`** / **`ADMIN_PASSWORD`** / **`ADMIN_PASSPHRASE`** в **`apps/api/.env`**).
 
 ---
 

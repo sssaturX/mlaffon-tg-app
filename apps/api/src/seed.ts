@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { db } from "./db/index.js";
-import { shopItems, tasks } from "./db/schema.js";
+import { appSettings, giveaways, promoCodes, shopItems, tasks } from "./db/schema.js";
 
 async function seed() {
   const taskSeeds = [
@@ -118,6 +118,71 @@ async function seed() {
     } else {
       await db.insert(shopItems).values(s);
     }
+  }
+
+  const [gw0] = await db.select().from(giveaways).limit(1);
+  if (!gw0) {
+    const ends = new Date();
+    ends.setUTCDate(ends.getUTCDate() + 14);
+    await db.insert(giveaways).values({
+      title: "Розыгрыш",
+      prizeText: "200 000 ₽ на технику",
+      imageUrl: null,
+      endsAt: ends,
+      active: true,
+      sortOrder: 0,
+    });
+  }
+
+  const [cash] = await db
+    .select()
+    .from(appSettings)
+    .where(eq(appSettings.key, "cashback"))
+    .limit(1);
+  if (!cash) {
+    await db.insert(appSettings).values({
+      key: "cashback",
+      value: {
+        enabled: true,
+        title: "Кэшбек Mlaffon",
+        imageUrl: null,
+        body: "Копите монеты на Twitch и Kick, обменивайте в магазине.",
+      },
+    });
+  }
+
+  const [faqRow] = await db
+    .select()
+    .from(appSettings)
+    .where(eq(appSettings.key, "faq"))
+    .limit(1);
+  if (!faqRow) {
+    await db.insert(appSettings).values({
+      key: "faq",
+      value: {
+        items: [
+          {
+            q: "Как заработать монеты?",
+            a: "Задания, стрики на стримах, колесо фортуны и реферальная программа.",
+          },
+          {
+            q: "Когда начисляются реферальные проценты?",
+            a: "Раз в неделю (понедельник UTC), после того как приглашённый подключил Twitch или Kick.",
+          },
+        ],
+      },
+    });
+  }
+
+  const [pc] = await db.select().from(promoCodes).where(eq(promoCodes.code, "WELCOME")).limit(1);
+  if (!pc) {
+    await db.insert(promoCodes).values({
+      code: "WELCOME",
+      rewardCoins: 50,
+      maxUses: 10_000,
+      usesCount: 0,
+      active: true,
+    });
   }
 
   console.log("Seed OK");
