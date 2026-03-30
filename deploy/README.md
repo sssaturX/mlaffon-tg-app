@@ -2,7 +2,8 @@
 
 | Файл | Назначение |
 |------|------------|
-| [Caddyfile](Caddyfile) | HTTPS, статика `apps/web/dist`, прокси `/api` → `:3001` |
+| [Caddyfile](Caddyfile) | HTTPS **автоматически** (Caddy + Let’s Encrypt), статика, `/api` |
+| [Caddyfile.manual-certs](Caddyfile.manual-certs) | Тот же сайт, но **свои** `fullchain.pem` / `privkey.pem` (уже выданные сертификаты) |
 | [mlaffon-api.service](mlaffon-api.service) | systemd: API |
 | [mlaffon-worker.service](mlaffon-worker.service) | systemd: BullMQ worker |
 

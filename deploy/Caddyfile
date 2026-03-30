@@ -1,4 +1,17 @@
 # Статика: напрямую из apps/web/dist (без копирования в /var/www).
+#
+# TLS: Caddy сам получает и обновляет сертификат (Let's Encrypt / ACME).
+# Перед первым запуском: A-запись mlaffon.fun → IP этого VPS; порты 80 и 443 свободны для caddy;
+# ничего не должно занимать :80 (иначе остановите nginx и т.п.).
+#
+# Раскомментируйте email — Let's Encrypt пришлёт уведомления о сроке (рекомендуется).
+{
+	 email itoly569@gmail.com
+}
+
+# Если сертификат УЖЕ выдан вручную (certbot / регистратор) — используйте
+# deploy/Caddyfile.manual-certs вместо этого файла.
+#
 # Скопируйте: sudo cp /opt/mlaffon/mlaffon-tg-app/deploy/Caddyfile /etc/caddy/Caddyfile
 # Формат: sudo caddy fmt --overwrite /etc/caddy/Caddyfile
 #
@@ -11,15 +24,15 @@
 #   sudo chmod -R o+rX /opt/mlaffon/mlaffon-tg-app/apps/web/dist
 
 mlaffon.fun {
-    root * /opt/mlaffon/mlaffon-tg-app/apps/web/dist
-    encode gzip
+	root * /opt/mlaffon/mlaffon-tg-app/apps/web/dist
+	encode gzip
 
-    handle /api/* {
-        reverse_proxy 127.0.0.1:3001
-    }
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3001
+	}
 
-    handle {
-        try_files {path} /index.html
-        file_server
-    }
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
 }

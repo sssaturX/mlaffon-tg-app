@@ -1,0 +1,29 @@
+# Вариант: сертификат Let's Encrypt уже выдан (не через Caddy) — указаны файлы PEM.
+# Скопируйте на сервер и поправьте пути к fullchain и privkey, затем:
+#   sudo cp .../Caddyfile.manual-certs /etc/caddy/Caddyfile
+#
+# Типичные пути:
+#   - certbot на этом же VPS: /etc/letsencrypt/live/mlaffon.fun/fullchain.pem и privkey.pem
+#   - скачали у регистратора: например /etc/ssl/mlaffon/fullchain.pem
+#
+# Права: пользователь caddy должен читать ключи, например:
+#   sudo usermod -aG ssl-cert caddy
+#   или: sudo chgrp ssl-cert /путь/privkey.pem && sudo chmod 640 ...
+#
+# После смены конфига: sudo systemctl restart caddy
+
+mlaffon.fun {
+	tls /etc/letsencrypt/live/mlaffon.fun/fullchain.pem /etc/letsencrypt/live/mlaffon.fun/privkey.pem
+
+	root * /opt/mlaffon/mlaffon-tg-app/apps/web/dist
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -142,23 +142,92 @@ curl -s http://127.0.0.1:3001/health
 
 ## 8. Caddy (сайт по домену)
 
+**Два варианта TLS:**
+
+### A) Caddy сам получает сертификат (Let's Encrypt) — **основной вариант**
+
+Репозиторийный **`deploy/Caddyfile`** уже без ручных PEM: Caddy сам запрашивает и продлевает сертификат у Let’s Encrypt.
+
+Перед копированием конфига (по желанию): в **`deploy/Caddyfile`** раскомментируйте строку **`email ...`** в глобальном блоке `{ }` — на эту почту ACME пришлёт напоминания о сроке.
+
+Чеклист:
+
+1. В DNS у домена **A** (и при необходимости **AAAA**) на **IP этого VPS** — иначе выпуск не пройдёт.
+2. Порты **80** и **443** открыты (ufw / облако); **80** должен слушать **caddy**, не nginx.
+3. Если раньше стоял **`Caddyfile.manual-certs`**, вернитесь на обычный файл (команды ниже).
+
 ```bash
 sudo cp $REPO/deploy/Caddyfile /etc/caddy/Caddyfile
 sudo caddy fmt --overwrite /etc/caddy/Caddyfile
 sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl enable --now caddy
+sudo systemctl restart caddy
 sudo systemctl status caddy --no-pager
 ```
 
+Первый успешный выпуск может занять до минуты; при ошибках смотрите **`journalctl -u caddy -e`**.
+
+### B) Сертификат уже выдан (у регистратора / certbot / не через Caddy)
+
+Файлы **`fullchain.pem`** и **`privkey.pem`** должны **лежать на этом сервере** (скопируйте PEM с хостинга регистратора или скачайте архив). Если сертификат только «в панели» без файлов на VPS — сначала положите PEM в каталог, например `/etc/ssl/mlaffon/`.
+
+Скопируйте шаблон и **отредактируйте пути** в директиве `tls`:
+
+```bash
+sudo cp $REPO/deploy/Caddyfile.manual-certs /etc/caddy/Caddyfile
+sudo nano /etc/caddy/Caddyfile
+```
+
+Укажите реальные пути к `fullchain.pem` и `privkey.pem`.  
+Если использовали **certbot** на этом же VPS:
+
+`tls /etc/letsencrypt/live/mlaffon.fun/fullchain.pem /etc/letsencrypt/live/mlaffon.fun/privkey.pem`
+
+Чтобы **Caddy** читал ключи:
+
+```bash
+sudo usermod -aG ssl-cert caddy
+sudo systemctl restart caddy
+```
+
+(Если группы `ssl-cert` нет — `sudo chgrp caddy /путь/privkey.pem && sudo chmod 640 ...` по ситуации.)
+
+```bash
+sudo caddy fmt --overwrite /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl restart caddy
+```
+
+### Домен куплен на Jino (Джино)
+
+**Важно:** покупка домена у регистратора — это **не** то же самое, что «готовые файлы `fullchain.pem` и `privkey.pem` на вашем VPS». У Джино в личном кабинете вы управляете **DNS** (A/AAAA на IP сервера) и, при необходимости, **хостингом**; отдельной кнопки «скачать fullchain для своего VPS» часто **нет**, если вы **не** пользуетесь их хостингом для этого сайта.
+
+| Ситуация | Где «лежат» сертификаты |
+|----------|-------------------------|
+| Сайт на **вашем VPS** (как в этом гайде), DNS указывает на этот IP | Файлов у Джино для этого сервера **может не быть**. Выпускайте TLS **на VPS**: [вариант A](#a-caddy-сам-получает-сертификат-lets-encrypt) (Caddy + Let's Encrypt) или **certbot** на том же сервере — тогда пути вида `/etc/letsencrypt/live/ваш-домен/`. |
+| Сайт на **хостинге Джино** (не на вашем VPS) | HTTPS настраивается **у них** на своих машинах; для переноса на VPS нужны **экспортированные PEM** из панели/поддержки **или** новый выпуск на VPS (вариант A). |
+
+Практичный путь для `mlaffon.fun` на своём сервере: **A-запись** домена → IP VPS, порты 80/443 открыты → **вариант A** без ручных PEM. Ручные `fullchain.pem` / `privkey.pem` нужны только если сертификат уже выдан **другим** способом и вы **скопировали** файлы на сервер (см. [вариант B](#b-сертификат-уже-выдан-у-регистратора--certbot--не-через-caddy)).
+
+Справка Джино по SSL в целом: [SSL-сертификаты](https://jino.ru/help/articles/sslcert/) — там про услуги Джино; для **самостоятельного** сервера смотрите ещё раз DNS и выпуск на VPS.
+
+### Проверка
+
 В конфиге: **`mlaffon.fun`**, статика из **`$REPO/apps/web/dist`**, **`/api`** → **`127.0.0.1:3001`**.
 
-Проверка с сервера:
+С сервера (часто так и надо проверять API напрямую):
+
+```bash
+curl -s http://127.0.0.1:3001/health
+```
+
+По HTTPS (если DNS и сертификат в порядке):
 
 ```bash
 curl -sS -o /dev/null -w "%{http_code}\n" https://mlaffon.fun/api/v1/me
 ```
 
-Ожидаемо **401** без токена (значит Caddy достучался до API).
+Ожидаемо **401** без токена. Ошибка **`curl: (35) ... SSL`** чаще всего из‑за того, что **на VPS ещё нет подходящих PEM** или Caddy пытается **сам** выпустить сертификат (вариант A), пока домен указывает не на этот сервер — тогда используйте вариант **B** с явными путями `tls`.
 
 ---
 
