@@ -31,8 +31,6 @@ export async function registerDropRoutes(app: FastifyInstance) {
       not_found: 404,
       drop_ended: 410,
       wrong_code: 400,
-      cooldown: 429,
-      exhausted: 429,
       already_won: 409,
       pool_full: 409,
       duplicate: 409,
@@ -41,8 +39,6 @@ export async function registerDropRoutes(app: FastifyInstance) {
       not_found: "Дроп не найден",
       drop_ended: "Дроп завершён",
       wrong_code: "Неверный код",
-      cooldown: "Подождите перед следующей попыткой",
-      exhausted: "Попытки исчерпаны",
       already_won: "Награда уже получена",
       pool_full: "Лимит победителей исчерпан",
       duplicate: "Повторный запрос",
@@ -51,7 +47,6 @@ export async function registerDropRoutes(app: FastifyInstance) {
       ok: false,
       error: r.code,
       message: messages[r.code] ?? r.code,
-      cooldownSeconds: r.cooldownSeconds,
     });
   });
 }

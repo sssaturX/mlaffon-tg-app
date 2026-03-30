@@ -89,6 +89,7 @@ export async function spinFortuneWheel(
 
   const outcome = pickOutcome();
   let coinsDelta = 0;
+  let coinsCredited = 0;
   if (outcome.type === "coins") coinsDelta = outcome.value ?? 0;
 
   if (coinsDelta > 0) {
@@ -102,8 +103,8 @@ export async function spinFortuneWheel(
       referenceId: day,
       meta: { mode, outcome: outcome.type },
     });
-    if (!credit.ok) {
-      /* extremely unlikely; still return current balance */
+    if (credit.ok) {
+      coinsCredited = credit.creditedAmount;
     }
   }
 
@@ -113,7 +114,7 @@ export async function spinFortuneWheel(
       .insert(userInventory)
       .values({
         userId,
-        itemId: "boost_x2",
+        itemId: gameConfig.boost.inventoryItemId,
         quantity: qty,
       })
       .onConflictDoUpdate({
@@ -152,7 +153,7 @@ export async function spinFortuneWheel(
   return {
     ok: true,
     outcome: outcome.type,
-    amount: outcome.type === "coins" ? coinsDelta : undefined,
+    amount: outcome.type === "coins" ? coinsCredited : undefined,
     coins: b?.coins ?? 0,
   };
 }

@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { shopItems, userInventory } from "../db/schema.js";
+import { gameConfig } from "../config.js";
 import { applyDebit, type EconomyPlatform } from "./economy.js";
 import { nanoid } from "nanoid";
 
@@ -55,7 +56,7 @@ export async function purchaseItem(
       .insert(userInventory)
       .values({
         userId,
-        itemId: "boost_x2",
+        itemId: gameConfig.boost.inventoryItemId,
         quantity: 1,
       })
       .onConflictDoUpdate({

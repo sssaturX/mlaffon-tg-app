@@ -72,5 +72,5 @@ export async function applyPromoForUser(
     .set({ usesCount: sql`${promoCodes.usesCount} + 1` })
     .where(eq(promoCodes.id, p.id));
 
-  return { ok: true, reward: p.rewardCoins };
+  return { ok: true, reward: credit.creditedAmount };
 }

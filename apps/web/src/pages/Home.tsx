@@ -12,6 +12,7 @@ import type { MeResponse } from "shared";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
+import { PageSkeleton } from "../components/PageSkeleton";
 
 const STREAK_TARGET = 7;
 
@@ -65,11 +66,7 @@ export default function Home({
   }, [loadPublic]);
 
   if (!me) {
-    return (
-      <div className="card">
-        <p className="muted">Загрузка профиля…</p>
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   /** В шапке главной всегда Telegram (имя и аватар из TG). Twitch/Kick — в профиле и стрике. */
@@ -125,7 +122,7 @@ export default function Home({
   return (
     <div>
       <div className="home-hero">
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div className="home-hero__row">
           {me.photoUrl ? (
             <img
               className="avatar avatar-ring"
@@ -138,7 +135,7 @@ export default function Home({
           <div>
             <p className="home-hero__greet">Добро пожаловать,</p>
             <p className="home-hero__name">{tgDisplayName}</p>
-            <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
+            <p className="muted home-hero__sub">
               Режим: {activePlatform === "twitch" ? "Twitch" : "Kick"} · уровень{" "}
               {me.level} · ×{me.rewardMultiplier.toFixed(2)}
             </p>
@@ -147,13 +144,13 @@ export default function Home({
       </div>
 
       {pub && (
-        <div className="home-stats home-stats--public" style={{ marginTop: 12 }}>
+        <div className="home-stats home-stats--public">
           <div className="stat-tile">
             <div className="stat-tile__label">
               <Users size={16} strokeWidth={2} aria-hidden />
               Пользователей
             </div>
-            <div className="stat-tile__value" style={{ color: "var(--accent)" }}>
+            <div className="stat-tile__value stat-tile__value--accent">
               {pub.stats.usersCount.toLocaleString("ru-RU")}
             </div>
           </div>
@@ -176,7 +173,7 @@ export default function Home({
           </div>
           <div>
             <p className="streak-card__title">Начни свой стрик!</p>
-            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            <p className="muted streak-card__text">
               Не пропускай стримы с подписанного канала — бонус за серию дней
               (UTC). Сейчас: {streakForPlatform} / {STREAK_TARGET}.
             </p>
@@ -235,30 +232,29 @@ export default function Home({
           )}
         </div>
 
-        <div className="streak-card__bar" aria-hidden style={{ marginTop: 12 }}>
+        <div className="streak-card__bar streak-card__bar--spaced" aria-hidden>
           <div
             className="streak-card__fill"
             style={{ width: `${streakPct}%` }}
           />
         </div>
-        <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
+        <p className="muted streak-card__hint">
           Стрик на {activePlatform === "twitch" ? "Twitch" : "Kick"}:{" "}
           {streakForPlatform} / {STREAK_TARGET} дней
         </p>
       </div>
 
-      <div className="card stack" style={{ marginTop: 12 }}>
-        <div className="row" style={{ alignItems: "center", gap: 8 }}>
+      <div className="card stack home-promo-card">
+        <div className="home-promo-card__head">
           <Gift size={18} aria-hidden />
-          <h2 style={{ margin: 0, fontSize: 16 }}>Промокод</h2>
+          <h2>Промокод</h2>
         </div>
-        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <div className="row promo-row--home">
           <input
-            className="input-like"
+            className="input-like promo-input-grow"
             placeholder="Введите промокод"
             value={promo}
             onChange={(e) => setPromo(e.target.value)}
-            style={{ flex: 1, minWidth: 120 }}
           />
           <button type="button" className="primary" onClick={() => void applyPromo()}>
             Применить
@@ -267,12 +263,10 @@ export default function Home({
       </div>
 
       {pub && pub.giveaways.length > 0 && (
-        <div className="stack" style={{ marginTop: 8 }}>
-          <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-            <h2 style={{ margin: 0, fontSize: 16 }}>Активные розыгрыши</h2>
-            <span className="muted" style={{ fontSize: 12 }}>
-              Все
-            </span>
+        <div className="stack section-stack-top">
+          <div className="row section-head">
+            <h2>Активные розыгрыши</h2>
+            <span className="muted">Все</span>
           </div>
           {pub.giveaways.map((g) => (
             <Link
@@ -281,7 +275,13 @@ export default function Home({
               className="card giveaway-card giveaway-card--link"
             >
               {g.imageUrl ? (
-                <img src={g.imageUrl} alt="" className="giveaway-card__img" />
+                <img
+                  src={g.imageUrl}
+                  alt=""
+                  className="giveaway-card__img"
+                  loading="lazy"
+                  decoding="async"
+                />
               ) : (
                 <div className="giveaway-card__placeholder" aria-hidden />
               )}
@@ -305,7 +305,7 @@ export default function Home({
       )}
 
       {pub && pub.faq.length > 0 && (
-        <section className="faq-section stack" style={{ marginTop: 8 }}>
+        <section className="faq-section stack faq-section--top">
           <div className="faq-section__head">
             <div className="faq-section__icon-wrap" aria-hidden>
               <HelpCircle size={22} strokeWidth={2} />

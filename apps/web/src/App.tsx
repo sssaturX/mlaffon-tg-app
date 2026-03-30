@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { getPlatformTheme } from "./platformTheme";
 import { useActivePlatform } from "./context/PlatformContext";
 import {
@@ -31,17 +31,19 @@ import { useToast } from "./context/ToastContext";
 import { OnboardingModal, hasSeenOnboarding } from "./components/OnboardingModal";
 import { FirstVisitTour, hasSeenTour } from "./components/FirstVisitTour";
 import { routeTitle, ScreenHeader } from "./components/ScreenHeader";
-import HomePage from "./pages/Home";
-import Tasks from "./pages/Tasks";
-import Games from "./pages/Games";
-import Shop from "./pages/Shop";
-import Leaderboard from "./pages/Leaderboard";
-import Profile from "./pages/Profile";
-import OAuthReturn from "./pages/OAuthReturn";
-import OAuthBrowserDone from "./pages/OAuthBrowserDone";
-import GiveawayPage from "./pages/Giveaway";
+import { PageSkeleton } from "./components/PageSkeleton";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
+
+const HomePage = lazy(() => import("./pages/Home"));
+const Tasks = lazy(() => import("./pages/Tasks"));
+const Games = lazy(() => import("./pages/Games"));
+const Shop = lazy(() => import("./pages/Shop"));
+const Leaderboard = lazy(() => import("./pages/Leaderboard"));
+const Profile = lazy(() => import("./pages/Profile"));
+const OAuthReturn = lazy(() => import("./pages/OAuthReturn"));
+const OAuthBrowserDone = lazy(() => import("./pages/OAuthBrowserDone"));
+const GiveawayPage = lazy(() => import("./pages/Giveaway"));
 
 const devAuth =
   import.meta.env.VITE_ALLOW_DEV === "1" || import.meta.env.DEV;
@@ -183,7 +185,11 @@ export default function App() {
     oauthPathOk && oauthHasResult && !getToken();
 
   if (oauthExternalNoToken) {
-    return <OAuthBrowserDone />;
+    return (
+      <Suspense fallback={<PageSkeleton />}>
+        <OAuthBrowserDone />
+      </Suspense>
+    );
   }
 
   if (error || !getToken()) {
@@ -350,33 +356,35 @@ function AppShell({
           balance={headerBalance}
         />
 
-        <main className="app-main">
-          <Routes>
-            <Route path="/" element={<HomePage me={me} onRefresh={refreshMe} />} />
-            <Route
-              path="/giveaway/:id"
-              element={<GiveawayPage me={me} onRefresh={refreshMe} />}
-            />
-            <Route path="/tasks" element={<Tasks onRefresh={refreshMe} />} />
-            <Route path="/games" element={<Games onRefresh={refreshMe} />} />
-            <Route path="/shop" element={<Shop onRefresh={refreshMe} />} />
-            <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route
-              path="/oauth/:platform"
-              element={<OAuthReturn onRefresh={refreshMe} />}
-            />
-            <Route
-              path="/profile"
-              element={
-                <Profile
-                  me={me}
-                  onRefresh={refreshMe}
-                  onShowOnboarding={onShowOnboarding}
-                />
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+        <main key={location.pathname} className="app-main">
+          <Suspense fallback={<PageSkeleton />}>
+            <Routes>
+              <Route path="/" element={<HomePage me={me} onRefresh={refreshMe} />} />
+              <Route
+                path="/giveaway/:id"
+                element={<GiveawayPage me={me} onRefresh={refreshMe} />}
+              />
+              <Route path="/tasks" element={<Tasks onRefresh={refreshMe} />} />
+              <Route path="/games" element={<Games onRefresh={refreshMe} />} />
+              <Route path="/shop" element={<Shop onRefresh={refreshMe} />} />
+              <Route path="/leaderboard" element={<Leaderboard />} />
+              <Route
+                path="/oauth/:platform"
+                element={<OAuthReturn onRefresh={refreshMe} />}
+              />
+              <Route
+                path="/profile"
+                element={
+                  <Profile
+                    me={me}
+                    onRefresh={refreshMe}
+                    onShowOnboarding={onShowOnboarding}
+                  />
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
         </main>
 
         <div className="nav-wrap">

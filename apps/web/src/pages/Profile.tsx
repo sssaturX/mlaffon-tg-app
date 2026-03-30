@@ -12,6 +12,7 @@ import type { MeResponse, ReferralsResponse } from "shared";
 import WebApp from "@twa-dev/sdk";
 import { api, formatApiError, setToken } from "../api";
 import { useToast } from "../context/ToastContext";
+import { PageSkeleton } from "../components/PageSkeleton";
 
 export default function Profile({
   me,
@@ -130,11 +131,7 @@ export default function Profile({
   }
 
   if (!me) {
-    return (
-      <div className="card">
-        <p className="muted">Загрузка…</p>
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   const devStub =
@@ -146,7 +143,7 @@ export default function Profile({
   return (
     <div>
       {onShowOnboarding && (
-        <p className="muted" style={{ marginTop: 0, marginBottom: 12 }}>
+        <p className="muted profile-link-intro">
           <button
             type="button"
             className="link-like"
@@ -157,7 +154,7 @@ export default function Profile({
         </p>
       )}
 
-      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div className="card card--flush">
         <div className="profile-hero">
           {me.photoUrl ? (
             <img className="avatar avatar-ring" src={me.photoUrl} alt="" />
@@ -166,20 +163,18 @@ export default function Profile({
           )}
           <div className="profile-hero__text">
             <h2>{displayName}</h2>
-            <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-              {handle}
-            </p>
+            <p className="muted profile-hero__handle">{handle}</p>
           </div>
         </div>
       </div>
 
-      <div className="card stack" style={{ padding: "8px 16px 16px" }}>
+      <div className="card stack card--pad-sm">
         <div className="profile-row">
           <div className="profile-row__left">
             <div className="profile-row__icon">
               <Tv size={20} strokeWidth={2} aria-hidden />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="profile-platform-line">
               {me.platforms.twitch.status === "connected" &&
                 me.platforms.twitch.avatarUrl && (
                   <img
@@ -187,16 +182,12 @@ export default function Profile({
                     alt=""
                     width={36}
                     height={36}
-                    style={{
-                      borderRadius: "50%",
-                      objectFit: "cover",
-                      flexShrink: 0,
-                    }}
+                    className="platform-avatar--sm"
                   />
                 )}
               <div>
-                <div style={{ fontWeight: 600 }}>Twitch</div>
-                <div className="muted" style={{ fontSize: 12 }}>
+                <div className="label-strong">Twitch</div>
+                <div className="muted text-caption">
                   {me.platforms.twitch.status === "connected"
                     ? me.platforms.twitch.displayName ?? "Подключено"
                     : "Не подключено"}
@@ -224,7 +215,7 @@ export default function Profile({
             <div className="profile-row__icon">
               <Radio size={20} strokeWidth={2} aria-hidden />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="profile-platform-line">
               {me.platforms.kick.status === "connected" &&
                 me.platforms.kick.avatarUrl && (
                   <img
@@ -232,16 +223,12 @@ export default function Profile({
                     alt=""
                     width={36}
                     height={36}
-                    style={{
-                      borderRadius: "50%",
-                      objectFit: "cover",
-                      flexShrink: 0,
-                    }}
+                    className="platform-avatar--sm"
                   />
                 )}
               <div>
-                <div style={{ fontWeight: 600 }}>Kick</div>
-                <div className="muted" style={{ fontSize: 12 }}>
+                <div className="label-strong">Kick</div>
+                <div className="muted text-caption">
                   {me.platforms.kick.status === "connected"
                     ? me.platforms.kick.displayName ?? "Подключено"
                     : "Не подключено"}
@@ -270,8 +257,8 @@ export default function Profile({
               <Coins size={20} strokeWidth={2} aria-hidden />
             </div>
             <div>
-              <div style={{ fontWeight: 600 }}>Балансы</div>
-              <div className="muted" style={{ fontSize: 12 }}>
+              <div className="label-strong">Балансы</div>
+              <div className="muted text-caption">
                 Twitch: {me.coinsTwitch.toLocaleString("ru-RU")} · Kick:{" "}
                 {me.coinsKick.toLocaleString("ru-RU")} · всего{" "}
                 {me.coins.toLocaleString("ru-RU")}
@@ -286,8 +273,8 @@ export default function Profile({
               <Users size={20} strokeWidth={2} aria-hidden />
             </div>
             <div>
-              <div style={{ fontWeight: 600 }}>Рефералов</div>
-              <div className="muted" style={{ fontSize: 12 }}>
+              <div className="label-strong">Рефералов</div>
+              <div className="muted text-caption">
                 {refs?.totalInvited ?? me.referralCount} (квалиф.{" "}
                 {refs?.qualifiedCount ?? 0})
               </div>
@@ -302,8 +289,8 @@ export default function Profile({
               <Calendar size={20} strokeWidth={2} aria-hidden />
             </div>
             <div>
-              <div style={{ fontWeight: 600 }}>Код</div>
-              <div className="muted" style={{ fontSize: 12 }}>
+              <div className="label-strong">Код</div>
+              <div className="muted text-caption">
                 {me.referralCode}
               </div>
             </div>
@@ -321,7 +308,7 @@ export default function Profile({
             </button>
           </p>
         )}
-        <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+        <p className="muted profile-hint">
           <strong>Redirect в консоли Twitch/Kick</strong> — это всегда{" "}
           <code>…/api/v1/oauth/…/callback</code> на <strong>сервере API</strong> (локально порт{" "}
           <strong>3001</strong>), не страница на 5173. Примеры:{" "}
@@ -334,10 +321,8 @@ export default function Profile({
       </div>
 
       <div className="card stack">
-        <h2 style={{ fontSize: 14, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--accent)", marginBottom: 8 }}>
-          Реферальная ссылка
-        </h2>
-        <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+        <h2 className="profile-section-title">Реферальная ссылка</h2>
+        <p className="muted m-0 text-body">
           За каждого приглашённого — бонус по правилам бота.
         </p>
         <div className="warning-box">
@@ -350,7 +335,7 @@ export default function Profile({
             <Copy size={20} aria-hidden />
           </button>
         </div>
-        <div className="stack" style={{ marginTop: 8 }}>
+        <div className="stack referral-list-stack">
           {refs?.invited.map((i) => (
             <div key={i.refereeId} className="row leader-row">
               <span>{i.displayName}</span>

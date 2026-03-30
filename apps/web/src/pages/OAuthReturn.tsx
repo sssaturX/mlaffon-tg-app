@@ -34,7 +34,7 @@ export default function OAuthReturn({
 
   return (
     <div className="card">
-      <p className="muted" style={{ margin: 0 }}>
+      <p className="muted m-0">
         Возврат с {platform === "kick" ? "Kick" : "Twitch"}…
       </p>
     </div>

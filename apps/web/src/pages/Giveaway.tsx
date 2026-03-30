@@ -6,6 +6,7 @@ import type { MeResponse } from "shared";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
+import { PageSkeleton } from "../components/PageSkeleton";
 
 type GiveawayDetail = {
   id: string;
@@ -113,11 +114,7 @@ export default function GiveawayPage({
   }
 
   if (!me) {
-    return (
-      <div className="card">
-        <p className="muted">Загрузка профиля…</p>
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   if (loading || !data) {
@@ -127,7 +124,11 @@ export default function GiveawayPage({
           <ChevronLeft size={22} />
           Назад
         </Link>
-        <p className="muted">{loading ? "Загрузка…" : "Не найдено"}</p>
+        {loading ? (
+          <PageSkeleton />
+        ) : (
+          <p className="muted">Не найдено</p>
+        )}
       </div>
     );
   }
@@ -158,7 +159,13 @@ export default function GiveawayPage({
           <ChevronLeft size={22} />
         </Link>
         {g.imageUrl ? (
-          <img src={g.imageUrl} alt="" className="giveaway-detail__banner" />
+          <img
+            src={g.imageUrl}
+            alt=""
+            className="giveaway-detail__banner"
+            loading="lazy"
+            decoding="async"
+          />
         ) : (
           <div className="giveaway-detail__banner giveaway-detail__banner--ph" />
         )}
@@ -234,7 +241,7 @@ export default function GiveawayPage({
       )}
 
       {g.ticketPriceCoins > 0 && canJoin && (
-        <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
+        <p className="muted giveaway-balance-hint">
           Баланс {activePlatform === "twitch" ? "Twitch" : "Kick"}:{" "}
           {balance.toLocaleString("ru-RU")} · переключите платформу в шапке.
         </p>

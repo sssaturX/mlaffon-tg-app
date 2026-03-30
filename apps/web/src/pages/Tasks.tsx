@@ -62,11 +62,7 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div>
       <div className="task-hint" role="note">
-        <Lightbulb
-          size={20}
-          style={{ flexShrink: 0, marginTop: 2 }}
-          aria-hidden
-        />
+        <Lightbulb size={20} className="task-hint__icon" aria-hidden />
         <span>
           Список заданий для платформы выбранной в шапке ({" "}
           {activePlatform === "twitch" ? "Twitch" : "Kick"} + общие). Подключите
@@ -74,8 +70,16 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
         </span>
       </div>
 
-      {msg && <p className="muted">{msg}</p>}
+      {msg ? <p className="muted">{msg}</p> : null}
 
+      {tasks.length === 0 ? (
+        <div className="card text-center">
+          <p className="empty-state__title mb-2">Нет заданий</p>
+          <p className="muted m-0">
+            Для платформы в шапке сейчас нет доступных заданий.
+          </p>
+        </div>
+      ) : (
       <div className="stack">
         {tasks.map((t) => (
           <div
@@ -100,11 +104,11 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
             <p className="task-card__title">{t.title}</p>
             <p className="task-card__desc">{t.description}</p>
             {t.lastError && (
-              <p className="err" style={{ margin: "8px 0 0", fontSize: 13 }}>
+              <p className="err task-card__err">
                 {t.lastError}
               </p>
             )}
-            <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
+            <p className="muted task-card__status">
               Статус: {t.userStatus}
             </p>
             <button
@@ -124,6 +128,7 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }

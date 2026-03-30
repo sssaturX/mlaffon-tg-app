@@ -25,7 +25,7 @@ export function OnboardingModal({ open, onClose }: Props) {
         <h2 id="onb-title" className="modal-title">
           Платформы Twitch и Kick
         </h2>
-        <p className="muted" style={{ margin: 0, lineHeight: 1.45 }}>
+        <p className="muted modal-text">
           Подключение делается через безопасный вход OAuth: откройте{" "}
           <strong>Профиль</strong> и нажмите кнопку у нужной платформы. После
           авторизации на Twitch или Kick вы вернётесь в приложение, а токены
@@ -36,20 +36,19 @@ export function OnboardingModal({ open, onClose }: Props) {
           <li>Redirect URI в консоли разработчика должен совпадать с настройками API.</li>
         </ul>
         {privacyUrl ? (
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             <a href={privacyUrl} target="_blank" rel="noopener noreferrer">
               Политика конфиденциальности
             </a>
           </p>
         ) : (
-          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+          <p className="muted modal-text--sm">
             Добавьте <code>VITE_PRIVACY_POLICY_URL</code> в сборку, чтобы показать ссылку на политику.
           </p>
         )}
         <button
           type="button"
-          className="primary"
-          style={{ width: "100%", marginTop: 4 }}
+          className="primary modal-actions"
           onClick={() => {
             dismissOnboarding();
             onClose();

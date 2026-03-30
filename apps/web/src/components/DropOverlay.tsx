@@ -19,9 +19,6 @@ export type DropSnapshot =
       remainingSeconds: number;
       maxWinners: number;
       winnersCount: number;
-      attemptsLeft: number;
-      maxAttempts: number;
-      cooldownSeconds: number;
       won: boolean;
       rewardCoins: number | null;
     };
@@ -112,6 +109,10 @@ export function DropOverlay({
       ? Math.max(0, snapshot.remainingSeconds - tick)
       : 0;
 
+  const codeFilled = digits.join("").length >= DIGITS;
+  /** Подсветка кнопки после первой введённой цифры — не гаснет после нажатия (нет кулдауна). */
+  const submitGlow = digits.some((d) => d !== "") && !submitting;
+
   const resetInput = useCallback(() => {
     setDigits(Array(DIGITS).fill(""));
     setErr(null);
@@ -197,18 +198,15 @@ export function DropOverlay({
       return;
     }
     const body = !r.ok
-      ? (r.err as { error?: string; message?: string; cooldownSeconds?: number })
+      ? (r.err as { error?: string; message?: string })
       : null;
     const codeErr = body?.error;
     haptic("error");
     setShake(true);
     setTimeout(() => setShake(false), 500);
-    if (codeErr === "cooldown" && body?.cooldownSeconds) {
-      setErr(`Подождите ${body.cooldownSeconds} с`);
-    } else if (codeErr === "wrong_code") {
+    setDigits(Array(DIGITS).fill(""));
+    if (codeErr === "wrong_code") {
       setErr("Неверный код");
-    } else if (codeErr === "exhausted") {
-      setErr("Попытки закончились");
     } else if (codeErr === "pool_full") {
       setErr("Места закончились");
     } else if (codeErr === "already_won") {
@@ -216,6 +214,7 @@ export function DropOverlay({
     } else {
       setErr(body?.message ?? "Ошибка");
     }
+    queueMicrotask(() => inputsRef.current[0]?.focus());
     await Promise.resolve(onRefreshSnapshot?.());
   }
 
@@ -234,9 +233,7 @@ export function DropOverlay({
           >
             <X size={22} />
           </button>
-          <p className="muted" style={{ padding: 24 }}>
-            Загрузка…
-          </p>
+          <p className="muted drop-overlay__loading">Загрузка…</p>
         </div>
       </div>
     );
@@ -298,15 +295,6 @@ export function DropOverlay({
               Забрать
             </button>
           </div>
-        ) : snapshot.attemptsLeft <= 0 ? (
-          <div className="drop-overlay__body">
-            <p className="drop-overlay__badge">⛔</p>
-            <h2 className="drop-overlay__title">Попытки закончились</h2>
-            <p className="drop-overlay__sub">В следующий раз повезёт больше</p>
-            <button type="button" className="primary drop-overlay__btn" onClick={onClose}>
-              Закрыть
-            </button>
-          </div>
         ) : (
           <div className="drop-overlay__body">
             <p className="drop-overlay__badge">
@@ -339,25 +327,13 @@ export function DropOverlay({
 
             {err ? <p className="drop-overlay__err">{err}</p> : null}
 
-            <p className="drop-overlay__meta">
-              Попыток: {snapshot.attemptsLeft} / {snapshot.maxAttempts}
-            </p>
-
             <button
               type="button"
-              className="primary drop-overlay__btn"
-              disabled={
-                submitting ||
-                digits.join("").length < DIGITS ||
-                (snapshot.cooldownSeconds ?? 0) > 0
-              }
+              className={`primary drop-overlay__btn${submitGlow ? " drop-overlay__btn--pulse" : ""}`}
+              disabled={submitting || !codeFilled}
               onClick={() => void submit()}
             >
-              {submitting
-                ? "…"
-                : snapshot.cooldownSeconds
-                  ? `Подождите ${snapshot.cooldownSeconds} с`
-                  : "Получить награду"}
+              {submitting ? "…" : "Получить награду"}
             </button>
           </div>
         )}

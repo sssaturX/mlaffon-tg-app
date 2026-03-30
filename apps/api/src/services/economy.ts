@@ -1,6 +1,7 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { transactions, userBalances } from "../db/schema.js";
+import { transactions, userBalances, userInventory } from "../db/schema.js";
+import { gameConfig } from "../config.js";
 
 export type CreditReason =
   | "task_reward"
@@ -17,19 +18,91 @@ export type CreditReason =
 /** Куда зачислить / откуда списать монеты. */
 export type EconomyPlatform = "twitch" | "kick";
 
-export async function applyCredit(params: {
-  userId: string;
-  amount: number;
-  idempotencyKey: string;
-  kind: CreditReason;
-  platform: EconomyPlatform;
-  referenceType?: string;
-  referenceId?: string;
-  meta?: Record<string, unknown>;
-}): Promise<
-  | { ok: true; newCoins: number; newTwitchCoins: number; newKickCoins: number }
-  | { ok: false; reason: "duplicate" }
-> {
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+function boostEligible(kind: CreditReason): boolean {
+  return kind !== "admin";
+}
+
+/**
+ * При наличии заряда в инвентаре (boost_x2) умножает сумму на множитель (не выше max из конфига),
+ * списывает один заряд. Без заряда возвращает baseAmount.
+ */
+async function consumeBoostMultiply(
+  tx: Tx,
+  userId: string,
+  baseAmount: number,
+  eligible: boolean
+): Promise<{
+  finalAmount: number;
+  boostApplied: boolean;
+  multiplier: number;
+}> {
+  if (!eligible || baseAmount <= 0) {
+    return { finalAmount: baseAmount, boostApplied: false, multiplier: 1 };
+  }
+
+  const itemId = gameConfig.boost.inventoryItemId;
+  const maxM = gameConfig.boost.maxMultiplier;
+
+  const [consumed] = await tx
+    .update(userInventory)
+    .set({
+      quantity: sql`${userInventory.quantity} - 1`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(userInventory.userId, userId),
+        eq(userInventory.itemId, itemId),
+        sql`${userInventory.quantity} > 0`
+      )
+    )
+    .returning({ id: userInventory.id });
+
+  if (!consumed) {
+    return { finalAmount: baseAmount, boostApplied: false, multiplier: 1 };
+  }
+
+  const mult = Math.min(maxM, 2);
+  const finalAmount = Math.floor(baseAmount * mult);
+  return {
+    finalAmount,
+    boostApplied: true,
+    multiplier: mult,
+  };
+}
+
+async function readBalances(tx: Tx, userId: string) {
+  const [row] = await tx
+    .select({
+      coins: userBalances.coins,
+      twitchCoins: userBalances.twitchCoins,
+      kickCoins: userBalances.kickCoins,
+    })
+    .from(userBalances)
+    .where(eq(userBalances.userId, userId))
+    .limit(1);
+  return {
+    newCoins: row?.coins ?? 0,
+    newTwitchCoins: row?.twitchCoins ?? 0,
+    newKickCoins: row?.kickCoins ?? 0,
+  };
+}
+
+async function insertCreditTx(
+  tx: Tx,
+  params: {
+    userId: string;
+    amount: number;
+    idempotencyKey: string;
+    kind: CreditReason;
+    platform: EconomyPlatform;
+    referenceType?: string;
+    referenceId?: string;
+    meta?: Record<string, unknown>;
+  }
+): Promise<void> {
   const {
     userId,
     amount,
@@ -40,7 +113,69 @@ export async function applyCredit(params: {
     referenceId,
     meta,
   } = params;
-  if (amount <= 0) throw new Error("amount_must_be_positive");
+  await tx.insert(transactions).values({
+    userId,
+    amount,
+    kind,
+    referenceType: referenceType ?? null,
+    referenceId: referenceId ?? null,
+    idempotencyKey,
+    meta: { ...(meta ?? {}), platform },
+  });
+
+  if (platform === "twitch") {
+    await tx
+      .update(userBalances)
+      .set({
+        twitchCoins: sql`${userBalances.twitchCoins} + ${amount}`,
+        twitchLifetimeEarned: sql`${userBalances.twitchLifetimeEarned} + ${amount}`,
+        coins: sql`${userBalances.coins} + ${amount}`,
+        lifetimeEarned: sql`${userBalances.lifetimeEarned} + ${amount}`,
+      })
+      .where(eq(userBalances.userId, userId));
+  } else {
+    await tx
+      .update(userBalances)
+      .set({
+        kickCoins: sql`${userBalances.kickCoins} + ${amount}`,
+        kickLifetimeEarned: sql`${userBalances.kickLifetimeEarned} + ${amount}`,
+        coins: sql`${userBalances.coins} + ${amount}`,
+        lifetimeEarned: sql`${userBalances.lifetimeEarned} + ${amount}`,
+      })
+      .where(eq(userBalances.userId, userId));
+  }
+}
+
+export async function applyCredit(params: {
+  userId: string;
+  amount: number;
+  idempotencyKey: string;
+  kind: CreditReason;
+  platform: EconomyPlatform;
+  referenceType?: string;
+  referenceId?: string;
+  meta?: Record<string, unknown>;
+}): Promise<
+  | {
+      ok: true;
+      newCoins: number;
+      newTwitchCoins: number;
+      newKickCoins: number;
+      creditedAmount: number;
+    }
+  | { ok: false; reason: "duplicate" }
+> {
+  const {
+    userId,
+    amount: baseAmount,
+    idempotencyKey,
+    kind,
+    platform,
+    referenceType,
+    referenceId,
+    meta,
+  } = params;
+  if (baseAmount <= 0) throw new Error("amount_must_be_positive");
 
   return await db.transaction(async (tx) => {
     const [existing] = await tx
@@ -50,58 +185,42 @@ export async function applyCredit(params: {
       .limit(1);
     if (existing) return { ok: false, reason: "duplicate" };
 
-    await tx.insert(transactions).values({
+    const { finalAmount, boostApplied, multiplier } = await consumeBoostMultiply(
+      tx,
       userId,
-      amount,
-      kind,
-      referenceType: referenceType ?? null,
-      referenceId: referenceId ?? null,
+      baseAmount,
+      boostEligible(kind)
+    );
+    if (finalAmount <= 0) throw new Error("amount_must_be_positive");
+
+    const metaOut = {
+      ...(meta ?? {}),
+      rewardBeforeBoost: baseAmount,
+      boostMultiplier: boostApplied ? multiplier : 1,
+      boostApplied,
+    };
+
+    await insertCreditTx(tx, {
+      userId,
+      amount: finalAmount,
       idempotencyKey,
-      meta: { ...(meta ?? {}), platform },
+      kind,
+      platform,
+      referenceType,
+      referenceId,
+      meta: metaOut,
     });
 
-    if (platform === "twitch") {
-      await tx
-        .update(userBalances)
-        .set({
-          twitchCoins: sql`${userBalances.twitchCoins} + ${amount}`,
-          twitchLifetimeEarned: sql`${userBalances.twitchLifetimeEarned} + ${amount}`,
-          coins: sql`${userBalances.coins} + ${amount}`,
-          lifetimeEarned: sql`${userBalances.lifetimeEarned} + ${amount}`,
-        })
-        .where(eq(userBalances.userId, userId));
-    } else {
-      await tx
-        .update(userBalances)
-        .set({
-          kickCoins: sql`${userBalances.kickCoins} + ${amount}`,
-          kickLifetimeEarned: sql`${userBalances.kickLifetimeEarned} + ${amount}`,
-          coins: sql`${userBalances.coins} + ${amount}`,
-          lifetimeEarned: sql`${userBalances.lifetimeEarned} + ${amount}`,
-        })
-        .where(eq(userBalances.userId, userId));
-    }
-
-    const [row] = await tx
-      .select({
-        coins: userBalances.coins,
-        twitchCoins: userBalances.twitchCoins,
-        kickCoins: userBalances.kickCoins,
-      })
-      .from(userBalances)
-      .where(eq(userBalances.userId, userId))
-      .limit(1);
-
+    const balances = await readBalances(tx, userId);
     return {
       ok: true,
-      newCoins: row?.coins ?? 0,
-      newTwitchCoins: row?.twitchCoins ?? 0,
-      newKickCoins: row?.kickCoins ?? 0,
+      ...balances,
+      creditedAmount: finalAmount,
     };
   });
 }
 
-/** Награды без привязки к платформе — делим 50/50 между Twitch и Kick. */
+/** Награды без привязки к платформе — делим 50/50 между Twitch и Kick. Один заряд буста на всю сумму. */
 export async function applyCreditSplit(params: {
   userId: string;
   amount: number;
@@ -111,33 +230,88 @@ export async function applyCreditSplit(params: {
   referenceId?: string;
   meta?: Record<string, unknown>;
 }): Promise<
-  | { ok: true; newCoins: number; newTwitchCoins: number; newKickCoins: number }
+  | {
+      ok: true;
+      newCoins: number;
+      newTwitchCoins: number;
+      newKickCoins: number;
+      creditedAmount: number;
+    }
   | { ok: false; reason: "duplicate" }
 > {
-  const { amount, idempotencyKey } = params;
-  if (amount <= 0) throw new Error("amount_must_be_positive");
-  const half = Math.floor(amount / 2);
-  const rest = amount - half;
-  const a = await applyCredit({
-    ...params,
-    amount: half,
-    platform: "twitch",
-    idempotencyKey: `${idempotencyKey}:tw`,
+  const {
+    userId,
+    amount: baseAmount,
+    idempotencyKey,
+    kind,
+    referenceType,
+    referenceId,
+    meta,
+  } = params;
+  if (baseAmount <= 0) throw new Error("amount_must_be_positive");
+
+  const keyTw = `${idempotencyKey}:tw`;
+  const keyKick = `${idempotencyKey}:kick`;
+
+  return await db.transaction(async (tx) => {
+    const [dupTw] = await tx
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(eq(transactions.idempotencyKey, keyTw))
+      .limit(1);
+    const [dupKick] = await tx
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(eq(transactions.idempotencyKey, keyKick))
+      .limit(1);
+    if (dupTw || dupKick) return { ok: false, reason: "duplicate" };
+
+    const { finalAmount, boostApplied, multiplier } = await consumeBoostMultiply(
+      tx,
+      userId,
+      baseAmount,
+      boostEligible(kind)
+    );
+    if (finalAmount <= 0) throw new Error("amount_must_be_positive");
+
+    const metaOut = {
+      ...(meta ?? {}),
+      rewardBeforeBoost: baseAmount,
+      boostMultiplier: boostApplied ? multiplier : 1,
+      boostApplied,
+    };
+
+    const half = Math.floor(finalAmount / 2);
+    const rest = finalAmount - half;
+
+    await insertCreditTx(tx, {
+      userId,
+      amount: half,
+      idempotencyKey: keyTw,
+      kind,
+      platform: "twitch",
+      referenceType,
+      referenceId,
+      meta: metaOut,
+    });
+    await insertCreditTx(tx, {
+      userId,
+      amount: rest,
+      idempotencyKey: keyKick,
+      kind,
+      platform: "kick",
+      referenceType,
+      referenceId,
+      meta: metaOut,
+    });
+
+    const balances = await readBalances(tx, userId);
+    return {
+      ok: true,
+      ...balances,
+      creditedAmount: finalAmount,
+    };
   });
-  if (!a.ok) return a;
-  const b = await applyCredit({
-    ...params,
-    amount: rest,
-    platform: "kick",
-    idempotencyKey: `${idempotencyKey}:kick`,
-  });
-  if (!b.ok) return b;
-  return {
-    ok: true,
-    newCoins: b.newCoins,
-    newTwitchCoins: b.newTwitchCoins,
-    newKickCoins: b.newKickCoins,
-  };
 }
 
 export async function applyDebit(params: {
@@ -215,21 +389,7 @@ export async function applyDebit(params: {
         .where(eq(userBalances.userId, userId));
     }
 
-    const [row] = await tx
-      .select({
-        coins: userBalances.coins,
-        twitchCoins: userBalances.twitchCoins,
-        kickCoins: userBalances.kickCoins,
-      })
-      .from(userBalances)
-      .where(eq(userBalances.userId, userId))
-      .limit(1);
-
-    return {
-      ok: true,
-      newCoins: row?.coins ?? 0,
-      newTwitchCoins: row?.twitchCoins ?? 0,
-      newKickCoins: row?.kickCoins ?? 0,
-    };
+    const b = await readBalances(tx, userId);
+    return { ok: true as const, ...b };
   });
 }

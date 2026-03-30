@@ -36,6 +36,11 @@ export interface GameConfig {
     maxPerWindow: number;
     timeWindowMs: number;
   };
+  /** Множитель к наградам при заряде в инвентаре (см. inventoryItemId). Не выше maxMultiplier. */
+  boost: {
+    maxMultiplier: number;
+    inventoryItemId: string;
+  };
 }
 
 const defaultConfig: GameConfig = {
@@ -71,6 +76,10 @@ const defaultConfig: GameConfig = {
   rateLimit: {
     maxPerWindow: 120,
     timeWindowMs: 60_000,
+  },
+  boost: {
+    maxMultiplier: 2,
+    inventoryItemId: "boost_x2",
   },
 };
 

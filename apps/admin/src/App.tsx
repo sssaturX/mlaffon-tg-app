@@ -459,7 +459,7 @@ export function App() {
       <>
         <h1>Админка Mlaffon</h1>
         <p className="muted">Вход по email, паролю и passphrase (см. ADMIN_* в API).</p>
-        <form className="card stack" onSubmit={login} style={{ marginTop: 16 }}>
+        <form className="card stack admin-mt-4" onSubmit={login}>
           <div>
             <label htmlFor="email">Email</label>
             <input
@@ -504,8 +504,8 @@ export function App() {
 
   return (
     <>
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <h1 style={{ margin: 0 }}>Админка</h1>
+      <div className="row admin-flex-between">
+        <h1 className="admin-h1-title">Админка</h1>
         <button type="button" className="secondary" onClick={logout}>
           Выйти
         </button>
@@ -643,11 +643,11 @@ export function App() {
         <ul className="list">
           {giveaways.map((g) => (
             <li key={g.id}>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-start", justifyContent: "space-between" }}>
-                <div style={{ flex: "1 1 200px" }}>
+              <div className="admin-gw-row">
+                <div className="admin-gw-main">
                   <strong>{g.title}</strong>
                   <div className="muted">{g.prizeText}</div>
-                  <div className="muted" style={{ marginTop: 6 }}>
+                  <div className="muted admin-muted-gap">
                     до {new Date(g.endsAt).toLocaleString("ru-RU")} ·{" "}
                     {g.active ? "активен" : "выкл"} · участников {g.participantCount} · победителей{" "}
                     {g.winnerCount}
@@ -657,7 +657,7 @@ export function App() {
                   {!g.drawnAt &&
                   g.participantCount > 0 &&
                   g.participantCount < g.winnerCount ? (
-                    <p className="muted" style={{ margin: "6px 0 0" }}>
+                    <p className="muted admin-hint-sm">
                       Для кнопки «Выбрать победителей» нужно не меньше {g.winnerCount} участников.
                     </p>
                   ) : null}
@@ -687,12 +687,12 @@ export function App() {
                 </div>
               </div>
               {expandedId === g.id && (
-                <div className="giveaway-admin-detail" style={{ marginTop: 12 }}>
+                <div className="giveaway-admin-detail admin-detail-block">
                   {detailLoading ? (
                     <p className="muted">Загрузка списка…</p>
                   ) : detail && detail.giveaway.id === g.id ? (
                     <>
-                      <p className="muted" style={{ marginTop: 0 }}>
+                      <p className="muted admin-mt-0">
                         Участники ({detail.participants.length})
                       </p>
                       <ul className="admin-userlist">
@@ -734,8 +734,8 @@ export function App() {
 
       {tab === "promos" ? (
         <>
-      <h2 style={{ marginTop: 0 }}>Промокоды</h2>
-      <p className="muted" style={{ marginTop: 0 }}>
+      <h2 className="admin-mt-0">Промокоды</h2>
+      <p className="muted admin-mt-0">
         Код вводят на главной. Куда начислить монеты: <strong>50/50</strong> — как раньше;{" "}
         <strong>Twitch</strong> / <strong>Kick</strong> — весь бонус на счёт платформы. Макс. активаций{" "}
         <strong>0</strong> = без лимита.
@@ -822,7 +822,7 @@ export function App() {
 
       {tab === "users" ? (
         <>
-          <h2 style={{ marginTop: 0 }}>Пользователи</h2>
+          <h2 className="admin-mt-0">Пользователи</h2>
           <p className="muted">Балансы и рефералы (по дате регистрации, новые сверху).</p>
           {adminUsers === null ? (
             <p className="muted">Загрузка…</p>
@@ -862,7 +862,7 @@ export function App() {
                         <td>{u.twitchLifetimeEarned.toLocaleString("ru-RU")}</td>
                         <td>{u.kickLifetimeEarned.toLocaleString("ru-RU")}</td>
                         <td>{u.referralCount}</td>
-                        <td className="muted" style={{ whiteSpace: "nowrap" }}>
+                        <td className="muted admin-table-nowrap">
                           {new Date(u.createdAt).toLocaleString("ru-RU")}</td>
                       </tr>
                     ))}
@@ -898,16 +898,16 @@ export function App() {
 
       {tab === "drops" ? (
         <>
-          <h2 style={{ marginTop: 0 }}>Стрим-дропы</h2>
+          <h2 className="admin-mt-0">Стрим-дропы</h2>
           <p className="muted">
-            Код вводят в приложении в модалке. Награда случайная в диапазоне (50/50 Twitch/Kick). До{" "}
-            {5} попыток на человека, пауза 3 с между попытками.
+            Код вводят в приложении в модалке. Награда случайная в диапазоне (50/50 Twitch/Kick). Лимит
+            попыток и пауза между вводами отключены — можно сразу вводить снова.
           </p>
           {dropStatus === null ? (
             <p className="muted">Загрузка…</p>
           ) : (
-            <div className="card stack" style={{ marginBottom: 16 }}>
-              <p style={{ margin: 0 }}>
+            <div className="card stack admin-drop-status">
+              <p className="admin-m-0">
                 <strong>Статус:</strong>{" "}
                 {dropStatus.active && dropStatus.drop ? (
                   <>
@@ -1018,8 +1018,7 @@ export function App() {
           </form>
           <button
             type="button"
-            className="secondary"
-            style={{ marginTop: 12 }}
+            className="secondary admin-btn-mt"
             disabled={loading}
             onClick={async () => {
               if (!token) return;

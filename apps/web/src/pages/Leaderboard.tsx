@@ -66,7 +66,7 @@ export default function Leaderboard() {
       </div>
 
       {data?.me && (
-        <div className="card row leader-row" style={{ borderColor: "var(--accent-glow)" }}>
+        <div className="card row leader-row leader-row--highlight">
           <span>Вы</span>
           <span>
             #{data.me.rank} — {data.me.value}

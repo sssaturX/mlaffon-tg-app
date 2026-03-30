@@ -105,5 +105,5 @@ export async function grantTaskReward(params: {
 
   await maybeQualifyReferral(userId);
 
-  return { ok: true, coins: credit.newCoins, reward };
+  return { ok: true, coins: credit.newCoins, reward: credit.creditedAmount };
 }

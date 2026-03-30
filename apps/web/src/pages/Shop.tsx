@@ -89,7 +89,7 @@ export default function Shop({ onRefresh }: { onRefresh: () => void }) {
         <p className="muted">Раздел «Кейсы» скоро появится.</p>
       ) : (
         <>
-          <p className="muted" style={{ marginTop: 0 }}>
+          <p className="muted shop-intro">
             Оплата с баланса{" "}
             {activePlatform === "twitch" ? "Twitch" : "Kick"} (переключатель в
             шапке).
@@ -103,29 +103,18 @@ export default function Shop({ onRefresh }: { onRefresh: () => void }) {
               <>
                 {featured && (
                   <div className="card shop-featured card--tint">
-                    <p
-                      className="muted"
-                      style={{ margin: "0 0 6px", fontSize: 11 }}
-                    >
-                      Рекомендуем
-                    </p>
-                    <strong style={{ fontSize: 16 }}>{featured.title}</strong>
-                    <p
-                      className="muted"
-                      style={{ margin: "6px 0 12px", fontSize: 13 }}
-                    >
-                      {featured.kind}
-                    </p>
+                    <p className="muted shop-featured__label">Рекомендуем</p>
+                    <span className="shop-featured__title">{featured.title}</span>
+                    <p className="muted shop-featured__kind">{featured.kind}</p>
                     <button
                       type="button"
-                      className="primary"
-                      style={{ width: "100%" }}
+                      className="primary btn-block"
                       onClick={() => buy(featured.id)}
                     >
                       Купить за{" "}
                       <Coins
                         size={18}
-                        style={{ verticalAlign: "text-bottom", marginRight: 4 }}
+                        className="icon-inline-coins"
                         aria-hidden
                       />
                       {featured.priceCoins.toLocaleString("ru-RU")}
@@ -133,7 +122,7 @@ export default function Shop({ onRefresh }: { onRefresh: () => void }) {
                   </div>
                 )}
 
-          <div className="filters" style={{ marginTop: 4 }}>
+          <div className="filters filters--tight">
             {kinds.map((k) => (
               <button
                 key={k}
@@ -163,7 +152,7 @@ export default function Shop({ onRefresh }: { onRefresh: () => void }) {
                     }
                     onClick={() => buy(i.id)}
                   >
-                    <Coins size={14} style={{ marginRight: 4 }} aria-hidden />
+                    <Coins size={14} className="icon-inline-coins" aria-hidden />
                     {i.priceCoins.toLocaleString("ru-RU")}
                   </button>
                 </div>

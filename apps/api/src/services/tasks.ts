@@ -252,5 +252,10 @@ export async function claimTask(
 
   await maybeQualifyReferral(userId);
 
-  return { ok: true, mode: "sync", coins: credit.newCoins, reward };
+  return {
+    ok: true,
+    mode: "sync",
+    coins: credit.newCoins,
+    reward: credit.creditedAmount,
+  };
 }

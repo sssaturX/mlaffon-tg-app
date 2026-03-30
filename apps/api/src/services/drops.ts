@@ -4,9 +4,6 @@ import { db } from "../db/index.js";
 import { dropUserStates, drops } from "../db/schema.js";
 import { applyCreditSplit } from "./economy.js";
 
-export const DROP_MAX_ATTEMPTS = 5;
-export const DROP_COOLDOWN_MS = 3000;
-
 function normalizeCode(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, 8);
 }
@@ -23,9 +20,6 @@ export type ActiveDropPublic = {
   remainingSeconds: number;
   maxWinners: number;
   winnersCount: number;
-  attemptsLeft: number;
-  maxAttempts: number;
-  cooldownSeconds: number;
   won: boolean;
   rewardCoins: number | null;
 };
@@ -56,21 +50,8 @@ export async function getActiveDropSnapshot(
     )
     .limit(1);
 
-  let attemptsCount = st?.attemptsCount ?? 0;
   const won = st?.won ?? false;
   const rewardCoins = st?.rewardCoins ?? null;
-
-  let cooldownSeconds = 0;
-  if (st?.lastAttemptAt && !won) {
-    const elapsed = now.getTime() - st.lastAttemptAt.getTime();
-    if (elapsed < DROP_COOLDOWN_MS) {
-      cooldownSeconds = Math.ceil((DROP_COOLDOWN_MS - elapsed) / 1000);
-    }
-  }
-
-  const attemptsLeft = won
-    ? 0
-    : Math.max(0, DROP_MAX_ATTEMPTS - attemptsCount);
 
   return {
     hasActiveDrop: true,
@@ -79,9 +60,6 @@ export async function getActiveDropSnapshot(
     remainingSeconds,
     maxWinners: d.maxWinners,
     winnersCount: d.winnersCount,
-    attemptsLeft,
-    maxAttempts: DROP_MAX_ATTEMPTS,
-    cooldownSeconds,
     won,
     rewardCoins,
   };
@@ -95,12 +73,9 @@ export type AttemptResult =
         | "not_found"
         | "drop_ended"
         | "wrong_code"
-        | "cooldown"
-        | "exhausted"
         | "already_won"
         | "pool_full"
         | "duplicate";
-      cooldownSeconds?: number;
     };
 
 export async function attemptDropCode(
@@ -135,40 +110,7 @@ export async function attemptDropCode(
     return { ok: false, code: "already_won" };
   }
 
-  const attemptsCount = existing?.attemptsCount ?? 0;
-  if (attemptsCount >= DROP_MAX_ATTEMPTS) {
-    return { ok: false, code: "exhausted" };
-  }
-
-  if (existing?.lastAttemptAt) {
-    const elapsed = now.getTime() - existing.lastAttemptAt.getTime();
-    if (elapsed < DROP_COOLDOWN_MS) {
-      return {
-        ok: false,
-        code: "cooldown",
-        cooldownSeconds: Math.ceil((DROP_COOLDOWN_MS - elapsed) / 1000),
-      };
-    }
-  }
-
   if (input !== expected) {
-    const nextAttempts = attemptsCount + 1;
-    if (existing) {
-      await db
-        .update(dropUserStates)
-        .set({
-          attemptsCount: nextAttempts,
-          lastAttemptAt: now,
-        })
-        .where(eq(dropUserStates.id, existing.id));
-    } else {
-      await db.insert(dropUserStates).values({
-        dropId: d.id,
-        userId,
-        attemptsCount: nextAttempts,
-        lastAttemptAt: now,
-      });
-    }
     return { ok: false, code: "wrong_code" };
   }
 
@@ -217,12 +159,14 @@ export async function attemptDropCode(
     return { ok: false, code: "wrong_code" };
   }
 
+  const paid = credit.creditedAmount;
+
   if (existing) {
     await db
       .update(dropUserStates)
       .set({
         won: true,
-        rewardCoins: reward,
+        rewardCoins: paid,
         lastAttemptAt: now,
       })
       .where(eq(dropUserStates.id, existing.id));
@@ -230,14 +174,14 @@ export async function attemptDropCode(
     await db.insert(dropUserStates).values({
       dropId: d.id,
       userId,
-      attemptsCount: attemptsCount + 1,
+      attemptsCount: 1,
       lastAttemptAt: now,
       won: true,
-      rewardCoins: reward,
+      rewardCoins: paid,
     });
   }
 
-  return { ok: true, reward };
+  return { ok: true, reward: paid };
 }
 
 export async function startDrop(params: {

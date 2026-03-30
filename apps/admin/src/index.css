@@ -270,3 +270,70 @@ button:disabled {
   flex-wrap: wrap;
   margin-top: 12px;
 }
+
+/* Утилиты выравнивания */
+.admin-flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.admin-h1-title {
+  margin: 0;
+}
+
+.admin-mt-4 {
+  margin-top: 16px;
+}
+
+.admin-mt-3 {
+  margin-top: 12px;
+}
+
+.admin-mt-0 {
+  margin-top: 0;
+}
+
+.admin-mb-3 {
+  margin-bottom: 16px;
+}
+
+.admin-m-0 {
+  margin: 0;
+}
+
+.admin-gw-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.admin-gw-main {
+  flex: 1 1 200px;
+}
+
+.admin-muted-gap {
+  margin-top: 6px;
+}
+
+.admin-hint-sm {
+  margin: 6px 0 0;
+}
+
+.admin-detail-block {
+  margin-top: 12px;
+}
+
+.admin-drop-status {
+  margin-bottom: 16px;
+}
+
+.admin-btn-mt {
+  margin-top: 12px;
+}
+
+.admin-table-nowrap {
+  white-space: nowrap;
+}

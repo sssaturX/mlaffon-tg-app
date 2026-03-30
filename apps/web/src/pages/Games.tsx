@@ -67,7 +67,7 @@ export default function Games({ onRefresh }: { onRefresh: () => void }) {
             {status.paidSpinCost} монет с баланса этой платформы.
           </p>
         )}
-        <div className="row" style={{ flexWrap: "wrap" }}>
+        <div className="row games-actions">
           <button
             type="button"
             className="primary"
@@ -80,7 +80,7 @@ export default function Games({ onRefresh }: { onRefresh: () => void }) {
             Платный спин
           </button>
         </div>
-        {last && <p>{last}</p>}
+        {last ? <p className="mt-2">{last}</p> : null}
       </div>
     </div>
   );
