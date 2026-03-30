@@ -19,7 +19,7 @@ body {
 }
 
 #root {
-  max-width: 720px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 24px 16px 48px;
 }
@@ -133,4 +133,64 @@ button:disabled {
 .muted {
   color: #9aa0a6;
   font-size: 13px;
+}
+
+.admin-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.admin-stat {
+  border-radius: 10px;
+  border: 1px solid #2d3139;
+  background: #14161c;
+  padding: 12px 14px;
+}
+
+.admin-stat__label {
+  display: block;
+  font-size: 11px;
+  color: #9aa0a6;
+  margin-bottom: 6px;
+}
+
+.admin-stat__val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #22c55e;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.admin-userlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid #2d3139;
+  border-radius: 8px;
+  background: #0f1117;
+}
+
+.admin-userlist li {
+  padding: 8px 12px;
+  border-bottom: 1px solid #2d3139;
+  font-size: 13px;
+}
+
+.admin-userlist li:last-child {
+  border-bottom: none;
+}
+
+.giveaway-admin-detail {
+  border-top: 1px solid #2d3139;
+  padding-top: 8px;
 }

@@ -39,6 +39,7 @@ import Leaderboard from "./pages/Leaderboard";
 import Profile from "./pages/Profile";
 import OAuthReturn from "./pages/OAuthReturn";
 import OAuthBrowserDone from "./pages/OAuthBrowserDone";
+import GiveawayPage from "./pages/Giveaway";
 
 const devAuth =
   import.meta.env.VITE_ALLOW_DEV === "1" || import.meta.env.DEV;
@@ -286,6 +287,10 @@ function AppShell({
         <main className="app-main">
           <Routes>
             <Route path="/" element={<HomePage me={me} onRefresh={refreshMe} />} />
+            <Route
+              path="/giveaway/:id"
+              element={<GiveawayPage me={me} onRefresh={refreshMe} />}
+            />
             <Route path="/tasks" element={<Tasks onRefresh={refreshMe} />} />
             <Route path="/games" element={<Games onRefresh={refreshMe} />} />
             <Route path="/shop" element={<Shop onRefresh={refreshMe} />} />

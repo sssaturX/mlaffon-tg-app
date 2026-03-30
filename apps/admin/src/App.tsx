@@ -15,14 +15,26 @@ function apiBase(): string {
   return env;
 }
 
+type AdminStats = {
+  usersCount: number;
+  coinsEarnedTotal: number;
+  activeGiveaways: number;
+  giveawayEntriesTotal: number;
+};
+
 type GiveawayRow = {
   id: string;
   title: string;
   prizeText: string;
+  description: string | null;
   imageUrl: string | null;
   endsAt: string;
   active: boolean;
   sortOrder: number;
+  winnerCount: number;
+  ticketPriceCoins: number;
+  drawnAt: string | null;
+  participantCount: number;
 };
 
 type PromoRow = {
@@ -33,6 +45,32 @@ type PromoRow = {
   usesCount: number;
   active: boolean;
   createdAt: string;
+};
+
+type GiveawayParticipant = {
+  userId: string;
+  username: string;
+  joinedAt: string;
+};
+
+type GiveawayDetailResponse = {
+  giveaway: {
+    id: string;
+    title: string;
+    prizeText: string;
+    description: string | null;
+    imageUrl: string | null;
+    endsAt: string;
+    active: boolean;
+    sortOrder: number;
+    winnerCount: number;
+    ticketPriceCoins: number;
+    drawnAt: string | null;
+  };
+  participants: GiveawayParticipant[];
+  publicSnapshot: {
+    winners: { rank: number; username: string }[];
+  } | null;
 };
 
 export function App() {
@@ -49,16 +87,26 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const [stats, setStats] = useState<AdminStats | null>(null);
   const [giveaways, setGiveaways] = useState<GiveawayRow[] | null>(null);
   const [promos, setPromos] = useState<PromoRow[] | null>(null);
+
   const [gwTitle, setGwTitle] = useState("");
   const [gwPrize, setGwPrize] = useState("");
+  const [gwDescription, setGwDescription] = useState("");
+  const [gwWinnerCount, setGwWinnerCount] = useState(3);
+  const [gwTicketPrice, setGwTicketPrice] = useState(0);
   const [gwEnds, setGwEnds] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 14);
     return d.toISOString().slice(0, 16);
   });
   const [gwImage, setGwImage] = useState("");
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<GiveawayDetailResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [drawLoadingId, setDrawLoadingId] = useState<string | null>(null);
 
   const [promoCode, setPromoCode] = useState("");
   const [promoReward, setPromoReward] = useState(100);
@@ -69,6 +117,24 @@ export function App() {
     if (token) (h as Record<string, string>)["Authorization"] = `Bearer ${token}`;
     return h;
   }, [token]);
+
+  const loadStats = useCallback(async () => {
+    if (!token) return;
+    setErr(null);
+    const r = await fetch(`${apiBase()}/api/admin/stats`, { headers: authHeaders() });
+    const j = (await r.json()) as AdminStats & { error?: { message?: string } };
+    if (!r.ok) {
+      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+      if (r.status === 401) setToken(null);
+      return;
+    }
+    setStats({
+      usersCount: j.usersCount,
+      coinsEarnedTotal: j.coinsEarnedTotal,
+      activeGiveaways: j.activeGiveaways,
+      giveawayEntriesTotal: j.giveawayEntriesTotal,
+    });
+  }, [token, authHeaders]);
 
   const loadGiveaways = useCallback(async () => {
     if (!token) return;
@@ -96,12 +162,32 @@ export function App() {
     setPromos(j.promos ?? []);
   }, [token, authHeaders]);
 
+  const loadGiveawayDetail = useCallback(
+    async (id: string) => {
+      if (!token) return;
+      setDetailLoading(true);
+      setErr(null);
+      const r = await fetch(`${apiBase()}/api/admin/giveaways/${id}`, {
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as GiveawayDetailResponse & { error?: { message?: string } };
+      setDetailLoading(false);
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        return;
+      }
+      setDetail(j);
+    },
+    [token, authHeaders]
+  );
+
   useEffect(() => {
     if (token) {
+      void loadStats();
       void loadGiveaways();
       void loadPromos();
     }
-  }, [token, loadGiveaways, loadPromos]);
+  }, [token, loadStats, loadGiveaways, loadPromos]);
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
@@ -136,6 +222,9 @@ export function App() {
     setToken(null);
     setGiveaways(null);
     setPromos(null);
+    setStats(null);
+    setExpandedId(null);
+    setDetail(null);
   }
 
   async function createGiveaway(e: React.FormEvent) {
@@ -150,8 +239,11 @@ export function App() {
         prizeText: gwPrize,
         endsAt,
         active: true,
+        winnerCount: gwWinnerCount,
+        ticketPriceCoins: gwTicketPrice,
       };
       if (gwImage.trim()) body.imageUrl = gwImage.trim();
+      if (gwDescription.trim()) body.description = gwDescription.trim();
       const r = await fetch(`${apiBase()}/api/admin/giveaways`, {
         method: "POST",
         headers: authHeaders(),
@@ -164,12 +256,76 @@ export function App() {
       }
       setGwTitle("");
       setGwPrize("");
+      setGwDescription("");
       await loadGiveaways();
+      await loadStats();
     } catch {
       setErr("Сеть недоступна");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function deleteGiveaway(id: string) {
+    if (!token) return;
+    if (!window.confirm("Удалить розыгрыш и всех участников?")) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/giveaways/${id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as { error?: { message?: string } };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        return;
+      }
+      if (expandedId === id) {
+        setExpandedId(null);
+        setDetail(null);
+      }
+      await loadGiveaways();
+      await loadStats();
+    } catch {
+      setErr("Сеть недоступна");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function drawWinners(id: string) {
+    if (!token) return;
+    setDrawLoadingId(id);
+    setErr(null);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/giveaways/${id}/draw`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as { error?: { message?: string } };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        return;
+      }
+      await loadGiveaways();
+      await loadStats();
+      if (expandedId === id) await loadGiveawayDetail(id);
+    } catch {
+      setErr("Сеть недоступна");
+    } finally {
+      setDrawLoadingId(null);
+    }
+  }
+
+  async function toggleExpand(id: string) {
+    if (expandedId === id) {
+      setExpandedId(null);
+      setDetail(null);
+      return;
+    }
+    setExpandedId(id);
+    await loadGiveawayDetail(id);
   }
 
   async function createPromo(e: React.FormEvent) {
@@ -260,6 +416,30 @@ export function App() {
       </div>
       {err ? <p className="err">{err}</p> : null}
 
+      <h2>Статистика</h2>
+      {stats === null ? (
+        <p className="muted">Загрузка…</p>
+      ) : (
+        <div className="admin-stats">
+          <div className="admin-stat">
+            <span className="admin-stat__label">Пользователей</span>
+            <span className="admin-stat__val">{stats.usersCount.toLocaleString("ru-RU")}</span>
+          </div>
+          <div className="admin-stat">
+            <span className="admin-stat__label">Монет заработано (всего)</span>
+            <span className="admin-stat__val">{stats.coinsEarnedTotal.toLocaleString("ru-RU")}</span>
+          </div>
+          <div className="admin-stat">
+            <span className="admin-stat__label">Активных розыгрышей</span>
+            <span className="admin-stat__val">{stats.activeGiveaways}</span>
+          </div>
+          <div className="admin-stat">
+            <span className="admin-stat__label">Участий в розыгрышах</span>
+            <span className="admin-stat__val">{stats.giveawayEntriesTotal.toLocaleString("ru-RU")}</span>
+          </div>
+        </div>
+      )}
+
       <h2>Розыгрыши</h2>
       <form className="card stack" onSubmit={createGiveaway}>
         <div>
@@ -267,8 +447,42 @@ export function App() {
           <input id="gtitle" value={gwTitle} onChange={(e) => setGwTitle(e.target.value)} required />
         </div>
         <div>
-          <label htmlFor="gprize">Приз (текст)</label>
+          <label htmlFor="gprize">Кратко о призах (строка)</label>
           <input id="gprize" value={gwPrize} onChange={(e) => setGwPrize(e.target.value)} required />
+        </div>
+        <div>
+          <label htmlFor="gdesc">Описание / правила (необязательно)</label>
+          <textarea
+            id="gdesc"
+            value={gwDescription}
+            onChange={(e) => setGwDescription(e.target.value)}
+            placeholder="Текст для карточки розыгрыша"
+          />
+        </div>
+        <div className="row">
+          <div>
+            <label htmlFor="gwin">Число победителей</label>
+            <input
+              id="gwin"
+              type="number"
+              min={1}
+              max={100}
+              value={gwWinnerCount}
+              onChange={(e) => setGwWinnerCount(Number(e.target.value))}
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="gticket">Цена билета (монеты платформы, 0 = бесплатно)</label>
+            <input
+              id="gticket"
+              type="number"
+              min={0}
+              value={gwTicketPrice}
+              onChange={(e) => setGwTicketPrice(Number(e.target.value))}
+              required
+            />
+          </div>
         </div>
         <div>
           <label htmlFor="gends">Окончание (локальное время)</label>
@@ -297,12 +511,88 @@ export function App() {
         <ul className="list">
           {giveaways.map((g) => (
             <li key={g.id}>
-              <strong>{g.title}</strong>
-              <div className="muted">{g.prizeText}</div>
-              <div className="muted" style={{ marginTop: 6 }}>
-                до {new Date(g.endsAt).toLocaleString("ru-RU")} ·{" "}
-                {g.active ? "активен" : "выкл"}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-start", justifyContent: "space-between" }}>
+                <div style={{ flex: "1 1 200px" }}>
+                  <strong>{g.title}</strong>
+                  <div className="muted">{g.prizeText}</div>
+                  <div className="muted" style={{ marginTop: 6 }}>
+                    до {new Date(g.endsAt).toLocaleString("ru-RU")} ·{" "}
+                    {g.active ? "активен" : "выкл"} · участников {g.participantCount} · победителей{" "}
+                    {g.winnerCount}
+                    {g.ticketPriceCoins > 0 ? ` · билет ${g.ticketPriceCoins} мон.` : " · бесплатно"}
+                    {g.drawnAt ? ` · розыгрыш ${new Date(g.drawnAt).toLocaleString("ru-RU")}` : ""}
+                  </div>
+                  {!g.drawnAt &&
+                  g.participantCount > 0 &&
+                  g.participantCount < g.winnerCount ? (
+                    <p className="muted" style={{ margin: "6px 0 0" }}>
+                      Для кнопки «Выбрать победителей» нужно не меньше {g.winnerCount} участников.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="admin-actions">
+                  <button type="button" className="secondary" onClick={() => void toggleExpand(g.id)}>
+                    {expandedId === g.id ? "Свернуть" : "Участники"}
+                  </button>
+                  {!g.drawnAt && g.participantCount >= g.winnerCount ? (
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={drawLoadingId === g.id || loading}
+                      onClick={() => void drawWinners(g.id)}
+                    >
+                      {drawLoadingId === g.id ? "…" : "Выбрать победителей"}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={loading}
+                    onClick={() => void deleteGiveaway(g.id)}
+                  >
+                    Удалить
+                  </button>
+                </div>
               </div>
+              {expandedId === g.id && (
+                <div className="giveaway-admin-detail" style={{ marginTop: 12 }}>
+                  {detailLoading ? (
+                    <p className="muted">Загрузка списка…</p>
+                  ) : detail && detail.giveaway.id === g.id ? (
+                    <>
+                      <p className="muted" style={{ marginTop: 0 }}>
+                        Участники ({detail.participants.length})
+                      </p>
+                      <ul className="admin-userlist">
+                        {detail.participants.length === 0 ? (
+                          <li className="muted">Пока никто не участвует.</li>
+                        ) : (
+                          detail.participants.map((p) => (
+                            <li key={p.userId}>
+                              <strong>{p.username}</strong>
+                              <span className="muted"> · {new Date(p.joinedAt).toLocaleString("ru-RU")}</span>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                      {detail.publicSnapshot?.winners && detail.publicSnapshot.winners.length > 0 ? (
+                        <>
+                          <p className="muted">Победители</p>
+                          <ul className="admin-userlist">
+                            {detail.publicSnapshot.winners.map((w) => (
+                              <li key={w.rank}>
+                                {w.rank}. <strong>{w.username}</strong>
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="muted">Нет данных</p>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>

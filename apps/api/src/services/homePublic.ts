@@ -6,6 +6,7 @@ import {
   userBalances,
   users,
 } from "../db/schema.js";
+import { getParticipantCountsForGiveawayIds } from "./giveaways.js";
 
 export type CashbackPublic = {
   enabled: boolean;
@@ -60,8 +61,13 @@ export async function buildHomePublicResponse(): Promise<{
     id: string;
     title: string;
     prizeText: string;
+    description: string | null;
     imageUrl: string | null;
     endsAt: string;
+    winnerCount: number;
+    ticketPriceCoins: number;
+    participantCount: number;
+    drawnAt: string | null;
   }[];
   cashback: CashbackPublic;
   faq: { q: string; a: string }[];
@@ -82,14 +88,21 @@ export async function buildHomePublicResponse(): Promise<{
     .orderBy(desc(giveaways.sortOrder), desc(giveaways.endsAt))
     .limit(10);
 
+  const counts = await getParticipantCountsForGiveawayIds(g.map((x) => x.id));
+
   return {
     stats: { usersCount: c ?? 0, coinsEarnedTotal: s ?? 0 },
     giveaways: g.map((x) => ({
       id: x.id,
       title: x.title,
       prizeText: x.prizeText,
+      description: x.description ?? null,
       imageUrl: x.imageUrl,
       endsAt: x.endsAt.toISOString(),
+      winnerCount: x.winnerCount,
+      ticketPriceCoins: x.ticketPriceCoins,
+      participantCount: counts.get(x.id) ?? 0,
+      drawnAt: x.drawnAt ? x.drawnAt.toISOString() : null,
     })),
     cashback: await getCashbackSetting(),
     faq: await getFaqItems(),

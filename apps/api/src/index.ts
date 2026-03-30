@@ -27,6 +27,7 @@ import { getFortuneStatus, spinFortuneWheel } from "./services/fortune.js";
 import { listShopItems, purchaseItem } from "./services/shop.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { registerGiveawayRoutes } from "./routes/giveaways.js";
 import { buildHomePublicResponse } from "./services/homePublic.js";
 import { applyPromoForUser } from "./services/promo.js";
 import { assertClaimRateLimits } from "./lib/abuse.js";
@@ -48,6 +49,7 @@ await app.register(rateLimit, {
 await registerAuth(app);
 await registerOAuthRoutes(app);
 await registerAdminRoutes(app);
+await registerGiveawayRoutes(app);
 
 app.get("/health", async () => ({ ok: true }));
 

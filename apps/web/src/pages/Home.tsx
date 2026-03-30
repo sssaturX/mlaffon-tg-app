@@ -7,6 +7,7 @@ import {
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import type { MeResponse } from "shared";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
@@ -20,8 +21,13 @@ type HomePublic = {
     id: string;
     title: string;
     prizeText: string;
+    description: string | null;
     imageUrl: string | null;
     endsAt: string;
+    winnerCount: number;
+    ticketPriceCoins: number;
+    participantCount: number;
+    drawnAt: string | null;
   }[];
   cashback: {
     enabled: boolean;
@@ -275,7 +281,11 @@ export default function Home({
             </span>
           </div>
           {pub.giveaways.map((g) => (
-            <div key={g.id} className="card giveaway-card">
+            <Link
+              key={g.id}
+              to={`/giveaway/${g.id}`}
+              className="card giveaway-card giveaway-card--link"
+            >
               {g.imageUrl ? (
                 <img src={g.imageUrl} alt="" className="giveaway-card__img" />
               ) : (
@@ -284,11 +294,18 @@ export default function Home({
               <div className="giveaway-card__body">
                 <p className="giveaway-card__prize">{g.prizeText}</p>
                 <p className="giveaway-card__title">{g.title}</p>
+                <p className="giveaway-card__meta muted">
+                  {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
+                  {g.winnerCount} победител{g.winnerCount === 1 ? "ь" : g.winnerCount < 5 ? "я" : "ей"}
+                  {g.ticketPriceCoins > 0
+                    ? ` · билет ${g.ticketPriceCoins} мон.`
+                    : " · бесплатно"}
+                </p>
                 <div className="giveaway-card__timer">
                   {formatCountdown(g.endsAt)}
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

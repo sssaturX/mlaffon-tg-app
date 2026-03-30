@@ -178,14 +178,64 @@ export const giveaways = pgTable("giveaways", {
   id: uuid("id").defaultRandom().primaryKey(),
   title: text("title").notNull(),
   prizeText: text("prize_text").notNull(),
+  /** Полное описание правил / призов (текст для карточки). */
+  description: text("description"),
   imageUrl: text("image_url"),
   endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
   active: boolean("active").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
+  /** Сколько победителей выбрать при розыгрыше. */
+  winnerCount: integer("winner_count").notNull().default(1),
+  /** Стоимость билета в монетах выбранной платформы; 0 = бесплатно. */
+  ticketPriceCoins: integer("ticket_price_coins").notNull().default(0),
+  /** Когда выполнен розыгрыш (победители выбраны). */
+  drawnAt: timestamp("drawn_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
 });
+
+export const giveawayParticipants = pgTable(
+  "giveaway_participants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    giveawayId: uuid("giveaway_id")
+      .notNull()
+      .references(() => giveaways.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("giveaway_participants_gw_user").on(t.giveawayId, t.userId),
+    index("giveaway_participants_gw_idx").on(t.giveawayId),
+  ]
+);
+
+export const giveawayWinners = pgTable(
+  "giveaway_winners",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    giveawayId: uuid("giveaway_id")
+      .notNull()
+      .references(() => giveaways.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** 1 — первое место, 2 — второе, … */
+    rank: integer("rank").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("giveaway_winners_gw_user").on(t.giveawayId, t.userId),
+    index("giveaway_winners_gw_idx").on(t.giveawayId),
+  ]
+);
 
 export const promoCodes = pgTable(
   "promo_codes",
