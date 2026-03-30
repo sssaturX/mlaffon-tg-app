@@ -4,11 +4,10 @@ import {
   platformAccounts,
   referrals,
   userBalances,
-  userStreaks,
   users,
 } from "../db/schema.js";
 import { computeLevel, computeRewardMultiplier } from "../config.js";
-import { touchActivityAndStreak } from "./streak.js";
+import { ensureStreamStreakRow } from "./streamStreak.js";
 
 export async function buildMeResponse(userId: string): Promise<{
   id: string;
@@ -20,7 +19,10 @@ export async function buildMeResponse(userId: string): Promise<{
   lifetimeEarned: number;
   level: number;
   rewardMultiplier: number;
+  /** Макс. из двух платформенных стриков (для совместимости и топа). */
   streak: number;
+  streakTwitch: number;
+  streakKick: number;
   referralCode: string;
   referralLink: string;
   referralCount: number;
@@ -29,7 +31,7 @@ export async function buildMeResponse(userId: string): Promise<{
     kick: "connected" | "not_connected";
   };
 }> {
-  await touchActivityAndStreak(userId);
+  const streamStreak = await ensureStreamStreakRow(userId);
 
   const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!u) throw new Error("user_not_found");
@@ -38,11 +40,6 @@ export async function buildMeResponse(userId: string): Promise<{
     .select()
     .from(userBalances)
     .where(eq(userBalances.userId, userId))
-    .limit(1);
-  const [s] = await db
-    .select()
-    .from(userStreaks)
-    .where(eq(userStreaks.userId, userId))
     .limit(1);
 
   const [{ c }] = await db
@@ -64,6 +61,10 @@ export async function buildMeResponse(userId: string): Promise<{
   const lifetimeEarned = b?.lifetimeEarned ?? 0;
   const level = computeLevel(lifetimeEarned);
 
+  const streakTwitch = streamStreak.twitch;
+  const streakKick = streamStreak.kick;
+  const streak = Math.max(streakTwitch, streakKick);
+
   return {
     id: u.id,
     telegramId: u.telegramId.toString(),
@@ -74,7 +75,9 @@ export async function buildMeResponse(userId: string): Promise<{
     lifetimeEarned,
     level,
     rewardMultiplier: computeRewardMultiplier(level),
-    streak: s?.currentStreak ?? 0,
+    streak,
+    streakTwitch,
+    streakKick,
     referralCode: u.referralCode,
     referralLink,
     referralCount: Number(c),

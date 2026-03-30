@@ -93,3 +93,16 @@ export async function helixCheckFollow(
   };
   return (j.total ?? 0) > 0 || (j.data?.length ?? 0) > 0;
 }
+
+/** Есть ли сейчас активный стрим у канала (login без #). */
+export async function helixIsStreamLive(
+  accessToken: string,
+  broadcasterLogin: string
+): Promise<boolean> {
+  const r = await helix(accessToken, "/streams", {
+    user_login: broadcasterLogin.toLowerCase(),
+  });
+  if (!r.ok) return false;
+  const j = (await r.json()) as { data?: unknown[] };
+  return Array.isArray(j.data) && j.data.length > 0;
+}

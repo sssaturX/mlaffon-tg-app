@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { getPlatformTheme } from "./platformTheme";
 import {
   NavLink,
   Navigate,
@@ -204,6 +205,18 @@ function AppShell({
   refreshMe: () => void;
 }) {
   const location = useLocation();
+
+  useEffect(() => {
+    const theme = getPlatformTheme(me);
+    if (theme === "default") {
+      document.documentElement.removeAttribute("data-platform-theme");
+    } else {
+      document.documentElement.setAttribute("data-platform-theme", theme);
+    }
+    return () => {
+      document.documentElement.removeAttribute("data-platform-theme");
+    };
+  }, [me]);
 
   return (
     <>

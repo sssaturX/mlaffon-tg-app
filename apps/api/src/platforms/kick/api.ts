@@ -60,3 +60,33 @@ export async function kickCheckFollowChannel(
   }
   return false;
 }
+
+/**
+ * Публичная проверка: канал в эфире (без OAuth зрителя).
+ * Формат ответа Kick может меняться — проверяем несколько полей.
+ */
+export async function kickIsChannelLive(channelSlug: string): Promise<boolean> {
+  const slug = encodeURIComponent(channelSlug);
+  const urls = [
+    `https://kick.com/api/v2/channels/${slug}`,
+    `https://kick.com/api/v1/channels/${slug}`,
+  ];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, {
+        headers: { Accept: "application/json" },
+      });
+      if (!r.ok) continue;
+      const j = (await r.json()) as Record<string, unknown>;
+      const live = j.livestream as Record<string, unknown> | undefined;
+      if (live && typeof live.is_live === "boolean") return live.is_live;
+      if (typeof j.is_live === "boolean") return j.is_live;
+      if (j.stream && typeof (j.stream as { is_live?: boolean }).is_live === "boolean") {
+        return Boolean((j.stream as { is_live: boolean }).is_live);
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  return false;
+}

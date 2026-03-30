@@ -34,7 +34,12 @@ export interface MeResponse {
   lifetimeEarned: number;
   level: number;
   rewardMultiplier: number;
+  /** Максимум из streakTwitch и streakKick (топ по стрику). */
   streak: number;
+  /** Дней подряд с заходом на стрим Twitch (UTC). */
+  streakTwitch: number;
+  /** Дней подряд с заходом на стрим Kick (UTC). */
+  streakKick: number;
   referralCode: string;
   referralLink: string;
   referralCount: number;

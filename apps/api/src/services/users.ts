@@ -5,6 +5,7 @@ import {
   referrals,
   userBalances,
   userStreaks,
+  userStreamStreaks,
   users,
 } from "../db/schema.js";
 import { referralCode as genReferralCode } from "../lib/nanoid.js";
@@ -73,6 +74,11 @@ export async function ensureUserFromTelegram(
 
   await db.insert(userBalances).values({ userId, coins: 0, lifetimeEarned: 0 });
   await db.insert(userStreaks).values({ userId, currentStreak: 0 });
+  await db.insert(userStreamStreaks).values({
+    userId,
+    twitchCurrent: 0,
+    kickCurrent: 0,
+  });
 
   if (referredById) {
     await db.insert(referrals).values({

@@ -50,6 +50,17 @@ export const userStreaks = pgTable("user_streaks", {
   lastActivityUtcDate: text("last_activity_utc_date"),
 });
 
+/** Стрик «был на стриме» отдельно по Twitch и Kick (UTC-день). */
+export const userStreamStreaks = pgTable("user_stream_streaks", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  twitchCurrent: integer("twitch_current").notNull().default(0),
+  twitchLastUtcDate: text("twitch_last_utc_date"),
+  kickCurrent: integer("kick_current").notNull().default(0),
+  kickLastUtcDate: text("kick_last_utc_date"),
+});
+
 export const tasks = pgTable("tasks", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
@@ -204,6 +215,10 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   streak: one(userStreaks, {
     fields: [users.id],
     references: [userStreaks.userId],
+  }),
+  streamStreak: one(userStreamStreaks, {
+    fields: [users.id],
+    references: [userStreamStreaks.userId],
   }),
   platformAccounts: many(platformAccounts),
 }));

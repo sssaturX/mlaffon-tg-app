@@ -1,14 +1,15 @@
 :root {
-  --bg: #0a0b10;
-  --bg-elevated: #0f1118;
-  --surface: #161b22;
-  --surface-hover: #1c232d;
+  /* База: светло-синий (ничего не подключено или оба сервиса) */
+  --bg: #0a1016;
+  --bg-elevated: #0e141c;
+  --surface: #121c28;
+  --surface-hover: #182434;
   --border: rgba(255, 255, 255, 0.06);
   --text: #f4f4f5;
   --muted: #9ca3af;
-  --accent: #00c896;
-  --accent-dim: rgba(0, 200, 150, 0.15);
-  --accent-glow: rgba(0, 200, 150, 0.35);
+  --accent: #7dd3fc;
+  --accent-dim: rgba(125, 211, 252, 0.2);
+  --accent-glow: rgba(125, 211, 252, 0.38);
   --blue: #3b82f6;
   --blue-dim: rgba(59, 130, 246, 0.12);
   --danger: #f87171;
@@ -415,8 +416,42 @@ h2 {
 .streak-card__fill {
   height: 100%;
   border-radius: var(--radius-pill);
-  background: linear-gradient(90deg, var(--accent), #34d399);
+  background: linear-gradient(
+    90deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 55%, white)
+  );
   transition: width 0.3s ease;
+}
+
+.stream-streak-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.stream-streak-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.stream-streak-row__val {
+  margin: 6px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.stream-streak-row__btn {
+  flex-shrink: 0;
+  padding: 9px 12px;
+  font-size: 13px;
 }
 
 .promo-row {
@@ -773,4 +808,25 @@ h2 {
   text-align: center;
   font-size: 13px;
   padding: 8px 12px;
+}
+
+/* Тема интерфейса по подключённым платформам (см. getPlatformTheme) */
+:root[data-platform-theme="twitch"] {
+  --accent: #a855f7;
+  --accent-dim: rgba(168, 85, 247, 0.2);
+  --accent-glow: rgba(168, 85, 247, 0.42);
+  --bg: #0c0a14;
+  --bg-elevated: #120f1c;
+  --surface: #18122b;
+  --surface-hover: #221a36;
+}
+
+:root[data-platform-theme="kick"] {
+  --accent: #53fc18;
+  --accent-dim: rgba(83, 252, 24, 0.18);
+  --accent-glow: rgba(83, 252, 24, 0.4);
+  --bg: #081208;
+  --bg-elevated: #0c160c;
+  --surface: #132213;
+  --surface-hover: #1a2e1a;
 }

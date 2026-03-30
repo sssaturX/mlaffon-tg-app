@@ -23,6 +23,7 @@ import { getFortuneStatus, spinFortuneWheel } from "./services/fortune.js";
 import { listShopItems, purchaseItem } from "./services/shop.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { assertClaimRateLimits } from "./lib/abuse.js";
+import { claimStreamStreak } from "./services/streamStreak.js";
 
 const app = Fastify({ logger: true });
 
@@ -112,6 +113,57 @@ app.get("/api/v1/me", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
   return buildMeResponse(userId);
+});
+
+const streamStreakClaimBody = z.object({
+  platform: z.enum(["twitch", "kick"]),
+});
+
+app.post("/api/v1/stream-streak/claim", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  const parsed = streamStreakClaimBody.safeParse(req.body);
+  if (!parsed.success) {
+    return reply.status(400).send({
+      error: { code: "bad_request", message: parsed.error.message },
+    });
+  }
+  const lim = await assertClaimRateLimits(userId, req.ip);
+  if (!lim.ok) {
+    return reply.status(429).send({
+      error: {
+        code: "rate_limited",
+        message:
+          lim.reason === "ip" ? "Too many requests (IP)" : "Too many requests",
+      },
+    });
+  }
+  const res = await claimStreamStreak(userId, parsed.data.platform);
+  if (!res.ok) {
+    const status: Record<typeof res.code, number> = {
+      not_configured: 503,
+      no_oauth: 403,
+      not_live: 400,
+      not_following: 400,
+      already_today: 409,
+    };
+    const messages: Record<typeof res.code, string> = {
+      not_configured: "Стрик стрима не настроен на сервере",
+      no_oauth: "Подключите аккаунт платформы",
+      not_live: "Стрим сейчас не в эфире",
+      not_following: "Нужна подписка на канал",
+      already_today: "Уже засчитано сегодня",
+    };
+    return reply.status(status[res.code]).send({
+      error: { code: res.code, message: messages[res.code] },
+    });
+  }
+  return {
+    ok: true,
+    platform: res.platform,
+    streak: res.streak,
+    utcDate: res.utcDate,
+  };
 });
 
 app.get("/api/v1/tasks", async (req, reply) => {

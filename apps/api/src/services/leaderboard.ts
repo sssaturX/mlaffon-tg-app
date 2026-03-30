@@ -4,7 +4,7 @@ import {
   platformAccounts,
   referrals,
   userBalances,
-  userStreaks,
+  userStreamStreaks,
   users,
 } from "../db/schema.js";
 
@@ -51,7 +51,10 @@ export async function getLeaderboard(params: {
 
   const [balances, streaks, refCounts] = await Promise.all([
     db.select().from(userBalances).where(inArray(userBalances.userId, userIds)),
-    db.select().from(userStreaks).where(inArray(userStreaks.userId, userIds)),
+    db
+      .select()
+      .from(userStreamStreaks)
+      .where(inArray(userStreamStreaks.userId, userIds)),
     db
       .select({
         referrerId: referrals.referrerId,
@@ -63,7 +66,12 @@ export async function getLeaderboard(params: {
   ]);
 
   const balMap = new Map(balances.map((b) => [b.userId, b.coins]));
-  const strMap = new Map(streaks.map((s) => [s.userId, s.currentStreak]));
+  const strMap = new Map(
+    streaks.map((s) => [
+      s.userId,
+      Math.max(s.twitchCurrent, s.kickCurrent),
+    ])
+  );
   const refMap = new Map(refCounts.map((r) => [r.referrerId, r.c]));
 
   const rows = filtered.map((u) => {
