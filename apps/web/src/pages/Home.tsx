@@ -25,12 +25,13 @@ import {
   notifyStreakWatchError,
   notifyStreakWatchSuccess,
 } from "../utils/streakNotifications";
+import { useDocumentVisible } from "../hooks/useDocumentVisible";
+import {
+  useLiveBroadcastStore,
+  type LiveBroadcastPublic,
+} from "../store/liveBroadcastStore";
 
 const STREAK_TARGET = 7;
-
-type LiveBroadcastPublic =
-  | { active: false }
-  | LiveBroadcastActive;
 
 type HomePublic = {
   stats: { usersCount: number; coinsEarnedTotal: number };
@@ -62,21 +63,26 @@ export default function Home({
   me,
   onRefresh,
   patchMe,
+  realtimeWsConnected,
 }: {
   me: MeResponse | null;
   onRefresh: () => Promise<MeResponse | null>;
   patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
+  /** Стабильное WS — реже опрашиваем GET /live-broadcast. */
+  realtimeWsConnected: boolean;
 }) {
   const { showToast } = useToast();
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const [watchingLive, setWatchingLive] = useState(false);
-  const [live, setLive] = useState<LiveBroadcastPublic | null>(null);
+  const live = useLiveBroadcastStore((s) => s.broadcast);
   /** Локальный стрик сразу после watch — не зависит от задержки /me в WebView. */
   const [streakDisplay, setStreakDisplay] = useState<{
     platform: "twitch" | "kick";
     value: number;
   } | null>(null);
   const liveActivePrevRef = useRef<boolean | null>(null);
+  const docVisible = useDocumentVisible();
+  const tabWasHiddenRef = useRef(false);
   const [pub, setPub] = useState<HomePublic | null>(null);
   const [promo, setPromo] = useState("");
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
@@ -118,24 +124,43 @@ export default function Home({
     })();
   }, [showToast, onRefresh]);
 
-  const loadLive = useCallback(async () => {
-    const r = await api<LiveBroadcastPublic>("/api/v1/live-broadcast");
-    if (!r.ok) return;
-    setLive(r.data);
-    /** Шапка и стрик совпадают с платформой эфира (иначе «0 дн» на Twitch при эфире Kick). */
-    if (r.data.active) {
-      setActivePlatform(r.data.platform);
+  const hydrateLive = useCallback(() => {
+    void useLiveBroadcastStore.getState().hydrateFromApi();
+  }, []);
+
+  /** Шапка и стрик совпадают с платформой эфира. */
+  useEffect(() => {
+    if (live?.active) {
+      setActivePlatform(live.platform);
     }
-  }, [setActivePlatform]);
+  }, [live, setActivePlatform]);
 
+  /** Синхронизация сразу после возврата во вкладку (без ожидания интервала). */
   useEffect(() => {
-    void loadLive();
-  }, [loadLive]);
+    if (!docVisible) {
+      tabWasHiddenRef.current = true;
+      return;
+    }
+    if (tabWasHiddenRef.current) {
+      tabWasHiddenRef.current = false;
+      void hydrateLive();
+    }
+  }, [docVisible, hydrateLive]);
 
-  /** Чаще опрос + при возврате в мини-апп — иначе «Смотреть стрим» появляется только после перезапуска. */
+  /**
+   * Эфир: при стабильном WS — редкий safety GET; без WS — чаще (fallback).
+   */
   useEffect(() => {
-    const id = window.setInterval(() => void loadLive(), 5000);
-    const onForeground = () => void loadLive();
+    if (!docVisible) return;
+    const ms = realtimeWsConnected
+      ? 45_000
+      : live?.active
+        ? 5000
+        : 20_000;
+    const id = window.setInterval(() => void hydrateLive(), ms);
+    const onForeground = () => {
+      if (!realtimeWsConnected) void hydrateLive();
+    };
     document.addEventListener("visibilitychange", onForeground);
     window.addEventListener("focus", onForeground);
     window.addEventListener("pageshow", onForeground);
@@ -149,7 +174,7 @@ export default function Home({
       window.removeEventListener("focus", onForeground);
       window.removeEventListener("pageshow", onForeground);
     };
-  }, [loadLive]);
+  }, [hydrateLive, docVisible, live?.active, realtimeWsConnected]);
 
   useEffect(() => {
     if (!live) return;
@@ -237,7 +262,9 @@ export default function Home({
           });
         });
       }
-      await onRefresh();
+      if (!realtimeWsConnected) {
+        await onRefresh();
+      }
       if (!r.data.alreadyWatchedThisBroadcast) {
         const st = r.data.streak;
         const p = live.platform;
@@ -284,7 +311,6 @@ export default function Home({
     }
     showToast(`+${r.data.reward} монет`, "success");
     setPromo("");
-    await onRefresh();
   }
 
   return (

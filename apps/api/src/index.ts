@@ -39,8 +39,8 @@ import {
   watchLiveBroadcast,
 } from "./services/liveBroadcast.js";
 import { markReferralPercentEligible } from "./services/referralEligibility.js";
-import { handleBalanceWsConnection } from "./services/balanceWs.js";
-import { startBalanceEventSubscriber } from "./services/balanceEvents.js";
+import { handleRealtimeWsConnection } from "./services/realtimeWs.js";
+import { startRealtimeSubscriber } from "./services/realtimePublish.js";
 
 const app = Fastify({ logger: true });
 
@@ -60,7 +60,7 @@ await app.register(websocket);
 await registerAuth(app);
 
 app.get("/api/v1/ws", { websocket: true }, (socket, req) => {
-  void handleBalanceWsConnection(socket, req.url);
+  void handleRealtimeWsConnection(socket, req.url);
 });
 await registerOAuthRoutes(app);
 await registerAdminRoutes(app);
@@ -551,7 +551,7 @@ const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
 try {
-  await startBalanceEventSubscriber(app.log);
+  await startRealtimeSubscriber(app.log);
   await app.listen({ port, host });
   app.log.info(`API http://${host}:${port}`);
 } catch (err) {

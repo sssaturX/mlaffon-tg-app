@@ -46,13 +46,7 @@ function formatCountdownFull(iso: string): string {
   return `${d}д ${h}ч ${m}м`;
 }
 
-export default function GiveawayPage({
-  me,
-  onRefresh,
-}: {
-  me: MeResponse | null;
-  onRefresh: () => void;
-}) {
+export default function GiveawayPage({ me }: { me: MeResponse | null }) {
   const { id } = useParams<{ id: string }>();
   const { showToast } = useToast();
   const { activePlatform } = useActivePlatform();
@@ -89,7 +83,6 @@ export default function GiveawayPage({
       return;
     }
     showToast("Вы участвуете в розыгрыше", "success");
-    onRefresh();
     await load();
   }
 

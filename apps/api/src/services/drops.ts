@@ -1,8 +1,12 @@
 import { randomInt } from "node:crypto";
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { dropUserStates, drops, platformAccounts } from "../db/schema.js";
 import { applyCredit, applyCreditSplit } from "./economy.js";
+import {
+  publishBroadcastEvent,
+  publishUserEvent,
+} from "./realtimePublish.js";
 
 function normalizeCode(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, 8);
@@ -258,7 +262,50 @@ export async function attemptDropCode(
     });
   }
 
+  void publishUserEvent(userId, {
+    type: "drop_claimed",
+    v: 1,
+    data: { dropId: d.id, reward: paid },
+  });
+
+  const [dAfter] = await db
+    .select()
+    .from(drops)
+    .where(eq(drops.id, d.id))
+    .limit(1);
+  if (dAfter && dAfter.winnersCount >= dAfter.maxWinners) {
+    void publishBroadcastEvent({
+      type: "drop_finished",
+      v: 1,
+      data: { dropId: d.id },
+    });
+  }
+
   return { ok: true, reward: paid };
+}
+
+/**
+ * При завершении эфира гасим все ещё «живые» по таймеру дропы (правило: дроп только во время стрима).
+ */
+export async function deactivateActiveDropsOnStreamEnd(): Promise<void> {
+  const now = new Date();
+  const rows = await db
+    .select({ id: drops.id })
+    .from(drops)
+    .where(and(eq(drops.active, true), sql`${drops.endsAt} > ${now}`));
+
+  if (rows.length === 0) return;
+
+  const ids = rows.map((r) => r.id);
+  await db.update(drops).set({ active: false }).where(inArray(drops.id, ids));
+
+  for (const id of ids) {
+    void publishBroadcastEvent({
+      type: "drop_finished",
+      v: 1,
+      data: { dropId: id },
+    });
+  }
 }
 
 export async function startDrop(params: {
@@ -294,6 +341,33 @@ export async function startDrop(params: {
       active: true,
     })
     .returning({ id: drops.id });
+
+  const now = new Date();
+  void publishBroadcastEvent({
+    type: "drop_started",
+    v: 1,
+    data: {
+      dropId: ins!.id,
+      endsAt: endsAt.toISOString(),
+      serverNow: now.toISOString(),
+      remainingSeconds: Math.floor((endsAt.getTime() - now.getTime()) / 1000),
+      platform: params.platform,
+      maxWinners: params.maxWinners,
+      winnersCount: 0,
+    },
+  });
+
+  const untilEnd = endsAt.getTime() - now.getTime();
+  const delay = Math.min(Math.max(0, untilEnd), 2147483647);
+  if (delay > 0) {
+    setTimeout(() => {
+      void publishBroadcastEvent({
+        type: "drop_finished",
+        v: 1,
+        data: { dropId: ins!.id },
+      });
+    }, delay);
+  }
 
   return { id: ins!.id };
 }

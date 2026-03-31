@@ -86,6 +86,20 @@ export interface MeResponse {
   banReason: string | null;
   /** Отправлена апелляция, ожидает рассмотрения. */
   banAppealPending: boolean;
+  /** Ранг в глобальном топе по сумме монет (Twitch+Kick). */
+  leaderboardRankCoins: number | null;
+}
+
+/** Фрагмент профиля из WS `me_update` после экономики. */
+export interface MeEconomyPatch {
+  coins: number;
+  coinsTwitch: number;
+  coinsKick: number;
+  lifetimeEarned: number;
+  lifetimeTwitch: number;
+  lifetimeKick: number;
+  level: number;
+  rewardMultiplier: number;
 }
 
 export interface LeaderboardEntry {

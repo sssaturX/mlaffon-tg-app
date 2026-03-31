@@ -8,11 +8,7 @@ import {
   Tv,
   Users,
 } from "lucide-react";
-import type {
-  LeaderboardResponse,
-  MeResponse,
-  ReferralsResponse,
-} from "shared";
+import type { MeResponse, ReferralsResponse } from "shared";
 import WebApp from "@twa-dev/sdk";
 import { api, formatApiError, setToken } from "../api";
 import { useToast } from "../context/ToastContext";
@@ -31,7 +27,6 @@ export default function Profile({
   const { showToast } = useToast();
   const { startOAuth, connectStub, stub } = useOAuthLink(onRefresh);
   const [refs, setRefs] = useState<ReferralsResponse | null>(null);
-  const [coinsRank, setCoinsRank] = useState<number | null>(null);
 
   const loadRefs = useCallback(async () => {
     const r = await api<ReferralsResponse>("/api/v1/referrals");
@@ -42,17 +37,6 @@ export default function Profile({
   useEffect(() => {
     void loadRefs();
   }, [loadRefs]);
-
-  useEffect(() => {
-    if (!me) return;
-    void (async () => {
-      const r = await api<LeaderboardResponse>(
-        "/api/v1/leaderboard?sort=coins&platform=all"
-      );
-      if (r.ok && r.data.me) setCoinsRank(r.data.me.rank);
-      else setCoinsRank(null);
-    })();
-  }, [me?.id]);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
@@ -165,7 +149,9 @@ export default function Profile({
         <div className="profile-stat-cell">
           <p className="muted text-caption">Ранг (монеты)</p>
           <p className="label-strong">
-            {coinsRank != null ? `#${coinsRank}` : "—"}
+            {me.leaderboardRankCoins != null
+              ? `#${me.leaderboardRankCoins}`
+              : "—"}
           </p>
         </div>
         <div className="profile-stat-cell">

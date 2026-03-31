@@ -84,7 +84,8 @@ export function DropOverlay({
   open: boolean;
   onClose: () => void;
   snapshot: DropSnapshot | null;
-  onAfterClaim: () => void | Promise<void>;
+  /** Reward после успешного attempt (без лишнего GET /drops/active). */
+  onAfterClaim: (reward: number) => void | Promise<void>;
   onRefreshSnapshot?: () => void | Promise<void>;
 }) {
   const [digits, setDigits] = useState<string[]>(() => Array(DIGITS).fill(""));
@@ -148,7 +149,7 @@ export function DropOverlay({
       setDisplayReward(0);
       setDigits(Array(DIGITS).fill(""));
       setSubmitting(false);
-      await Promise.resolve(onAfterClaim());
+      await Promise.resolve(onAfterClaim(r.data.reward));
       return;
     }
     setSubmitting(false);

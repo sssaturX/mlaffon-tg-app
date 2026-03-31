@@ -9,6 +9,7 @@ import {
 import { computeLevel, computeRewardMultiplier } from "../config.js";
 import { ensureStreamStreakRow } from "./streamStreak.js";
 import { hasPendingBanAppeal } from "./banAppeals.js";
+import { getCoinRankAll } from "./leaderboard.js";
 
 export async function buildMeResponse(userId: string): Promise<{
   id: string;
@@ -50,6 +51,8 @@ export async function buildMeResponse(userId: string): Promise<{
   banned: boolean;
   banReason: string | null;
   banAppealPending: boolean;
+  /** Ранг в глобальном топе по сумме монет (Twitch+Kick). */
+  leaderboardRankCoins: number | null;
 }> {
   const streamStreak = await ensureStreamStreakRow(userId);
 
@@ -109,6 +112,8 @@ export async function buildMeResponse(userId: string): Promise<{
   const banned = u.banned === true;
   const banAppealPending = banned ? await hasPendingBanAppeal(userId) : false;
 
+  const leaderboardRankCoins = await getCoinRankAll(userId);
+
   return {
     id: u.id,
     telegramId: u.telegramId.toString(),
@@ -136,5 +141,44 @@ export async function buildMeResponse(userId: string): Promise<{
     banned,
     banReason: u.banReason ?? null,
     banAppealPending,
+    leaderboardRankCoins,
+  };
+}
+
+/** Поля для WS `me_update` после экономики (без стриков/платформ). */
+export type MeEconomyPatch = {
+  coins: number;
+  coinsTwitch: number;
+  coinsKick: number;
+  lifetimeEarned: number;
+  lifetimeTwitch: number;
+  lifetimeKick: number;
+  level: number;
+  rewardMultiplier: number;
+};
+
+export async function buildMeEconomyPatch(userId: string): Promise<MeEconomyPatch> {
+  const [b] = await db
+    .select()
+    .from(userBalances)
+    .where(eq(userBalances.userId, userId))
+    .limit(1);
+  if (!b) throw new Error("user_not_found");
+  const coinsTwitch = b.twitchCoins ?? 0;
+  const coinsKick = b.kickCoins ?? 0;
+  const lifetimeTwitch = b.twitchLifetimeEarned ?? 0;
+  const lifetimeKick = b.kickLifetimeEarned ?? 0;
+  const lifetimeEarned = lifetimeTwitch + lifetimeKick;
+  const coins = coinsTwitch + coinsKick;
+  const level = computeLevel(lifetimeEarned);
+  return {
+    coins,
+    coinsTwitch,
+    coinsKick,
+    lifetimeEarned,
+    lifetimeTwitch,
+    lifetimeKick,
+    level,
+    rewardMultiplier: computeRewardMultiplier(level),
   };
 }

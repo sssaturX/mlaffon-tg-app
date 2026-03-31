@@ -4,6 +4,7 @@ import type { Platform, TaskDto } from "shared";
 import { api, formatApiError } from "../api";
 import { useActivePlatform } from "../context/PlatformContext";
 import { TaskDetailModal } from "../components/TaskDetailModal";
+import { useLiveBroadcastStore } from "../store/liveBroadcastStore";
 
 function platformPillClass(p: Platform): string {
   if (p === "twitch") return "pill pill--twitch";
@@ -33,6 +34,7 @@ function TaskListSkeleton() {
 }
 
 export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
+  const wsConnected = useLiveBroadcastStore((s) => s.wsConnected);
   const { activePlatform } = useActivePlatform();
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
@@ -88,7 +90,9 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
       setModalMsg(okMsg);
       setMsg(okMsg);
       await load();
-      onRefresh();
+      if (!wsConnected) {
+        onRefresh();
+      }
     } else {
       const err = formatApiError(r);
       setModalMsg(err);

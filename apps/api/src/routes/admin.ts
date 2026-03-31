@@ -502,9 +502,29 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       });
     }
     try {
+      const live = await getActiveLiveBroadcast();
+      if (!live) {
+        return reply.status(400).send({
+          error: {
+            code: "not_live",
+            message:
+              "Дроп можно запускать только во время эфира. Сначала начните стрим в разделе «Эфир».",
+          },
+        });
+      }
+      const platform = parsed.data.platform ?? "both";
+      if (platform !== "both" && platform !== live.platform) {
+        return reply.status(400).send({
+          error: {
+            code: "drop_platform_mismatch",
+            message:
+              "Платформа дропа должна совпадать с платформой текущего эфира (или выберите both).",
+          },
+        });
+      }
       const { id } = await startDrop({
         ...parsed.data,
-        platform: parsed.data.platform ?? "both",
+        platform,
       });
       return { ok: true, id };
     } catch (e) {

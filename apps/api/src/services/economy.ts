@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { transactions, userBalances, userInventory } from "../db/schema.js";
 import { gameConfig } from "../config.js";
-import { publishBalanceUpdate } from "./balanceEvents.js";
+import { publishBalanceUpdate } from "./realtimePublish.js";
 
 export type CreditReason =
   | "task_reward"

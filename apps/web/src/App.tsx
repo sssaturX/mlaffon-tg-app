@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom/client";
 import { getPlatformTheme } from "./platformTheme";
 import { useActivePlatform } from "./context/PlatformContext";
@@ -37,7 +37,9 @@ import { hasLinkedStreamingAccount } from "./utils/streamingAccount";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
 import { useSyncedCountdownMs } from "./hooks/useSyncedCountdown";
-import { useBalanceWebSocket } from "./hooks/useBalanceWebSocket";
+import { useRealtimeWebSocket } from "./hooks/useRealtimeWebSocket";
+import { useDocumentVisible } from "./hooks/useDocumentVisible";
+import { useLiveBroadcastStore } from "./store/liveBroadcastStore";
 
 const HomePage = lazy(() => import("./pages/Home"));
 const Tasks = lazy(() => import("./pages/Tasks"));
@@ -67,30 +69,45 @@ export default function App() {
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
 
+  const refreshInFlightRef = useRef<Promise<MeResponse | null> | null>(null);
+
   const refreshMe = useCallback(async (): Promise<MeResponse | null> => {
     if (!getToken()) {
       flushSync(() => setMe(null));
       return null;
     }
-    const r = await api<MeResponse>(
-      `/api/v1/me?_=${Date.now()}`
-    );
-    if (r.ok) {
-      flushSync(() => {
-        setMe(r.data);
-      });
-      return r.data;
+    if (refreshInFlightRef.current) {
+      return refreshInFlightRef.current;
     }
-    if (r.networkError) {
+    const p = (async (): Promise<MeResponse | null> => {
+      const r = await api<MeResponse>(
+        `/api/v1/me?_=${Date.now()}`
+      );
+      if (r.ok) {
+        flushSync(() => {
+          setMe(r.data);
+        });
+        return r.data;
+      }
+      if (r.networkError) {
+        showToast(formatApiError(r), "error");
+        return null;
+      }
+      flushSync(() => {
+        setMe(null);
+      });
+      setToken(null);
       showToast(formatApiError(r), "error");
       return null;
+    })();
+    refreshInFlightRef.current = p;
+    try {
+      return await p;
+    } finally {
+      if (refreshInFlightRef.current === p) {
+        refreshInFlightRef.current = null;
+      }
     }
-    flushSync(() => {
-      setMe(null);
-    });
-    setToken(null);
-    showToast(formatApiError(r), "error");
-    return null;
   }, [showToast]);
 
   /** Подмешать данные с клиента (напр. стрик после watch), если GET /me отдал устаревшее из кэша. */
@@ -296,6 +313,9 @@ function AppShell({
 
   const [dropSnap, setDropSnap] = useState<DropSnapshot | null>(null);
   const [dropOpen, setDropOpen] = useState(false);
+  const docVisible = useDocumentVisible();
+  /** Была скрыта вкладка — при возврате делаем один sync без ожидания таймера. */
+  const tabWasHiddenRef = useRef(false);
 
   const loadDrop = useCallback(async () => {
     if (!getToken()) {
@@ -315,21 +335,78 @@ function AppShell({
     if (tourOpen) setTourStep(0);
   }, [tourOpen]);
 
-  const balanceWsConnected = useBalanceWebSocket(
-    () => {
-      void refreshMe();
+  const realtimeConnected = useRealtimeWebSocket(
+    {
+      onMePatch: (patch) => {
+        patchMe((prev) => ({ ...prev, ...patch }));
+      },
+      onDropStarted: () => void loadDrop(),
+      onDropFinished: (dropId) => {
+        setDropSnap((prev) =>
+          prev?.hasActiveDrop && prev.dropId === dropId
+            ? { hasActiveDrop: false }
+            : prev
+        );
+        setDropOpen(false);
+      },
+      onDropClaimed: ({ dropId, reward }) => {
+        setDropSnap((prev) =>
+          prev?.hasActiveDrop && prev.dropId === dropId
+            ? { ...prev, won: true, rewardCoins: reward }
+            : prev
+        );
+      },
+      onLiveStarted: (data) => {
+        useLiveBroadcastStore.getState().applyLiveStartedFromWs(data);
+      },
+      onLiveEnded: () => {
+        useLiveBroadcastStore.getState().applyLiveEndedFromWs();
+      },
+      onOpen: () => {
+        void loadDrop();
+        void useLiveBroadcastStore.getState().hydrateFromApi();
+      },
     },
     !needsPlatformLink && !!me
   );
 
   useEffect(() => {
+    useLiveBroadcastStore.getState().setWsConnected(realtimeConnected);
+  }, [realtimeConnected]);
+
+  useEffect(() => {
     if (needsPlatformLink) return;
-    const ms = balanceWsConnected ? 60_000 : 5_000;
+    void useLiveBroadcastStore.getState().hydrateFromApi();
+  }, [needsPlatformLink]);
+
+  useEffect(() => {
+    if (needsPlatformLink) return;
+    if (!docVisible) {
+      tabWasHiddenRef.current = true;
+      return;
+    }
+    if (tabWasHiddenRef.current) {
+      tabWasHiddenRef.current = false;
+      void refreshMe();
+      void loadDrop();
+      void useLiveBroadcastStore.getState().hydrateFromApi();
+    }
+  }, [docVisible, needsPlatformLink, refreshMe, loadDrop]);
+
+  useEffect(() => {
+    if (needsPlatformLink) return;
+    if (!docVisible) return;
+    const ms = realtimeConnected ? 120_000 : 30_000;
     const id = window.setInterval(() => {
       void refreshMe();
     }, ms);
     return () => clearInterval(id);
-  }, [needsPlatformLink, refreshMe, balanceWsConnected]);
+  }, [
+    needsPlatformLink,
+    refreshMe,
+    realtimeConnected,
+    docVisible,
+  ]);
 
   const headerBalance =
     activePlatform === "twitch" ? me.coinsTwitch : me.coinsKick;
@@ -342,12 +419,27 @@ function AppShell({
     };
   }, [activePlatform]);
 
+  /** Без WS — периодический fallback; с WS дроп = события + один GET при старте/reconnect. */
   useEffect(() => {
     if (!me || needsPlatformLink) return;
+    if (!docVisible) return;
     void loadDrop();
-    const t = window.setInterval(() => void loadDrop(), 8000);
+    if (realtimeConnected) return;
+    const activeDrop =
+      dropSnap?.hasActiveDrop === true && dropSnap.won !== true;
+    const ms = activeDrop ? 8000 : 30_000;
+    const t = window.setInterval(() => void loadDrop(), ms);
     return () => clearInterval(t);
-  }, [me, loadDrop, needsPlatformLink]);
+  }, [
+    me,
+    loadDrop,
+    needsPlatformLink,
+    docVisible,
+    dropSnap?.hasActiveDrop,
+    dropSnap?.won,
+    dropSnap?.dropId,
+    realtimeConnected,
+  ]);
 
   useEffect(() => {
     if (needsPlatformLink) return;
@@ -445,17 +537,22 @@ function AppShell({
               <Route
                 path="/"
                 element={
-                  <HomePage me={me} onRefresh={refreshMe} patchMe={patchMe} />
+                  <HomePage
+                    me={me}
+                    onRefresh={refreshMe}
+                    patchMe={patchMe}
+                    realtimeWsConnected={realtimeConnected}
+                  />
                 }
               />
               <Route path="/giveaways" element={<GiveawaysPage me={me} />} />
               <Route
                 path="/giveaway/:id"
-                element={<GiveawayPage me={me} onRefresh={refreshMe} />}
+                element={<GiveawayPage me={me} />}
               />
               <Route path="/tasks" element={<Tasks onRefresh={refreshMe} />} />
-              <Route path="/games" element={<Games onRefresh={refreshMe} />} />
-              <Route path="/shop" element={<Shop onRefresh={refreshMe} />} />
+              <Route path="/games" element={<Games />} />
+              <Route path="/shop" element={<Shop />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route
                 path="/oauth/:platform"
@@ -544,9 +641,12 @@ function AppShell({
           open={dropOpen}
           onClose={() => setDropOpen(false)}
           snapshot={dropSnap}
-          onAfterClaim={async () => {
-            await loadDrop();
-            await refreshMe();
+          onAfterClaim={(reward) => {
+            setDropSnap((prev) =>
+              prev?.hasActiveDrop
+                ? { ...prev, won: true, rewardCoins: reward }
+                : prev
+            );
           }}
           onRefreshSnapshot={loadDrop}
         />

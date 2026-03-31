@@ -4,16 +4,31 @@ import { isUserBanned } from "./userBan.js";
 
 const userSockets = new Map<string, Set<WebSocket>>();
 
-export function notifyBalanceUpdated(userId: string): void {
+export function sendToUser(userId: string, event: unknown): void {
   const set = userSockets.get(userId);
   if (!set?.size) return;
-  const msg = JSON.stringify({ type: "balance_updated" });
+  const msg = JSON.stringify(event);
   for (const s of set) {
     if (s.readyState === 1) {
       try {
         s.send(msg);
       } catch {
         /* ignore */
+      }
+    }
+  }
+}
+
+export function broadcastJson(event: unknown): void {
+  const msg = JSON.stringify(event);
+  for (const set of userSockets.values()) {
+    for (const s of set) {
+      if (s.readyState === 1) {
+        try {
+          s.send(msg);
+        } catch {
+          /* ignore */
+        }
       }
     }
   }
@@ -35,9 +50,14 @@ function trackSocket(userId: string, socket: WebSocket) {
 }
 
 /**
- * WebSocket: клиент передаёт JWT в query `token`. Сообщения от клиента игнорируем.
+ * WebSocket `/api/v1/ws?token=JWT`. Сообщения от клиента игнорируем.
  */
-export async function handleBalanceWsConnection(
+/** Подключённые userId (только этот процесс; для fan-out используйте Redis в realtimePublish). */
+export function getConnectedUserIds(): string[] {
+  return Array.from(userSockets.keys());
+}
+
+export async function handleRealtimeWsConnection(
   socket: WebSocket,
   reqUrl: string
 ): Promise<void> {

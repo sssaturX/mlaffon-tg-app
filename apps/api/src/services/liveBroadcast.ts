@@ -5,6 +5,8 @@ import {
   applyStreamStreakBroadcastWatch,
   ensureStreamStreakRow,
 } from "./streamStreak.js";
+import { publishBroadcastEvent } from "./realtimePublish.js";
+import { deactivateActiveDropsOnStreamEnd } from "./drops.js";
 
 export type LivePlatform = "twitch" | "kick";
 
@@ -43,7 +45,22 @@ export async function startLiveBroadcast(input: {
       streamUrl: url,
       vpnNote: input.vpnNote?.trim() || null,
     })
-    .returning({ id: liveBroadcasts.id });
+    .returning({
+      id: liveBroadcasts.id,
+      startedAt: liveBroadcasts.startedAt,
+    });
+
+  void publishBroadcastEvent({
+    type: "live_started",
+    v: 1,
+    data: {
+      id: inserted!.id,
+      platform: input.platform,
+      streamUrl: url,
+      startedAt: inserted!.startedAt.toISOString(),
+      vpnNote: input.vpnNote?.trim() || null,
+    },
+  });
 
   return { ok: true, id: inserted!.id };
 }
@@ -59,6 +76,8 @@ export async function endLiveBroadcast(): Promise<
     .update(liveBroadcasts)
     .set({ endedAt: new Date() })
     .where(eq(liveBroadcasts.id, active.id));
+  void publishBroadcastEvent({ type: "live_ended", v: 1 });
+  await deactivateActiveDropsOnStreamEnd();
   return { ok: true };
 }
 
