@@ -21,16 +21,23 @@ export type LiveBroadcastActive = {
   startedAt: string;
 };
 
-function openExternal(url: string) {
+/** Вызывать синхронно из обработчика клика — после await Telegram часто блокирует openLink. */
+export function openExternal(url: string) {
+  const u = url.trim();
+  if (!u) return;
   try {
     if (WebApp.initData && typeof WebApp.openLink === "function") {
-      WebApp.openLink(url);
+      WebApp.openLink(u, { try_instant_view: false });
       return;
     }
   } catch {
     /* ignore */
   }
-  window.open(url, "_blank", "noopener,noreferrer");
+  try {
+    window.open(u, "_blank", "noopener,noreferrer");
+  } catch {
+    window.location.href = u;
+  }
 }
 
 export function LiveBroadcastCard({
@@ -100,4 +107,3 @@ export function LiveBroadcastCard({
   );
 }
 
-export { openExternal };

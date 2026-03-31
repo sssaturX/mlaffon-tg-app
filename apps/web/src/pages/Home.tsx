@@ -136,10 +136,16 @@ export default function Home({
 
   async function watchLive() {
     if (!live?.active) return;
-    setWatchingLive(true);
+    const url = live.streamUrl.trim();
+    if (!url) {
+      showToast("Нет ссылки на стрим", "error");
+      return;
+    }
     const platRu = live.platform === "kick" ? "Kick" : "Twitch";
+    /** Сразу открываем ссылку (до любого await), иначе Telegram блокирует openLink. */
+    openExternal(url);
+    setWatchingLive(true);
     try {
-      /** Сначала API: после `openLink` WebView часто замирает — запрос не доходит. */
       const r = await api<{
         ok: boolean;
         streak: number;
@@ -190,7 +196,6 @@ export default function Home({
           /* ignore */
         }
       }
-      openExternal(live.streamUrl);
     } finally {
       setWatchingLive(false);
     }
