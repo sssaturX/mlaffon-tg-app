@@ -82,12 +82,16 @@ export default function App() {
   useEffect(() => {
     WebApp.ready();
     WebApp.expand();
-    /* Режим не fullscreen — сверху панель Telegram (закрыть / ⋮). */
     try {
-      const wa = WebApp as { isFullscreen?: boolean; exitFullscreen?: () => void };
+      const wa = WebApp as {
+        isFullscreen?: boolean;
+        exitFullscreen?: () => void;
+        disableVerticalSwipes?: () => void;
+      };
       if (wa.isFullscreen === true && typeof wa.exitFullscreen === "function") {
         wa.exitFullscreen();
       }
+      wa.disableVerticalSwipes?.();
     } catch {
       /* ignore */
     }
@@ -398,6 +402,7 @@ function AppShell({
               <span>Главная</span>
             </NavLink>
             <NavLink
+              data-tour-target="nav-tasks"
               className={({ isActive }) => (isActive ? "active" : "")}
               to="/tasks"
             >

@@ -8,6 +8,7 @@ import { maybeQualifyReferral } from "./referrals.js";
 import { applyCredit, applyCreditSplit } from "./economy.js";
 import { getTaskVerifyQueue } from "../queue/bullmq.js";
 import type { TaskDto, UserTaskStatus } from "shared";
+import { extractTaskUiFields } from "./taskUiMeta.js";
 
 function periodKeyForTask(task: { type: string }): string {
   if (task.type === "daily") return utcDateString();
@@ -62,6 +63,8 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       }
     }
 
+    const meta = (t.meta as Record<string, unknown> | null) ?? null;
+    const ui = extractTaskUiFields(meta);
     rows.push({
       id: t.id,
       title: t.title,
@@ -72,8 +75,12 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       validationType: t.validationType as TaskDto["validationType"],
       userStatus,
       periodKey: t.type === "daily" ? pk : null,
-      meta: (t.meta as Record<string, unknown> | null) ?? null,
+      meta,
       lastError: ut?.lastError ?? null,
+      actionUrl: ui.actionUrl,
+      actionLabel: ui.actionLabel,
+      verifyLabel: ui.verifyLabel,
+      help: ui.help,
     });
   }
   return rows;

@@ -1,5 +1,6 @@
 import { Coins } from "lucide-react";
 import { useActivePlatform } from "../context/PlatformContext";
+import { useAnimatedNumber } from "../hooks/useAnimatedNumber";
 
 export function ScreenHeader({
   title,
@@ -9,12 +10,18 @@ export function ScreenHeader({
   balance: number | null;
 }) {
   const { activePlatform, setActivePlatform } = useActivePlatform();
+  const animatedBalance = useAnimatedNumber(balance);
 
   return (
     <header className="screen-header">
       <h1 className="screen-header__title">{title}</h1>
       <div className="screen-header__controls">
-        <div className="platform-toggle" role="group" aria-label="Платформа">
+        <div
+          className="platform-toggle"
+          data-tour-target="platform-toggle"
+          role="group"
+          aria-label="Платформа"
+        >
           <button
             type="button"
             className={activePlatform === "twitch" ? "on" : ""}
@@ -30,10 +37,10 @@ export function ScreenHeader({
             Kick
           </button>
         </div>
-        {balance != null && (
+        {balance != null && animatedBalance != null && (
           <div className="balance-pill" aria-label="Баланс выбранной платформы">
             <Coins className="balance-pill__icon" size={18} strokeWidth={2.2} />
-            <span>{balance.toLocaleString("ru-RU")}</span>
+            <span>{animatedBalance.toLocaleString("ru-RU")}</span>
           </div>
         )}
       </div>

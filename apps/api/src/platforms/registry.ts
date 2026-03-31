@@ -29,6 +29,13 @@ class TwitchProvider implements PlatformProvider {
   }
 }
 
+class TelegramProvider implements PlatformProvider {
+  id = "telegram" as const;
+  async verifyTask(_userId: string, _task: TaskLike): Promise<boolean> {
+    return true;
+  }
+}
+
 class KickProvider implements PlatformProvider {
   id = "kick" as const;
   async verifyTask(userId: string, task: TaskLike): Promise<boolean> {
@@ -55,9 +62,11 @@ class KickProvider implements PlatformProvider {
 
 const twitch = new TwitchProvider();
 const kick = new KickProvider();
+const telegram = new TelegramProvider();
 
 export function getProvider(platform: string): PlatformProvider | null {
   if (platform === "global") return null;
+  if (platform === "telegram") return telegram;
   if (platform === "twitch") {
     return gameConfig.platforms.twitchEnabled ? twitch : null;
   }

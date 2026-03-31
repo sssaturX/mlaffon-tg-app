@@ -1,6 +1,15 @@
-export type Platform = "twitch" | "kick" | "global";
+export type Platform = "twitch" | "kick" | "global" | "telegram";
 export type TaskType = "daily" | "one-time";
 export type ValidationType = "api" | "manual";
+
+/** Иконка в блоке справки (модалка «как на третьем скрине»). */
+export type TaskHelpIcon = "tv" | "gift" | "help" | "radio";
+
+export interface TaskHelpHint {
+  title: string;
+  body: string;
+  icon?: TaskHelpIcon;
+}
 
 export interface TaskDto {
   id: string;
@@ -12,9 +21,17 @@ export interface TaskDto {
   validationType: ValidationType;
   userStatus: UserTaskStatus;
   periodKey?: string | null;
-  /** Правила проверки API (Helix / Kick) */
+  /** Правила проверки API (Helix / Kick) + UI-поля (actionUrl, help, …) */
   meta?: Record<string, unknown> | null;
   lastError?: string | null;
+  /** Ссылка для кнопки «Подписаться» / открыть канал (из meta.actionUrl). */
+  actionUrl?: string | null;
+  /** Текст кнопки внешнего действия (из meta.actionLabel). */
+  actionLabel?: string | null;
+  /** Текст кнопки проверки / получения награды (из meta.verifyLabel). */
+  verifyLabel?: string | null;
+  /** Справка в стиле отдельной модалки (из meta.help). */
+  help?: TaskHelpHint | null;
 }
 
 export type UserTaskStatus =

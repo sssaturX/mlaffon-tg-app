@@ -21,6 +21,12 @@ import {
   startDrop,
   stopActiveDrops,
 } from "../services/drops.js";
+import {
+  createTaskAdmin,
+  listTasksAdmin,
+  setTaskActive,
+  updateTaskAdmin,
+} from "../services/adminTasks.js";
 import { signAdminToken, verifyAdminToken } from "../lib/adminJwt.js";
 
 function parseBearer(req: { headers: { authorization?: string } }): string | null {
@@ -419,6 +425,113 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   app.post("/api/admin/drops/stop", async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     await stopActiveDrops();
+    return { ok: true };
+  });
+
+  const taskCreateBody = z
+    .object({
+      id: z.string().min(1).max(96),
+      title: z.string().min(1),
+      description: z.string(),
+      reward: z.number().int().min(0),
+      platform: z.enum(["twitch", "kick", "global", "telegram"]),
+      type: z.enum(["daily", "one-time"]),
+      validationType: z.enum(["api", "manual"]),
+      meta: z.record(z.unknown()).nullable().optional(),
+      active: z.boolean().optional(),
+    })
+    .refine(
+      (d) => d.platform !== "telegram" || d.validationType === "manual",
+      { message: "Для Telegram выберите ручную проверку (API пока не подключён)" }
+    );
+
+  const taskPatchBody = z
+    .object({
+      title: z.string().min(1).optional(),
+      description: z.string().optional(),
+      reward: z.number().int().min(0).optional(),
+      platform: z.enum(["twitch", "kick", "global", "telegram"]).optional(),
+      type: z.enum(["daily", "one-time"]).optional(),
+      validationType: z.enum(["api", "manual"]).optional(),
+      meta: z.record(z.unknown()).nullable().optional(),
+      active: z.boolean().optional(),
+    })
+    .refine(
+      (d) =>
+        !(
+          d.platform === "telegram" &&
+          d.validationType !== undefined &&
+          d.validationType === "api"
+        ),
+      { message: "Для Telegram только ручная проверка" }
+    );
+
+  app.get("/api/admin/tasks", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const rows = await listTasksAdmin();
+    return { tasks: rows };
+  });
+
+  app.post("/api/admin/tasks", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const parsed = taskCreateBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const d = parsed.data;
+    try {
+      await createTaskAdmin({
+        id: d.id,
+        title: d.title,
+        description: d.description,
+        reward: d.reward,
+        platform: d.platform,
+        type: d.type,
+        validationType: d.validationType,
+        meta: (d.meta ?? null) as Record<string, unknown> | null,
+        active: d.active ?? true,
+      });
+      return { ok: true };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/unique|duplicate/i.test(msg)) {
+        return reply.status(409).send({
+          error: { code: "task_exists", message: "Задание с таким id уже есть" },
+        });
+      }
+      throw e;
+    }
+  });
+
+  app.put("/api/admin/tasks/:id", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const parsed = taskPatchBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const ok = await updateTaskAdmin(id, parsed.data);
+    if (!ok) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Задание не найдено" },
+      });
+    }
+    return { ok: true };
+  });
+
+  app.delete("/api/admin/tasks/:id", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const ok = await setTaskActive(id, false);
+    if (!ok) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Задание не найдено" },
+      });
+    }
     return { ok: true };
   });
 }

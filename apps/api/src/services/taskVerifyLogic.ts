@@ -43,6 +43,10 @@ export async function verifyPlatformTask(
     }
   }
 
+  if (task.platform === "telegram") {
+    return { ok: false, reason: "telegram_api_pending" };
+  }
+
   if (task.platform === "kick") {
     const acc = await getKickAccount(userId);
     if (!acc) return { ok: false, reason: "no_oauth" };

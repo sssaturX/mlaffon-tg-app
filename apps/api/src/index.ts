@@ -220,7 +220,10 @@ app.get("/api/v1/tasks", async (req, reply) => {
   let list = await listTasksForUser(userId);
   if (platform === "twitch" || platform === "kick") {
     list = list.filter(
-      (t) => t.platform === platform || t.platform === "global"
+      (t) =>
+        t.platform === platform ||
+        t.platform === "global" ||
+        t.platform === "telegram"
     );
   } else if (platform === "global") {
     list = list.filter((t) => t.platform === "global");

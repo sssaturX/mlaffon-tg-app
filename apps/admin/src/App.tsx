@@ -104,6 +104,18 @@ type AdminDropStatus = {
   } | null;
 };
 
+type AdminTaskRow = {
+  id: string;
+  title: string;
+  description: string;
+  reward: number;
+  platform: string;
+  type: string;
+  validationType: string;
+  meta: unknown;
+  active: boolean;
+};
+
 export function App() {
   const [token, setToken] = useState<string | null>(() => {
     try {
@@ -144,7 +156,9 @@ export function App() {
   const [promoMaxUses, setPromoMaxUses] = useState(100);
   const [promoCreditPlatform, setPromoCreditPlatform] = useState<"split" | "twitch" | "kick">("split");
 
-  const [tab, setTab] = useState<"giveaways" | "promos" | "users" | "drops">("giveaways");
+  const [tab, setTab] = useState<
+    "giveaways" | "promos" | "users" | "drops" | "tasks"
+  >("giveaways");
   const [adminUsers, setAdminUsers] = useState<AdminUserRow[] | null>(null);
   const [usersTotal, setUsersTotal] = useState(0);
   const [usersOffset, setUsersOffset] = useState(0);
@@ -156,6 +170,29 @@ export function App() {
   const [dropMaxWinners, setDropMaxWinners] = useState(100);
   const [dropRewardMin, setDropRewardMin] = useState(10);
   const [dropRewardMax, setDropRewardMax] = useState(100);
+
+  const [adminTasks, setAdminTasks] = useState<AdminTaskRow[] | null>(null);
+  const [taskEditingId, setTaskEditingId] = useState<string | null>(null);
+  const [taskFormId, setTaskFormId] = useState("");
+  const [taskFormTitle, setTaskFormTitle] = useState("");
+  const [taskFormDescription, setTaskFormDescription] = useState("");
+  const [taskFormReward, setTaskFormReward] = useState(10);
+  const [taskFormPlatform, setTaskFormPlatform] = useState<
+    "twitch" | "kick" | "global" | "telegram"
+  >("kick");
+  const [taskFormType, setTaskFormType] = useState<"daily" | "one-time">("daily");
+  const [taskFormValidation, setTaskFormValidation] = useState<"api" | "manual">(
+    "manual"
+  );
+  const [taskFormActionUrl, setTaskFormActionUrl] = useState("");
+  const [taskFormActionLabel, setTaskFormActionLabel] = useState("");
+  const [taskFormVerifyLabel, setTaskFormVerifyLabel] = useState("");
+  const [taskFormHelpTitle, setTaskFormHelpTitle] = useState("");
+  const [taskFormHelpBody, setTaskFormHelpBody] = useState("");
+  const [taskFormHelpIcon, setTaskFormHelpIcon] = useState<
+    "" | "tv" | "gift" | "help" | "radio"
+  >("");
+  const [taskFormMetaJson, setTaskFormMetaJson] = useState("{}");
 
   /**
    * Только с `includeJsonContentType: true` для запросов с JSON-телом.
@@ -268,6 +305,22 @@ export function App() {
     setDropStatus({ active: j.active, drop: j.drop ?? null });
   }, [token, authHeaders]);
 
+  const loadAdminTasks = useCallback(async () => {
+    if (!token) return;
+    setErr(null);
+    const r = await fetch(`${apiBase()}/api/admin/tasks`, { headers: authHeaders() });
+    const j = (await r.json()) as {
+      tasks?: AdminTaskRow[];
+      error?: { message?: string };
+    };
+    if (!r.ok) {
+      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+      if (r.status === 401) setToken(null);
+      return;
+    }
+    setAdminTasks(j.tasks ?? []);
+  }, [token, authHeaders]);
+
   useEffect(() => {
     if (token) {
       void loadStats();
@@ -283,6 +336,15 @@ export function App() {
   useEffect(() => {
     if (token && tab === "drops") void loadDropStatus();
   }, [token, tab, loadDropStatus]);
+
+  useEffect(() => {
+    if (token && tab === "tasks") void loadAdminTasks();
+  }, [token, tab, loadAdminTasks]);
+
+  useEffect(() => {
+    if (taskFormPlatform !== "telegram") return;
+    setTaskFormValidation((v) => (v === "api" ? "manual" : v));
+  }, [taskFormPlatform]);
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
@@ -892,6 +954,424 @@ export function App() {
                 </button>
               </div>
             </>
+          )}
+        </>
+      ) : null}
+
+      {tab === "tasks" ? (
+        <>
+          <h2 className="admin-mt-0">Задания</h2>
+          <p className="muted">
+            Создание и правка заданий для мини-приложения. Поля «ссылка / кнопки / справка» попадают в{" "}
+            <code>meta</code> и отображаются в модалке. Для проверки Helix/Kick укажите{" "}
+            <code>helix</code> / <code>kick</code> в JSON. Telegram — только ручная проверка.
+          </p>
+          <form
+            className="card stack"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!token) return;
+              let meta: Record<string, unknown> = {};
+              try {
+                meta = JSON.parse(taskFormMetaJson.trim() || "{}") as Record<string, unknown>;
+              } catch {
+                setErr("meta: невалидный JSON");
+                return;
+              }
+              if (taskFormActionUrl.trim()) meta.actionUrl = taskFormActionUrl.trim();
+              else delete meta.actionUrl;
+              if (taskFormActionLabel.trim()) meta.actionLabel = taskFormActionLabel.trim();
+              else delete meta.actionLabel;
+              if (taskFormVerifyLabel.trim()) meta.verifyLabel = taskFormVerifyLabel.trim();
+              else delete meta.verifyLabel;
+              if (taskFormHelpTitle.trim() && taskFormHelpBody.trim()) {
+                meta.help = {
+                  title: taskFormHelpTitle.trim(),
+                  body: taskFormHelpBody.trim(),
+                  ...(taskFormHelpIcon ? { icon: taskFormHelpIcon } : {}),
+                };
+              } else delete meta.help;
+
+              setLoading(true);
+              setErr(null);
+              try {
+                if (taskEditingId) {
+                  const r = await fetch(`${apiBase()}/api/admin/tasks/${encodeURIComponent(taskEditingId)}`, {
+                    method: "PUT",
+                    headers: authHeaders(true),
+                    body: JSON.stringify({
+                      title: taskFormTitle,
+                      description: taskFormDescription,
+                      reward: taskFormReward,
+                      platform: taskFormPlatform,
+                      type: taskFormType,
+                      validationType: taskFormValidation,
+                      meta,
+                      active: true,
+                    }),
+                  });
+                  const j = (await r.json()) as { error?: { message?: string } };
+                  if (!r.ok) {
+                    setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                    return;
+                  }
+                } else {
+                  const r = await fetch(`${apiBase()}/api/admin/tasks`, {
+                    method: "POST",
+                    headers: authHeaders(true),
+                    body: JSON.stringify({
+                      id: taskFormId.trim(),
+                      title: taskFormTitle,
+                      description: taskFormDescription,
+                      reward: taskFormReward,
+                      platform: taskFormPlatform,
+                      type: taskFormType,
+                      validationType: taskFormValidation,
+                      meta,
+                      active: true,
+                    }),
+                  });
+                  const j = (await r.json()) as { error?: { message?: string } };
+                  if (!r.ok) {
+                    setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                    return;
+                  }
+                }
+                setTaskEditingId(null);
+                setTaskFormId("");
+                setTaskFormTitle("");
+                setTaskFormDescription("");
+                setTaskFormReward(10);
+                setTaskFormPlatform("kick");
+                setTaskFormType("daily");
+                setTaskFormValidation("manual");
+                setTaskFormActionUrl("");
+                setTaskFormActionLabel("");
+                setTaskFormVerifyLabel("");
+                setTaskFormHelpTitle("");
+                setTaskFormHelpBody("");
+                setTaskFormHelpIcon("");
+                setTaskFormMetaJson("{}");
+                await loadAdminTasks();
+              } catch {
+                setErr("Сеть недоступна");
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            <div>
+              <label htmlFor="tid">ID (латиница, без пробелов)</label>
+              <input
+                id="tid"
+                value={taskFormId}
+                onChange={(e) => setTaskFormId(e.target.value)}
+                disabled={taskEditingId != null}
+                required={taskEditingId == null}
+                placeholder="daily_kick_follow"
+              />
+            </div>
+            <div>
+              <label htmlFor="ttitle">Заголовок</label>
+              <input
+                id="ttitle"
+                value={taskFormTitle}
+                onChange={(e) => setTaskFormTitle(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="tdesc">Описание</label>
+              <textarea
+                id="tdesc"
+                value={taskFormDescription}
+                onChange={(e) => setTaskFormDescription(e.target.value)}
+                required
+                rows={3}
+              />
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="trew">Награда (база, монет)</label>
+                <input
+                  id="trew"
+                  type="number"
+                  min={0}
+                  value={taskFormReward}
+                  onChange={(e) => setTaskFormReward(Number(e.target.value))}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="tplat">Платформа</label>
+                <select
+                  id="tplat"
+                  value={taskFormPlatform}
+                  onChange={(e) =>
+                    setTaskFormPlatform(
+                      e.target.value as "twitch" | "kick" | "global" | "telegram"
+                    )
+                  }
+                >
+                  <option value="kick">Kick</option>
+                  <option value="twitch">Twitch</option>
+                  <option value="global">Global</option>
+                  <option value="telegram">Telegram</option>
+                </select>
+              </div>
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="ttype">Тип</label>
+                <select
+                  id="ttype"
+                  value={taskFormType}
+                  onChange={(e) => setTaskFormType(e.target.value as "daily" | "one-time")}
+                >
+                  <option value="daily">Ежедневно</option>
+                  <option value="one-time">Разово</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="tval">Проверка</label>
+                <select
+                  id="tval"
+                  value={taskFormValidation}
+                  onChange={(e) => setTaskFormValidation(e.target.value as "api" | "manual")}
+                  disabled={taskFormPlatform === "telegram"}
+                >
+                  <option value="manual">Ручная / синхронно</option>
+                  <option value="api">API (очередь)</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="turl">Ссылка для кнопки (meta.actionUrl)</label>
+              <input
+                id="turl"
+                type="url"
+                value={taskFormActionUrl}
+                onChange={(e) => setTaskFormActionUrl(e.target.value)}
+                placeholder="https://kick.com/…"
+              />
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="tact">Текст кнопки ссылки</label>
+                <input
+                  id="tact"
+                  value={taskFormActionLabel}
+                  onChange={(e) => setTaskFormActionLabel(e.target.value)}
+                  placeholder="Подписаться на Kick"
+                />
+              </div>
+              <div>
+                <label htmlFor="tver">Текст кнопки проверки</label>
+                <input
+                  id="tver"
+                  value={taskFormVerifyLabel}
+                  onChange={(e) => setTaskFormVerifyLabel(e.target.value)}
+                  placeholder="Проверить подписку"
+                />
+              </div>
+            </div>
+            <p className="muted admin-m-0">Справка (модалка как на референсе)</p>
+            <div className="row">
+              <div>
+                <label htmlFor="tht">Заголовок справки</label>
+                <input
+                  id="tht"
+                  value={taskFormHelpTitle}
+                  onChange={(e) => setTaskFormHelpTitle(e.target.value)}
+                  placeholder="Где найти промокод"
+                />
+              </div>
+              <div>
+                <label htmlFor="thic">Иконка</label>
+                <select
+                  id="thic"
+                  value={taskFormHelpIcon}
+                  onChange={(e) =>
+                    setTaskFormHelpIcon(
+                      e.target.value as "" | "tv" | "gift" | "help" | "radio"
+                    )
+                  }
+                >
+                  <option value="">По умолчанию</option>
+                  <option value="tv">TV</option>
+                  <option value="gift">Подарок</option>
+                  <option value="help">Помощь</option>
+                  <option value="radio">Радио</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="thb">Текст справки</label>
+              <textarea
+                id="thb"
+                value={taskFormHelpBody}
+                onChange={(e) => setTaskFormHelpBody(e.target.value)}
+                rows={2}
+                placeholder="Промокоды можно найти на стримах…"
+              />
+            </div>
+            <div>
+              <label htmlFor="tmeta">meta (JSON, Helix/Kick + любые поля)</label>
+              <textarea
+                id="tmeta"
+                className="mono"
+                value={taskFormMetaJson}
+                onChange={(e) => setTaskFormMetaJson(e.target.value)}
+                rows={6}
+                spellCheck={false}
+              />
+            </div>
+            <div className="row">
+              <button type="submit" className="primary" disabled={loading}>
+                {taskEditingId ? "Сохранить изменения" : "Создать задание"}
+              </button>
+              {taskEditingId ? (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setTaskEditingId(null);
+                    setTaskFormId("");
+                    setTaskFormTitle("");
+                    setTaskFormDescription("");
+                    setTaskFormReward(10);
+                    setTaskFormPlatform("kick");
+                    setTaskFormType("daily");
+                    setTaskFormValidation("manual");
+                    setTaskFormActionUrl("");
+                    setTaskFormActionLabel("");
+                    setTaskFormVerifyLabel("");
+                    setTaskFormHelpTitle("");
+                    setTaskFormHelpBody("");
+                    setTaskFormHelpIcon("");
+                    setTaskFormMetaJson("{}");
+                  }}
+                >
+                  Новое (сброс)
+                </button>
+              ) : null}
+            </div>
+          </form>
+
+          {adminTasks === null ? (
+            <p className="muted">Загрузка…</p>
+          ) : adminTasks.length === 0 ? (
+            <p className="muted">Пока нет заданий в БД.</p>
+          ) : (
+            <ul className="list">
+              {adminTasks.map((row) => (
+                <li key={row.id}>
+                  <div className="admin-gw-row">
+                    <div className="admin-gw-main">
+                      <strong>{row.title}</strong>{" "}
+                      <span className="muted">
+                        <code>{row.id}</code> · {row.platform} · {row.type} · {row.validationType} ·{" "}
+                        {row.active ? "вкл" : "выкл"}
+                      </span>
+                      <div className="muted admin-muted-gap">
+                        Награда {row.reward} · {row.description.slice(0, 120)}
+                        {row.description.length > 120 ? "…" : ""}
+                      </div>
+                    </div>
+                    <div className="admin-actions">
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setTaskEditingId(row.id);
+                          setTaskFormId(row.id);
+                          setTaskFormTitle(row.title);
+                          setTaskFormDescription(row.description);
+                          setTaskFormReward(row.reward);
+                          setTaskFormPlatform(
+                            row.platform as "twitch" | "kick" | "global" | "telegram"
+                          );
+                          setTaskFormType(row.type as "daily" | "one-time");
+                          setTaskFormValidation(row.validationType as "api" | "manual");
+                          setTaskFormMetaJson(JSON.stringify(row.meta ?? {}, null, 2));
+                          const m =
+                            row.meta && typeof row.meta === "object"
+                              ? (row.meta as Record<string, unknown>)
+                              : {};
+                          setTaskFormActionUrl(
+                            typeof m.actionUrl === "string" ? m.actionUrl : ""
+                          );
+                          setTaskFormActionLabel(
+                            typeof m.actionLabel === "string" ? m.actionLabel : ""
+                          );
+                          setTaskFormVerifyLabel(
+                            typeof m.verifyLabel === "string" ? m.verifyLabel : ""
+                          );
+                          const h = m.help;
+                          if (h && typeof h === "object") {
+                            const o = h as Record<string, unknown>;
+                            setTaskFormHelpTitle(
+                              typeof o.title === "string" ? o.title : ""
+                            );
+                            setTaskFormHelpBody(
+                              typeof o.body === "string" ? o.body : ""
+                            );
+                            const ic = o.icon;
+                            setTaskFormHelpIcon(
+                              ic === "tv" || ic === "gift" || ic === "help" || ic === "radio"
+                                ? ic
+                                : ""
+                            );
+                          } else {
+                            setTaskFormHelpTitle("");
+                            setTaskFormHelpBody("");
+                            setTaskFormHelpIcon("");
+                          }
+                        }}
+                      >
+                        Править
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={loading || !row.active}
+                        onClick={async () => {
+                          if (!token || !row.active) return;
+                          if (!window.confirm(`Скрыть задание «${row.id}»?`)) return;
+                          setLoading(true);
+                          setErr(null);
+                          try {
+                            const r = await fetch(
+                              `${apiBase()}/api/admin/tasks/${encodeURIComponent(row.id)}`,
+                              { method: "DELETE", headers: authHeaders() }
+                            );
+                            const j = (await r.json()) as { error?: { message?: string } };
+                            if (!r.ok) {
+                              setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                              return;
+                            }
+                            if (taskEditingId === row.id) {
+                              setTaskEditingId(null);
+                              setTaskFormId("");
+                              setTaskFormTitle("");
+                              setTaskFormDescription("");
+                              setTaskFormMetaJson("{}");
+                            }
+                            await loadAdminTasks();
+                          } catch {
+                            setErr("Сеть недоступна");
+                          } finally {
+                            setLoading(false);
+                          }
+                        }}
+                      >
+                        Скрыть
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </>
       ) : null}

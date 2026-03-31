@@ -1,4 +1,4 @@
-export type PlatformId = "twitch" | "kick";
+export type PlatformId = "twitch" | "kick" | "telegram";
 
 export interface TaskLike {
   id: string;

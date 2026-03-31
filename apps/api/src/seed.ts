@@ -46,6 +46,14 @@ async function seed() {
       validationType: "api",
       meta: {
         kick: { kind: "connected" },
+        actionUrl: "https://kick.com/",
+        actionLabel: "Подписаться на Kick",
+        verifyLabel: "Проверить подписку",
+        help: {
+          title: "Как получить награду",
+          body: "Сначала открой канал по кнопке ниже, затем нажми «Проверить подписку».",
+          icon: "tv",
+        },
       },
     },
   ];
