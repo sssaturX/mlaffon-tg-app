@@ -1530,6 +1530,17 @@ h3 {
   border-color: rgba(0, 200, 150, 0.35);
 }
 
+.toast--streak.toast--success {
+  border-color: rgba(0, 200, 150, 0.55);
+  background: linear-gradient(
+    145deg,
+    rgba(0, 200, 150, 0.14),
+    var(--surface)
+  );
+  font-weight: 600;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
+}
+
 .toast--error {
   border-color: rgba(248, 113, 113, 0.45);
 }

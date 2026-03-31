@@ -51,8 +51,11 @@ export default function Profile({
       await loadRefs();
       if (ok) {
         showToast(
-          ok === "twitch" ? "Twitch подключён" : "Kick подключён",
+          ok === "twitch"
+            ? "Twitch подключён — стрик и задания для Twitch доступны."
+            : "Kick подключён — стрик и задания для Kick доступны.",
           "success",
+          { durationMs: 5500 }
         );
         try {
           WebApp.HapticFeedback.notificationOccurred("success");

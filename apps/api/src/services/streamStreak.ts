@@ -65,28 +65,30 @@ async function maybeStreamStreakBonus(
 }
 
 /**
- * +1 день стрика по платформе (UTC), если сегодня ещё не засчитывали.
- * Используется при нажатии «Смотреть стрим» во время эфира, заданного в админке.
+ * Стрик за «Смотреть стрим»: **каждая новая трансляция** (новый эфир в админке) даёт +1,
+ * даже если в тот же UTC-день уже был другой эфир. Повторное нажатие в том же эфире
+ * не вызывается (см. live_broadcast_views).
+ *
+ * Логика: первый эфир за календарный день продолжает цепочку «вчера → сегодня»;
+ * второй и следующие эфиры **в тот же день** добавляют ещё +1 к счётчику сессий.
+ * Длинный перерыв (не вчера и не сегодня) — сброс в 1.
  */
-export async function applyStreamStreakDay(
+export async function applyStreamStreakBroadcastWatch(
   userId: string,
   platform: "twitch" | "kick"
-): Promise<
-  | { ok: true; streak: number; utcDate: string }
-  | { ok: false; code: "already_today" }
-> {
+): Promise<{ ok: true; streak: number; utcDate: string }> {
   const today = utcDateString();
   const row = await ensureStreamStreakRow(userId);
 
   if (platform === "twitch") {
-    if (row.twitchLast === today) {
-      return { ok: false, code: "already_today" };
-    }
-
+    const last = row.twitchLast;
     let newStreak: number;
-    if (!row.twitchLast) {
+
+    if (!last) {
       newStreak = 1;
-    } else if (row.twitchLast === addDays(today, -1)) {
+    } else if (last === today) {
+      newStreak = row.twitch + 1;
+    } else if (last === addDays(today, -1)) {
       newStreak = row.twitch + 1;
     } else {
       newStreak = 1;
@@ -104,14 +106,14 @@ export async function applyStreamStreakDay(
     return { ok: true, streak: newStreak, utcDate: today };
   }
 
-  if (row.kickLast === today) {
-    return { ok: false, code: "already_today" };
-  }
-
+  const last = row.kickLast;
   let newStreak: number;
-  if (!row.kickLast) {
+
+  if (!last) {
     newStreak = 1;
-  } else if (row.kickLast === addDays(today, -1)) {
+  } else if (last === today) {
+    newStreak = row.kick + 1;
+  } else if (last === addDays(today, -1)) {
     newStreak = row.kick + 1;
   } else {
     newStreak = 1;

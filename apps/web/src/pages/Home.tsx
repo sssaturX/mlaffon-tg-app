@@ -20,6 +20,11 @@ import {
   type LiveBroadcastActive,
 } from "../components/LiveBroadcastCard";
 import { OAUTH_TOAST_KEY } from "./OAuthReturn";
+import {
+  notifyStreakAlreadyWatchedThisBroadcast,
+  notifyStreakWatchError,
+  notifyStreakWatchSuccess,
+} from "../utils/streakNotifications";
 
 const STREAK_TARGET = 7;
 
@@ -91,8 +96,9 @@ export default function Home({
       /* ignore */
     }
     showToast(
-      k === "twitch" ? "Twitch подключён" : "Kick подключён",
+      k === "twitch" ? "Twitch подключён — можно пользоваться стриком на Twitch." : "Kick подключён — можно пользоваться стриком на Kick.",
       "success",
+      { durationMs: 5500 }
     );
     try {
       WebApp.HapticFeedback.notificationOccurred("success");
@@ -165,46 +171,15 @@ export default function Home({
         body: JSON.stringify({ broadcastId: live.id }),
       });
       if (!r.ok) {
-        showToast(formatApiError(r), "error");
-        try {
-          WebApp.HapticFeedback.notificationOccurred("error");
-        } catch {
-          /* ignore */
-        }
+        notifyStreakWatchError(showToast, formatApiError(r));
         return;
       }
       await onRefresh();
       setActivePlatform(live.platform);
       if (r.data.alreadyWatchedThisBroadcast) {
-        showToast(
-          `Вы уже нажимали «Смотреть стрим» в этом эфире (${platRu}). Повторно стрик не начисляется.`,
-          "info",
-        );
-        try {
-          WebApp.HapticFeedback.notificationOccurred("warning");
-        } catch {
-          /* ignore */
-        }
-      } else if (r.data.streakIncremented) {
-        showToast(
-          `${platRu}: стрик ${r.data.streak} дн. подряд!`,
-          "success",
-        );
-        try {
-          WebApp.HapticFeedback.notificationOccurred("success");
-        } catch {
-          /* ignore */
-        }
+        notifyStreakAlreadyWatchedThisBroadcast(showToast, platRu);
       } else {
-        showToast(
-          `Сегодня для ${platRu} день стрика уже засчитан (UTC). Заход сохранён, счётчик не вырос.`,
-          "info",
-        );
-        try {
-          WebApp.HapticFeedback.notificationOccurred("warning");
-        } catch {
-          /* ignore */
-        }
+        notifyStreakWatchSuccess(showToast, platRu, r.data.streak);
       }
     } finally {
       setWatchingLive(false);
@@ -293,9 +268,10 @@ export default function Home({
             <p className="muted streak-card__text">
               {live?.active ? (
                 <>
-                  Эфир на {streakPlatform === "kick" ? "Kick" : "Twitch"}. Нажми
-                  «Смотреть стрим» — день засчитается для стрика этой платформы (UTC).
-                  Сейчас: {streakForPlatform} / {STREAK_TARGET}.
+                  Эфир на {streakPlatform === "kick" ? "Kick" : "Twitch"}. Каждый
+                  новый эфир в админке — отдельный засчёт: нажми «Смотреть стрим» (один
+                  раз на эфир). В один день можно несколько раз подряд. Сейчас:{" "}
+                  {streakForPlatform} / {STREAK_TARGET}.
                 </>
               ) : (
                 <>
@@ -316,7 +292,7 @@ export default function Home({
                 <span className="pill pill--kick">Kick</span>
               )}
               <p className="stream-streak-row__val">
-                {streakForPlatform} дн. подряд
+                {streakForPlatform} подряд
               </p>
             </div>
           </div>
@@ -331,7 +307,7 @@ export default function Home({
         </div>
         <p className="muted streak-card__hint">
           Стрик {streakPlatform === "kick" ? "Kick" : "Twitch"}: {streakForPlatform} /{" "}
-          {STREAK_TARGET} дней
+          {STREAK_TARGET}
         </p>
       </div>
 

@@ -1,7 +1,10 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { liveBroadcasts, liveBroadcastViews } from "../db/schema.js";
-import { applyStreamStreakDay, ensureStreamStreakRow } from "./streamStreak.js";
+import {
+  applyStreamStreakBroadcastWatch,
+  ensureStreamStreakRow,
+} from "./streamStreak.js";
 
 export type LivePlatform = "twitch" | "kick";
 
@@ -110,20 +113,18 @@ export async function watchLiveBroadcast(
     };
   }
 
-  const res = await applyStreamStreakDay(userId, platform);
-  const streakIncremented = res.ok;
+  const res = await applyStreamStreakBroadcastWatch(userId, platform);
 
   await db.insert(liveBroadcastViews).values({
     broadcastId,
     userId,
   });
 
-  const after = await ensureStreamStreakRow(userId);
   return {
     ok: true,
     platform,
-    streak: platform === "twitch" ? after.twitch : after.kick,
-    streakIncremented,
+    streak: res.streak,
+    streakIncremented: true,
     alreadyWatchedThisBroadcast: false,
   };
 }
