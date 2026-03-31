@@ -58,7 +58,7 @@ export default function Home({
   onRefresh,
 }: {
   me: MeResponse | null;
-  onRefresh: () => void;
+  onRefresh: () => Promise<MeResponse | null>;
 }) {
   const { showToast } = useToast();
   const { activePlatform } = useActivePlatform();
@@ -99,7 +99,9 @@ export default function Home({
     } catch {
       /* ignore */
     }
-    void onRefresh();
+    void (async () => {
+      await onRefresh();
+    })();
   }, [showToast, onRefresh]);
 
   const loadLive = useCallback(async () => {
@@ -150,6 +152,7 @@ export default function Home({
         showToast(formatApiError(r), "error");
         return;
       }
+      await onRefresh();
       if (r.data.alreadyWatchedThisBroadcast) {
         showToast("Вы уже отметились в этом эфире", "info");
       } else if (r.data.streakIncremented) {
@@ -157,7 +160,6 @@ export default function Home({
       } else {
         showToast("Сегодня день уже засчитан по этой платформе", "info");
       }
-      onRefresh();
     } finally {
       setWatchingLive(false);
     }
@@ -176,7 +178,7 @@ export default function Home({
     }
     showToast(`+${r.data.reward} монет`, "success");
     setPromo("");
-    onRefresh();
+    await onRefresh();
   }
 
   return (
@@ -244,9 +246,9 @@ export default function Home({
             <p className="streak-card__title">Начни свой стрик!</p>
             <p className="muted streak-card__text">
               Когда идёт эфир, нажми «Смотреть стрим» в карточке выше — день
-              засчитается на той платформе (Twitch или Kick), которую выбрал
-              стример в админке (UTC). Сейчас: {streakForPlatform} /{" "}
-              {STREAK_TARGET}.
+              засчитается на платформе эфира (UTC). Ниже — стрик для режима{" "}
+              {activePlatform === "twitch" ? "Twitch" : "Kick"} (переключатель в
+              шапке). Сейчас: {streakForPlatform} / {STREAK_TARGET}.
             </p>
           </div>
         </div>
@@ -254,17 +256,13 @@ export default function Home({
         <div className="stream-streak-grid stream-streak-grid--readonly">
           <div className="stream-streak-row">
             <div>
-              <span className="pill pill--twitch">Twitch</span>
+              {activePlatform === "twitch" ? (
+                <span className="pill pill--twitch">Twitch</span>
+              ) : (
+                <span className="pill pill--kick">Kick</span>
+              )}
               <p className="stream-streak-row__val">
-                {me.streakTwitch} дн. подряд
-              </p>
-            </div>
-          </div>
-          <div className="stream-streak-row">
-            <div>
-              <span className="pill pill--kick">Kick</span>
-              <p className="stream-streak-row__val">
-                {me.streakKick} дн. подряд
+                {streakForPlatform} дн. подряд
               </p>
             </div>
           </div>
@@ -272,6 +270,7 @@ export default function Home({
 
         <div className="streak-card__bar streak-card__bar--spaced" aria-hidden>
           <div
+            key={`${activePlatform}-${streakForPlatform}`}
             className="streak-card__fill"
             style={{ width: `${streakPct}%` }}
           />
