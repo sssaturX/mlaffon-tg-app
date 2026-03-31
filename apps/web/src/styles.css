@@ -460,6 +460,111 @@ select:focus-visible {
   gap: var(--space-2);
 }
 
+.games-page {
+  padding-bottom: var(--space-4);
+}
+
+.games-fortune-title {
+  margin: 0 0 var(--space-2);
+  font-size: 1.25rem;
+}
+
+.games-fortune-meta {
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: 1.5;
+}
+
+.games-ok {
+  color: var(--accent);
+}
+
+.games-wheel-block {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-3) 0 var(--space-2);
+}
+
+.games-spin-btn {
+  min-width: 140px;
+}
+
+.games-spin-btn--paid {
+  background: var(--surface-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.games-result {
+  margin: var(--space-2) 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Колесо фортуны (SVG) */
+.fortune-wheel-wrap {
+  position: relative;
+  width: min(100%, 320px);
+  aspect-ratio: 1;
+  margin: 0 auto;
+}
+
+.fortune-wheel-pointer {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
+}
+
+.fortune-wheel-pointer__tri {
+  width: 0;
+  height: 0;
+  border-left: 14px solid transparent;
+  border-right: 14px solid transparent;
+  border-top: 22px solid #fbbf24;
+}
+
+.fortune-wheel-disk {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  transition: transform 4.2s cubic-bezier(0.18, 0.72, 0.12, 1);
+  will-change: transform;
+}
+
+.fortune-wheel-disk--spinning {
+  pointer-events: none;
+}
+
+.fortune-wheel-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.fortune-wheel-label {
+  fill: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+}
+
+.fortune-wheel-hub {
+  fill: #1a1025;
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 2;
+}
+
+.fortune-wheel-hub-inner {
+  fill: #2d1f3d;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1;
+}
+
 /* Розыгрыш */
 .giveaway-balance-hint {
   margin: var(--space-2) 0 0;

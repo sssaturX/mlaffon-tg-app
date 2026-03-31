@@ -14,21 +14,54 @@ import {
 } from "./economy.js";
 import { utcDateString } from "./streak.js";
 
-function pickOutcome(): (typeof gameConfig.fortune.outcomes)[number] {
+export type FortuneSegmentPublic = {
+  index: number;
+  type: "coins" | "boost" | "nothing";
+  value?: number;
+  label: string;
+};
+
+function labelForOutcome(
+  o: (typeof gameConfig.fortune.outcomes)[number]
+): string {
+  if (o.type === "coins") return `${o.value ?? 0} монет`;
+  if (o.type === "boost") return "Буст ×2";
+  return "Пусто";
+}
+
+export function getFortuneSegments(): FortuneSegmentPublic[] {
+  return gameConfig.fortune.outcomes.map((o, i) => ({
+    index: i,
+    type: o.type,
+    value: o.value,
+    label: labelForOutcome(o),
+  }));
+}
+
+function pickOutcome(): {
+  outcome: (typeof gameConfig.fortune.outcomes)[number];
+  segmentIndex: number;
+} {
   const items = gameConfig.fortune.outcomes;
   const total = items.reduce((s, i) => s + i.weight, 0);
   let r = Math.random() * total;
-  for (const o of items) {
+  for (let i = 0; i < items.length; i++) {
+    const o = items[i]!;
     r -= o.weight;
-    if (r <= 0) return o;
+    if (r <= 0) return { outcome: o, segmentIndex: i };
   }
-  return items[items.length - 1]!;
+  const last = items.length - 1;
+  return {
+    outcome: items[last]!,
+    segmentIndex: last,
+  };
 }
 
 export async function getFortuneStatus(userId: string): Promise<{
   utcDate: string;
   freeAvailable: boolean;
   paidSpinCost: number;
+  segments: FortuneSegmentPublic[];
 }> {
   const day = utcDateString();
   const [row] = await db
@@ -42,6 +75,7 @@ export async function getFortuneStatus(userId: string): Promise<{
     utcDate: day,
     freeAvailable: !row?.freeUsed,
     paidSpinCost: gameConfig.fortune.paidSpinCost,
+    segments: getFortuneSegments(),
   };
 }
 
@@ -53,6 +87,8 @@ export async function spinFortuneWheel(
   | {
       ok: true;
       outcome: "coins" | "boost" | "nothing";
+      /** Индекс сектора на колесе (0..n-1), совпадает с GET /games/fortune segments. */
+      segmentIndex: number;
       amount?: number;
       coins: number;
     }
@@ -87,7 +123,7 @@ export async function spinFortuneWheel(
     }
   }
 
-  const outcome = pickOutcome();
+  const { outcome, segmentIndex } = pickOutcome();
   let coinsDelta = 0;
   let coinsCredited = 0;
   if (outcome.type === "coins") coinsDelta = outcome.value ?? 0;
@@ -153,6 +189,7 @@ export async function spinFortuneWheel(
   return {
     ok: true,
     outcome: outcome.type,
+    segmentIndex,
     amount: outcome.type === "coins" ? coinsCredited : undefined,
     coins: b?.coins ?? 0,
   };
