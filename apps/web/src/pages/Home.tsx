@@ -61,7 +61,7 @@ export default function Home({
   onRefresh: () => Promise<MeResponse | null>;
 }) {
   const { showToast } = useToast();
-  const { activePlatform } = useActivePlatform();
+  const { activePlatform, setActivePlatform } = useActivePlatform();
   const [watchingLive, setWatchingLive] = useState(false);
   const [live, setLive] = useState<LiveBroadcastPublic | null>(null);
   const [pub, setPub] = useState<HomePublic | null>(null);
@@ -106,8 +106,13 @@ export default function Home({
 
   const loadLive = useCallback(async () => {
     const r = await api<LiveBroadcastPublic>("/api/v1/live-broadcast");
-    if (r.ok) setLive(r.data);
-  }, []);
+    if (!r.ok) return;
+    setLive(r.data);
+    /** Шапка и стрик совпадают с платформой эфира (иначе «0 дн» на Twitch при эфире Kick). */
+    if (r.data.active) {
+      setActivePlatform(r.data.platform);
+    }
+  }, [setActivePlatform]);
 
   useEffect(() => {
     void loadLive();
@@ -128,8 +133,12 @@ export default function Home({
     (me.username ? `@${me.username}` : null) ||
     "Игрок";
 
+  /** Пока идёт эфир — стрик и UI по платформе эфира; иначе по переключателю в шапке. */
+  const streakPlatform: "twitch" | "kick" = live?.active
+    ? live.platform
+    : activePlatform;
   const streakForPlatform =
-    activePlatform === "twitch" ? me.streakTwitch : me.streakKick;
+    streakPlatform === "twitch" ? me.streakTwitch : me.streakKick;
   const streakPct = Math.min(100, (streakForPlatform / STREAK_TARGET) * 100);
 
   const viewerFirstName = me.firstName?.trim() || "Друг";
@@ -165,6 +174,7 @@ export default function Home({
         return;
       }
       await onRefresh();
+      setActivePlatform(live.platform);
       if (r.data.alreadyWatchedThisBroadcast) {
         showToast(
           `Вы уже нажимали «Смотреть стрим» в этом эфире (${platRu}). Повторно стрик не начисляется.`,
@@ -281,27 +291,26 @@ export default function Home({
           <div>
             <p className="streak-card__title">Начни свой стрик!</p>
             <p className="muted streak-card__text">
-              Когда идёт эфир, нажми «Смотреть стрим» в карточке выше — день
-              засчитается на платформе эфира (UTC). Ниже — стрик для режима{" "}
-              {activePlatform === "twitch" ? "Twitch" : "Kick"} (переключатель в
-              шапке). Сейчас: {streakForPlatform} / {STREAK_TARGET}.
+              {live?.active ? (
+                <>
+                  Эфир на {streakPlatform === "kick" ? "Kick" : "Twitch"}. Нажми
+                  «Смотреть стрим» — день засчитается для стрика этой платформы (UTC).
+                  Сейчас: {streakForPlatform} / {STREAK_TARGET}.
+                </>
+              ) : (
+                <>
+                  Выбери платформу в шапке — ниже стрик для неё. Сейчас:{" "}
+                  {streakForPlatform} / {STREAK_TARGET}.
+                </>
+              )}
             </p>
           </div>
         </div>
 
-        {live?.active && live.platform !== activePlatform ? (
-          <p className="muted streak-card__platform-hint">
-            Сейчас эфир на{" "}
-            <strong>{live.platform === "kick" ? "Kick" : "Twitch"}</strong> — стрик
-            начисляется в этой колонке (UTC). Переключи режим в шапке, чтобы полоска
-            совпадала с эфиром.
-          </p>
-        ) : null}
-
         <div className="stream-streak-grid stream-streak-grid--readonly">
           <div className="stream-streak-row">
             <div>
-              {activePlatform === "twitch" ? (
+              {streakPlatform === "twitch" ? (
                 <span className="pill pill--twitch">Twitch</span>
               ) : (
                 <span className="pill pill--kick">Kick</span>
@@ -315,14 +324,14 @@ export default function Home({
 
         <div className="streak-card__bar streak-card__bar--spaced" aria-hidden>
           <div
-            key={`${activePlatform}-${streakForPlatform}`}
+            key={`${streakPlatform}-${streakForPlatform}`}
             className="streak-card__fill"
             style={{ width: `${streakPct}%` }}
           />
         </div>
         <p className="muted streak-card__hint">
-          Стрик на {activePlatform === "twitch" ? "Twitch" : "Kick"}:{" "}
-          {streakForPlatform} / {STREAK_TARGET} дней
+          Стрик {streakPlatform === "kick" ? "Kick" : "Twitch"}: {streakForPlatform} /{" "}
+          {STREAK_TARGET} дней
         </p>
       </div>
 

@@ -309,12 +309,6 @@ select:focus-visible {
   font-size: var(--text-body);
 }
 
-.streak-card__platform-hint {
-  margin: 0 0 var(--space-3);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
 .streak-card__bar--spaced {
   margin-top: var(--space-3);
 }
@@ -1228,6 +1222,14 @@ h3 {
   background: rgba(0, 0, 0, 0.22);
   border: 1px solid rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(8px);
+}
+
+/* Иначе uppercase + узкая колонка дают обрезание «Twitch» → «TWITC» */
+.stream-streak-row .pill {
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .stream-streak-row__val {
