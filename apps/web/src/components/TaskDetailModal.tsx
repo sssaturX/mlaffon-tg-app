@@ -1,5 +1,6 @@
 import { Coins, Info, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import WebApp from "@twa-dev/sdk";
 import type { Platform, TaskDto } from "shared";
 import { HelpSheetModal } from "./HelpSheetModal";
@@ -65,7 +66,7 @@ export function TaskDetailModal({
     Boolean(actionUrl) && canClaim && !openedLink && task.userStatus === "available";
   const pulseVerify = Boolean(actionUrl) && openedLink && canClaim;
 
-  return (
+  const content = (
     <div
       className="task-detail-backdrop"
       role="dialog"
@@ -158,4 +159,6 @@ export function TaskDetailModal({
       ) : null}
     </div>
   );
+
+  return createPortal(content, document.body);
 }

@@ -43,8 +43,8 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
   const [modalMsg, setModalMsg] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     const r = await api<{ tasks: TaskDto[] }>(
       `/api/v1/tasks?platform=${activePlatform}`
     );
@@ -82,14 +82,14 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
           "Задание в очереди на проверку. Обновите через несколько секунд.";
         setModalMsg(m);
         setMsg(m);
-        await load();
+        await load({ silent: true });
         onRefresh();
         return;
       }
       const okMsg = `+${r.data.reward ?? 0} монет`;
       setModalMsg(okMsg);
       setMsg(okMsg);
-      await load();
+      await load({ silent: true });
       if (!wsConnected) {
         onRefresh();
       }
