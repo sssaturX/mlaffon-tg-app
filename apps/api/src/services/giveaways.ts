@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   giveawayParticipants,
@@ -8,6 +8,7 @@ import {
   users,
 } from "../db/schema.js";
 import { applyDebit } from "./economy.js";
+import { checkTelegramChannelMembership } from "./telegramChannel.js";
 
 export function displayUsername(u: {
   username: string | null;
@@ -59,6 +60,11 @@ export type GiveawayPublicDetail = {
   winners: { rank: number; username: string }[];
   isParticipant: boolean;
   joinedAt: string | null;
+  /** Условие: подписка на канал (ссылку показываем из channelInviteUrl). */
+  requireChannelSubscription: boolean;
+  channelInviteUrl: string | null;
+  /** null — условия нет или пользователь не авторизован; иначе результат проверки getChatMember. */
+  channelSubscriptionOk: boolean | null;
 };
 
 export async function getGiveawayPublicDetail(
@@ -88,6 +94,23 @@ export async function getGiveawayPublicDetail(
 
   let isParticipant = false;
   let joinedAt: string | null = null;
+  let channelSubscriptionOk: boolean | null = null;
+  if (g.requireChannelSubscription && g.telegramChannelId?.trim()) {
+    if (userId) {
+      const [u] = await db
+        .select({ telegramId: users.telegramId })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (u) {
+        channelSubscriptionOk = await checkTelegramChannelMembership(
+          u.telegramId,
+          g.telegramChannelId
+        );
+      }
+    }
+  }
+
   if (userId) {
     const [p] = await db
       .select({ createdAt: giveawayParticipants.createdAt })
@@ -127,6 +150,9 @@ export async function getGiveawayPublicDetail(
     })),
     isParticipant,
     joinedAt,
+    requireChannelSubscription: g.requireChannelSubscription,
+    channelInviteUrl: g.channelInviteUrl ?? null,
+    channelSubscriptionOk,
   };
 }
 
@@ -145,7 +171,9 @@ export async function joinGiveaway(params: {
         | "already_drawn"
         | "already_joined"
         | "insufficient_coins"
-        | "duplicate_debit";
+        | "duplicate_debit"
+        | "channel_not_subscribed"
+        | "channel_not_configured";
     }
 > {
   const { giveawayId, userId, platform } = params;
@@ -160,6 +188,21 @@ export async function joinGiveaway(params: {
   if (g.drawnAt) return { ok: false, code: "already_drawn" };
   const now = new Date();
   if (g.endsAt <= now) return { ok: false, code: "ended" };
+
+  if (g.requireChannelSubscription) {
+    const ch = g.telegramChannelId?.trim();
+    if (!ch) return { ok: false, code: "channel_not_configured" };
+    const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+    if (!token) return { ok: false, code: "channel_not_configured" };
+    const [u] = await db
+      .select({ telegramId: users.telegramId })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!u) return { ok: false, code: "not_found" };
+    const okMember = await checkTelegramChannelMembership(u.telegramId, ch);
+    if (!okMember) return { ok: false, code: "channel_not_subscribed" };
+  }
 
   const [existing] = await db
     .select({ id: giveawayParticipants.id })
@@ -283,6 +326,51 @@ export async function drawGiveawayWinners(giveawayId: string): Promise<
   });
 
   return { ok: true, winners };
+}
+
+export type GiveawayListItem = {
+  id: string;
+  title: string;
+  prizeText: string;
+  imageUrl: string | null;
+  endsAt: string;
+  winnerCount: number;
+  ticketPriceCoins: number;
+  participantCount: number;
+  drawnAt: string | null;
+  active: boolean;
+  status: "live" | "ended_awaiting_draw" | "completed";
+};
+
+export async function listGiveawaysPublic(): Promise<GiveawayListItem[]> {
+  const rows = await db
+    .select()
+    .from(giveaways)
+    .where(or(eq(giveaways.active, true), isNotNull(giveaways.drawnAt)))
+    .orderBy(desc(giveaways.sortOrder), desc(giveaways.endsAt));
+
+  const counts = await getParticipantCountsForGiveawayIds(rows.map((r) => r.id));
+  const now = Date.now();
+  return rows.map((g) => {
+    const drawnAt = g.drawnAt ? g.drawnAt.toISOString() : null;
+    let status: GiveawayListItem["status"];
+    if (g.drawnAt) status = "completed";
+    else if (g.endsAt.getTime() <= now) status = "ended_awaiting_draw";
+    else status = "live";
+    return {
+      id: g.id,
+      title: g.title,
+      prizeText: g.prizeText,
+      imageUrl: g.imageUrl,
+      endsAt: g.endsAt.toISOString(),
+      winnerCount: g.winnerCount,
+      ticketPriceCoins: g.ticketPriceCoins,
+      participantCount: counts.get(g.id) ?? 0,
+      drawnAt,
+      active: g.active,
+      status,
+    };
+  });
 }
 
 export async function listGiveawayParticipantsWithUsernames(giveawayId: string): Promise<

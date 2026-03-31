@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   giveaways,
@@ -93,7 +93,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     const [{ activeGiveaways }] = await db
       .select({ activeGiveaways: sql<number>`count(*)::int` })
       .from(giveaways)
-      .where(eq(giveaways.active, true));
+      .where(and(eq(giveaways.active, true), isNull(giveaways.drawnAt)));
     const [{ giveawayEntriesTotal }] = await db
       .select({ giveawayEntriesTotal: sql<number>`count(*)::int` })
       .from(giveawayParticipants);
@@ -122,6 +122,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         username: users.username,
         firstName: users.firstName,
         createdAt: users.createdAt,
+        banned: users.banned,
+        banReason: users.banReason,
         coins: sql<number>`coalesce(${userBalances.coins}, 0)`,
         twitchCoins: sql<number>`coalesce(${userBalances.twitchCoins}, 0)`,
         kickCoins: sql<number>`coalesce(${userBalances.kickCoins}, 0)`,
@@ -166,8 +168,49 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         twitchLifetimeEarned: u.twitchLifetimeEarned,
         kickLifetimeEarned: u.kickLifetimeEarned,
         referralCount: refMap.get(u.id) ?? 0,
+        banned: u.banned,
+        banReason: u.banReason,
       })),
     };
+  });
+
+  const patchUserBody = z.object({
+    banned: z.boolean().optional(),
+    banReason: z.string().max(500).nullable().optional(),
+  });
+
+  app.patch("/api/admin/users/:id", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const parsed = patchUserBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const p = parsed.data;
+    const patch: Record<string, unknown> = {};
+    if (p.banned !== undefined) patch.banned = p.banned;
+    if (p.banReason !== undefined) patch.banReason = p.banReason;
+    if (Object.keys(patch).length === 0) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: "Нет полей для обновления" },
+      });
+    }
+    const [u] = await db
+      .update(users)
+      .set({
+        ...(patch as { banned?: boolean; banReason?: string | null }),
+        updatedAt: sql`now()`,
+      })
+      .where(eq(users.id, id))
+      .returning({ id: users.id });
+    if (!u) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Пользователь не найден" },
+      });
+    }
+    return { ok: true };
   });
 
   app.get("/api/admin/giveaways", async (req, reply) => {
@@ -191,21 +234,38 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         ticketPriceCoins: g.ticketPriceCoins,
         drawnAt: g.drawnAt ? g.drawnAt.toISOString() : null,
         participantCount: counts.get(g.id) ?? 0,
+        requireChannelSubscription: g.requireChannelSubscription,
+        telegramChannelId: g.telegramChannelId ?? null,
+        channelInviteUrl: g.channelInviteUrl ?? null,
       })),
     };
   });
 
-  const createGw = z.object({
-    title: z.string().min(1),
-    prizeText: z.string().min(1),
-    description: z.string().optional().nullable(),
-    imageUrl: z.string().url().optional().nullable(),
-    endsAt: z.string().datetime(),
-    active: z.boolean().optional(),
-    sortOrder: z.number().int().optional(),
-    winnerCount: z.number().int().min(1).max(100).optional(),
-    ticketPriceCoins: z.number().int().min(0).optional(),
-  });
+  const createGw = z
+    .object({
+      title: z.string().min(1),
+      prizeText: z.string().min(1),
+      description: z.string().optional().nullable(),
+      imageUrl: z.string().url().optional().nullable(),
+      endsAt: z.string().datetime(),
+      active: z.boolean().optional(),
+      sortOrder: z.number().int().optional(),
+      winnerCount: z.number().int().min(1).max(100).optional(),
+      ticketPriceCoins: z.number().int().min(0).optional(),
+      requireChannelSubscription: z.boolean().optional(),
+      telegramChannelId: z.string().optional().nullable(),
+      channelInviteUrl: z.string().optional().nullable(),
+    })
+    .refine(
+      (d) =>
+        d.requireChannelSubscription !== true ||
+        (Boolean(d.telegramChannelId?.trim()) && Boolean(d.channelInviteUrl?.trim())),
+      {
+        message:
+          "При условии «подписка на канал» укажите ID канала (@username или -100…) и ссылку для пользователя",
+        path: ["telegramChannelId"],
+      }
+    );
 
   app.post("/api/admin/giveaways", async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
@@ -216,6 +276,12 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       });
     }
     const d = parsed.data;
+    const reqCh = d.requireChannelSubscription === true;
+    const chId = d.telegramChannelId?.trim() ? d.telegramChannelId.trim() : null;
+    let invUrl = d.channelInviteUrl?.trim() ? d.channelInviteUrl.trim() : null;
+    if (invUrl && !/^https?:\/\//i.test(invUrl)) {
+      invUrl = `https://${invUrl}`;
+    }
     const [ins] = await db
       .insert(giveaways)
       .values({
@@ -228,6 +294,9 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         sortOrder: d.sortOrder ?? 0,
         winnerCount: d.winnerCount ?? 1,
         ticketPriceCoins: d.ticketPriceCoins ?? 0,
+        requireChannelSubscription: reqCh,
+        telegramChannelId: reqCh ? chId : null,
+        channelInviteUrl: reqCh ? invUrl : null,
       })
       .returning({ id: giveaways.id });
     return { id: ins!.id };
@@ -257,6 +326,9 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         winnerCount: g.winnerCount,
         ticketPriceCoins: g.ticketPriceCoins,
         drawnAt: g.drawnAt ? g.drawnAt.toISOString() : null,
+        requireChannelSubscription: g.requireChannelSubscription,
+        telegramChannelId: g.telegramChannelId ?? null,
+        channelInviteUrl: g.channelInviteUrl ?? null,
       },
       participants,
       publicSnapshot: detail,

@@ -1,4 +1,4 @@
-import { eq, sql, desc } from "drizzle-orm";
+import { and, eq, isNull, sql, desc } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   appSettings,
@@ -84,7 +84,7 @@ export async function buildHomePublicResponse(): Promise<{
   const g = await db
     .select()
     .from(giveaways)
-    .where(eq(giveaways.active, true))
+    .where(and(eq(giveaways.active, true), isNull(giveaways.drawnAt)))
     .orderBy(desc(giveaways.sortOrder), desc(giveaways.endsAt))
     .limit(10);
 

@@ -1476,6 +1476,42 @@ h3 {
   text-align: center;
 }
 
+.giveaway-card__status {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.home-giveaways-all {
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.home-giveaways-all:hover {
+  text-decoration: underline;
+}
+
+.giveaways-list-page__title {
+  margin: 4px 0 8px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.giveaways-list-page__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--accent);
+}
+
 /* Giveaway detail page */
 .giveaway-detail {
   display: flex;
@@ -1650,6 +1686,69 @@ h3 {
   padding: 12px 16px;
 }
 
+.giveaway-detail__completed {
+  padding: 14px;
+  border: 1px solid var(--accent-glow);
+  background: linear-gradient(
+    135deg,
+    var(--accent-dim) 0%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+}
+
+.giveaway-detail__completed-title {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.giveaway-detail__completed-meta {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.giveaway-detail__channel-req {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.giveaway-detail__channel-req-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.giveaway-detail__channel-req-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.giveaway-detail__channel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.giveaway-detail__refresh-sub {
+  align-self: flex-start;
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+}
+
+.giveaway-detail__channel-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+.giveaway-detail__channel-hint--ok {
+  color: var(--accent);
+}
+
 /* FAQ */
 .faq-section__head {
   display: flex;
@@ -1783,13 +1882,16 @@ h3 {
 .tour-overlay {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  /* Поверх шапки, навигации и контента (портал в body) */
+  z-index: 10050;
   background: rgba(6, 8, 14, 0.72);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .tour-shell {
@@ -2725,6 +2827,39 @@ h3 {
   transform: scale(0.98);
 }
 
+.task-detail-btn--primary--soft:not(:disabled) {
+  opacity: 0.55;
+  filter: grayscale(0.15);
+}
+
+.task-detail-btn--primary--glow:not(:disabled) {
+  animation: task-verify-glow 1.4s ease-in-out infinite;
+  box-shadow:
+    0 0 0 1px rgba(88, 166, 125, 0.5),
+    0 0 20px rgba(88, 166, 125, 0.45);
+}
+
+@keyframes task-verify-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(88, 166, 125, 0.45),
+      0 0 16px rgba(88, 166, 125, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(88, 166, 125, 0.65),
+      0 0 28px rgba(88, 166, 125, 0.55);
+  }
+}
+
+.task-detail-link-hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .help-sheet-backdrop {
   position: fixed;
   inset: 0;
@@ -2893,4 +3028,9 @@ h3 {
 .tour-overlay--spotlight {
   background: transparent;
   backdrop-filter: none;
+  /* Не flex: иначе дети (dim + тултип) ломают fixed и «утекают» в поток страницы */
+  display: block;
+  padding: 0;
+  align-items: unset;
+  justify-content: unset;
 }

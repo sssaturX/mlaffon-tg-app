@@ -44,6 +44,7 @@ const Profile = lazy(() => import("./pages/Profile"));
 const OAuthReturn = lazy(() => import("./pages/OAuthReturn"));
 const OAuthBrowserDone = lazy(() => import("./pages/OAuthBrowserDone"));
 const GiveawayPage = lazy(() => import("./pages/Giveaway"));
+const GiveawaysPage = lazy(() => import("./pages/Giveaways"));
 
 const devAuth =
   import.meta.env.VITE_ALLOW_DEV === "1" || import.meta.env.DEV;
@@ -364,6 +365,7 @@ function AppShell({
           <Suspense fallback={<PageSkeleton />}>
             <Routes>
               <Route path="/" element={<HomePage me={me} onRefresh={refreshMe} />} />
+              <Route path="/giveaways" element={<GiveawaysPage me={me} />} />
               <Route
                 path="/giveaway/:id"
                 element={<GiveawayPage me={me} onRefresh={refreshMe} />}

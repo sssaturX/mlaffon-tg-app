@@ -1,5 +1,5 @@
 import { Coins, Info, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import WebApp from "@twa-dev/sdk";
 import type { Platform, TaskDto } from "shared";
 import { HelpSheetModal } from "./HelpSheetModal";
@@ -38,6 +38,12 @@ export function TaskDetailModal({
   statusMessage: string | null;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
+  const [openedLink, setOpenedLink] = useState(false);
+
+  useEffect(() => {
+    setOpenedLink(false);
+    setHelpOpen(false);
+  }, [task?.id, open]);
 
   if (!open || !task) return null;
 
@@ -51,9 +57,13 @@ export function TaskDetailModal({
     } catch {
       window.open(actionUrl, "_blank", "noopener,noreferrer");
     }
+    setOpenedLink(true);
   }
 
   const canClaim = task.userStatus === "available" && !claiming;
+  const showLinkHint =
+    Boolean(actionUrl) && canClaim && !openedLink && task.userStatus === "available";
+  const pulseVerify = Boolean(actionUrl) && openedLink && canClaim;
 
   return (
     <div
@@ -73,14 +83,26 @@ export function TaskDetailModal({
           <h2 id="task-detail-title" className="task-detail-modal__title">
             {task.title}
           </h2>
-          <button
-            type="button"
-            className="task-detail-modal__close"
-            aria-label="Закрыть"
-            onClick={onClose}
-          >
-            <X size={20} strokeWidth={2.2} />
-          </button>
+          <div className="task-detail-modal__head-actions">
+            {task.help ? (
+              <button
+                type="button"
+                className="task-detail-modal__help-btn"
+                aria-label="Справка"
+                onClick={() => setHelpOpen(true)}
+              >
+                <Info size={20} strokeWidth={2.2} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="task-detail-modal__close"
+              aria-label="Закрыть"
+              onClick={onClose}
+            >
+              <X size={20} strokeWidth={2.2} />
+            </button>
+          </div>
         </div>
 
         <p className="task-detail-modal__desc">{task.description}</p>
@@ -110,13 +132,19 @@ export function TaskDetailModal({
 
           <button
             type="button"
-            className="task-detail-btn task-detail-btn--primary"
+            className={`task-detail-btn task-detail-btn--primary ${pulseVerify ? "task-detail-btn--primary--glow" : ""} ${showLinkHint ? "task-detail-btn--primary--soft" : ""}`}
             disabled={!canClaim}
             onClick={onClaim}
           >
             {primaryCtaLabel(task, claiming)}
           </button>
         </div>
+
+        {showLinkHint ? (
+          <p className="task-detail-link-hint muted">
+            Сначала открой ссылку выше, затем нажми «{primaryCtaLabel(task, false)}».
+          </p>
+        ) : null}
       </div>
 
       {task.help ? (

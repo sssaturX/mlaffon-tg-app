@@ -32,6 +32,9 @@ export function formatApiError(r: ApiErr): string {
     return "Слишком много запросов. Подождите минуту.";
   }
   const e = r.err as { error?: { code?: string; message?: string } } | null;
+  if (r.status === 403 && e?.error?.code === "banned") {
+    return e.error.message ?? "Доступ ограничен.";
+  }
   return (
     e?.error?.message ??
     e?.error?.code ??

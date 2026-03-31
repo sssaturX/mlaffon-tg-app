@@ -1,4 +1,11 @@
-import { ChevronLeft, Share2, Ticket, Trophy, Users } from "lucide-react";
+import {
+  ChevronLeft,
+  ExternalLink,
+  Share2,
+  Ticket,
+  Trophy,
+  Users,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import WebApp from "@twa-dev/sdk";
@@ -23,6 +30,9 @@ type GiveawayDetail = {
   winners: { rank: number; username: string }[];
   isParticipant: boolean;
   joinedAt: string | null;
+  requireChannelSubscription: boolean;
+  channelInviteUrl: string | null;
+  channelSubscriptionOk: boolean | null;
 };
 
 function formatCountdownFull(iso: string): string {
@@ -135,19 +145,30 @@ export default function GiveawayPage({
 
   const g = data;
   const ended = new Date(g.endsAt) <= new Date();
-  const canJoin =
-    g.active &&
-    !g.drawnAt &&
-    !ended &&
-    !g.isParticipant;
+  const completed = Boolean(g.drawnAt);
+  const channelOk =
+    !g.requireChannelSubscription ||
+    g.channelSubscriptionOk === true;
+  const structurallyCanJoin =
+    g.active && !g.drawnAt && !ended && !g.isParticipant;
 
   const joinDisabled =
     joining ||
-    !canJoin ||
+    !structurallyCanJoin ||
+    !channelOk ||
     (g.ticketPriceCoins > 0 &&
       (activePlatform === "twitch"
         ? me.platforms.twitch.status !== "connected"
         : me.platforms.kick.status !== "connected"));
+
+  function openChannel(url: string) {
+    const wa = WebApp as { openTelegramLink?: (u: string) => void };
+    if (typeof wa.openTelegramLink === "function") {
+      wa.openTelegramLink(url);
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
 
   const balance =
     activePlatform === "twitch" ? me.coinsTwitch : me.coinsKick;
@@ -183,11 +204,24 @@ export default function GiveawayPage({
         </div>
       ) : null}
 
+      {completed ? (
+        <div className="card giveaway-detail__completed">
+          <strong className="giveaway-detail__completed-title">
+            Розыгрыш завершён
+          </strong>
+          <p className="muted giveaway-detail__completed-meta">
+            Участников: {g.participantCount.toLocaleString("ru-RU")} · Победителей:{" "}
+            {g.winnerCount}
+            {g.requireChannelSubscription ? " · Условие: подписка на канал" : ""}
+          </p>
+        </div>
+      ) : null}
+
       <div className="giveaway-detail__stats">
         <div className="giveaway-stat">
           <span className="giveaway-stat__label">До конца</span>
           <span className="giveaway-stat__val">
-            {ended ? "—" : formatCountdownFull(g.endsAt)}
+            {completed ? "—" : ended ? "—" : formatCountdownFull(g.endsAt)}
           </span>
         </div>
         <div className="giveaway-stat">
@@ -204,17 +238,21 @@ export default function GiveawayPage({
         </div>
       </div>
 
-      {g.drawnAt && g.winners.length > 0 && (
+      {g.drawnAt && (
         <div className="card stack giveaway-detail__winners">
           <h2 className="giveaway-detail__h2">Победители</h2>
-          <ul className="giveaway-detail__win-list">
-            {g.winners.map((w) => (
-              <li key={w.rank}>
-                <span className="giveaway-detail__win-rank">{w.rank}</span>
-                <span className="giveaway-detail__win-name">{w.username}</span>
-              </li>
-            ))}
-          </ul>
+          {g.winners.length > 0 ? (
+            <ul className="giveaway-detail__win-list">
+              {g.winners.map((w) => (
+                <li key={w.rank}>
+                  <span className="giveaway-detail__win-rank">{w.rank}</span>
+                  <span className="giveaway-detail__win-name">{w.username}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">Список победителей пока не отображается.</p>
+          )}
         </div>
       )}
 
@@ -224,7 +262,46 @@ export default function GiveawayPage({
         </p>
       )}
 
-      {canJoin && (
+      {!completed &&
+        g.requireChannelSubscription &&
+        !g.isParticipant && (
+          <div className="card giveaway-detail__channel-req">
+            <p className="giveaway-detail__channel-req-title">Условие участия</p>
+            <p className="muted giveaway-detail__channel-req-text">
+              Подписка на канал. Откройте канал и подпишитесь, затем нажмите «Участвовать».
+            </p>
+            {g.channelInviteUrl ? (
+              <button
+                type="button"
+                className="secondary giveaway-detail__channel-btn"
+                onClick={() => openChannel(g.channelInviteUrl!)}
+              >
+                <ExternalLink size={18} aria-hidden />
+                Перейти в канал
+              </button>
+            ) : (
+              <p className="muted">Ссылку на канал уточните у администратора.</p>
+            )}
+            <button
+              type="button"
+              className="link-like giveaway-detail__refresh-sub"
+              onClick={() => void load()}
+            >
+              Обновить статус подписки
+            </button>
+            {g.channelSubscriptionOk === false ? (
+              <p className="muted giveaway-detail__channel-hint">
+                Подписка ещё не видна боту — подождите минуту и обновите статус.
+              </p>
+            ) : g.channelSubscriptionOk === true ? (
+              <p className="muted giveaway-detail__channel-hint giveaway-detail__channel-hint--ok">
+                Подписка подтверждена.
+              </p>
+            ) : null}
+          </div>
+        )}
+
+      {structurallyCanJoin && (
         <button
           type="button"
           className="primary giveaway-detail__cta"
@@ -240,7 +317,7 @@ export default function GiveawayPage({
         </button>
       )}
 
-      {g.ticketPriceCoins > 0 && canJoin && (
+      {g.ticketPriceCoins > 0 && structurallyCanJoin && (
         <p className="muted giveaway-balance-hint">
           Баланс {activePlatform === "twitch" ? "Twitch" : "Kick"}:{" "}
           {balance.toLocaleString("ru-RU")} · переключите платформу в шапке.
@@ -248,10 +325,12 @@ export default function GiveawayPage({
       )}
 
       {ended && !g.drawnAt && (
-        <p className="muted">Розыгрыш завершён, ожидается выбор победителей.</p>
+        <p className="muted">Приём участников окончен, ожидается выбор победителей.</p>
       )}
 
-      {!g.active && <p className="muted">Розыгрыш отключён администратором.</p>}
+      {!g.active && !completed && (
+        <p className="muted">Розыгрыш отключён администратором.</p>
+      )}
 
       <button
         type="button"

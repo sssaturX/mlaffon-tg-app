@@ -30,6 +30,9 @@ export const users = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    /** Блокировка доступа к API мини-приложения */
+    banned: boolean("banned").notNull().default(false),
+    banReason: text("ban_reason"),
   },
   (t) => [index("users_referred_by_idx").on(t.referredById)]
 );
@@ -190,6 +193,14 @@ export const giveaways = pgTable("giveaways", {
   ticketPriceCoins: integer("ticket_price_coins").notNull().default(0),
   /** Когда выполнен розыгрыш (победители выбраны). */
   drawnAt: timestamp("drawn_at", { withTimezone: true }),
+  /** Требовать подписку на Telegram-канал для участия (проверка через бота). */
+  requireChannelSubscription: boolean("require_channel_subscription")
+    .notNull()
+    .default(false),
+  /** @channelname или -100… — для getChatMember (бот должен быть в канале). */
+  telegramChannelId: text("telegram_channel_id"),
+  /** Ссылка для пользователя (t.me/…). */
+  channelInviteUrl: text("channel_invite_url"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

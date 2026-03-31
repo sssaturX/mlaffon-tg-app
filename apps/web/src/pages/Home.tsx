@@ -266,7 +266,9 @@ export default function Home({
         <div className="stack section-stack-top">
           <div className="row section-head">
             <h2>Активные розыгрыши</h2>
-            <span className="muted">Все</span>
+            <Link to="/giveaways" className="muted home-giveaways-all">
+              Все
+            </Link>
           </div>
           {pub.giveaways.map((g) => (
             <Link

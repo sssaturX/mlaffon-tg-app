@@ -35,6 +35,9 @@ type GiveawayRow = {
   ticketPriceCoins: number;
   drawnAt: string | null;
   participantCount: number;
+  requireChannelSubscription: boolean;
+  telegramChannelId: string | null;
+  channelInviteUrl: string | null;
 };
 
 type PromoRow = {
@@ -62,6 +65,8 @@ type AdminUserRow = {
   twitchLifetimeEarned: number;
   kickLifetimeEarned: number;
   referralCount: number;
+  banned?: boolean;
+  banReason?: string | null;
 };
 
 type GiveawayParticipant = {
@@ -83,6 +88,9 @@ type GiveawayDetailResponse = {
     winnerCount: number;
     ticketPriceCoins: number;
     drawnAt: string | null;
+    requireChannelSubscription: boolean;
+    telegramChannelId: string | null;
+    channelInviteUrl: string | null;
   };
   participants: GiveawayParticipant[];
   publicSnapshot: {
@@ -145,6 +153,9 @@ export function App() {
     return d.toISOString().slice(0, 16);
   });
   const [gwImage, setGwImage] = useState("");
+  const [gwRequireChannel, setGwRequireChannel] = useState(false);
+  const [gwTelegramChannelId, setGwTelegramChannelId] = useState("");
+  const [gwChannelInviteUrl, setGwChannelInviteUrl] = useState("");
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<GiveawayDetailResponse | null>(null);
@@ -401,6 +412,11 @@ export function App() {
       };
       if (gwImage.trim()) body.imageUrl = gwImage.trim();
       if (gwDescription.trim()) body.description = gwDescription.trim();
+      if (gwRequireChannel) {
+        body.requireChannelSubscription = true;
+        body.telegramChannelId = gwTelegramChannelId.trim();
+        body.channelInviteUrl = gwChannelInviteUrl.trim();
+      }
       const r = await fetch(`${apiBase()}/api/admin/giveaways`, {
         method: "POST",
         headers: authHeaders(true),
@@ -574,6 +590,10 @@ export function App() {
       </div>
       {err ? <p className="err">{err}</p> : null}
 
+      <p className="muted admin-tabs-hint">
+        Все разделы в ряд — при узком экране прокрутите вкладки вправо (Задания, Дропы, …).
+      </p>
+
       <nav className="admin-tabs" aria-label="Разделы">
         <button
           type="button"
@@ -692,6 +712,44 @@ export function App() {
           <label htmlFor="gimg">Картинка URL (опционально)</label>
           <input id="gimg" type="url" value={gwImage} onChange={(e) => setGwImage(e.target.value)} />
         </div>
+        <div>
+          <label className="admin-checkbox-row">
+            <input
+              type="checkbox"
+              checked={gwRequireChannel}
+              onChange={(e) => setGwRequireChannel(e.target.checked)}
+            />
+            Условие: подписка на Telegram-канал (бот проверяет через getChatMember; бот — админ канала)
+          </label>
+        </div>
+        {gwRequireChannel ? (
+          <>
+            <div>
+              <label htmlFor="gch">ID канала для API</label>
+              <input
+                id="gch"
+                value={gwTelegramChannelId}
+                onChange={(e) => setGwTelegramChannelId(e.target.value)}
+                placeholder="@channelname или -1001234567890"
+                required
+              />
+              <p className="muted admin-hint-sm">
+                Тот же идентификатор, что в getChatMember. Канал должен добавить бота администратором.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="gchurl">Ссылка для пользователя</label>
+              <input
+                id="gchurl"
+                type="text"
+                value={gwChannelInviteUrl}
+                onChange={(e) => setGwChannelInviteUrl(e.target.value)}
+                placeholder="https://t.me/channel или t.me/+invite"
+                required
+              />
+            </div>
+          </>
+        ) : null}
         <button type="submit" className="primary" disabled={loading}>
           Создать розыгрыш
         </button>
@@ -714,6 +772,7 @@ export function App() {
                     {g.active ? "активен" : "выкл"} · участников {g.participantCount} · победителей{" "}
                     {g.winnerCount}
                     {g.ticketPriceCoins > 0 ? ` · билет ${g.ticketPriceCoins} мон.` : " · бесплатно"}
+                    {g.requireChannelSubscription ? " · подписка на канал" : ""}
                     {g.drawnAt ? ` · розыгрыш ${new Date(g.drawnAt).toLocaleString("ru-RU")}` : ""}
                   </div>
                   {!g.drawnAt &&
@@ -904,6 +963,7 @@ export function App() {
                       <th>Kick всего</th>
                       <th>Рефералов</th>
                       <th>Регистрация</th>
+                      <th>Бан</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -915,6 +975,9 @@ export function App() {
                               ? `@${u.username}`
                               : u.firstName || `${u.id.slice(0, 8)}…`}
                           </strong>
+                          {u.banned === true ? (
+                            <span className="admin-user-banned"> заблокирован</span>
+                          ) : null}
                         </td>
                         <td className="mono">{u.telegramId}</td>
                         <td>{u.coins.toLocaleString("ru-RU")}</td>
@@ -926,6 +989,88 @@ export function App() {
                         <td>{u.referralCount}</td>
                         <td className="muted admin-table-nowrap">
                           {new Date(u.createdAt).toLocaleString("ru-RU")}</td>
+                        <td>
+                          {u.banned === true ? (
+                            <button
+                              type="button"
+                              className="secondary"
+                              disabled={loading}
+                              onClick={async () => {
+                                if (!token) return;
+                                if (!window.confirm("Снять блокировку с пользователя?")) return;
+                                setLoading(true);
+                                setErr(null);
+                                try {
+                                  const r = await fetch(
+                                    `${apiBase()}/api/admin/users/${encodeURIComponent(u.id)}`,
+                                    {
+                                      method: "PATCH",
+                                      headers: authHeaders(true),
+                                      body: JSON.stringify({ banned: false, banReason: null }),
+                                    }
+                                  );
+                                  const j = (await r.json()) as { error?: { message?: string } };
+                                  if (!r.ok) {
+                                    setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                    return;
+                                  }
+                                  await loadAdminUsers(usersOffset);
+                                } catch {
+                                  setErr("Сеть недоступна");
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }}
+                            >
+                              Разбан
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="secondary"
+                              disabled={loading}
+                              onClick={async () => {
+                                if (!token) return;
+                                if (
+                                  !window.confirm(
+                                    `Заблокировать доступ к мини-приложению для TG ${u.telegramId}?`
+                                  )
+                                ) {
+                                  return;
+                                }
+                                const reason =
+                                  window.prompt("Причина (необязательно)")?.trim() || null;
+                                setLoading(true);
+                                setErr(null);
+                                try {
+                                  const r = await fetch(
+                                    `${apiBase()}/api/admin/users/${encodeURIComponent(u.id)}`,
+                                    {
+                                      method: "PATCH",
+                                      headers: authHeaders(true),
+                                      body: JSON.stringify({
+                                        banned: true,
+                                        banReason: reason,
+                                      }),
+                                    }
+                                  );
+                                  const j = (await r.json()) as { error?: { message?: string } };
+                                  if (!r.ok) {
+                                    setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                    return;
+                                  }
+                                  await loadAdminUsers(usersOffset);
+                                } catch {
+                                  setErr("Сеть недоступна");
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }}
+                            >
+                              Бан
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

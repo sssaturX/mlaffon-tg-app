@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 const STORAGE_KEY = "mlaffon_tour_v4_done";
 
@@ -178,100 +179,103 @@ export function FirstVisitTour({
     };
   }, [open, measureSpotlight]);
 
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const spotlight = s.kind === "spotlight";
 
-  return (
+  const overlay = (
     <div
       className={`tour-overlay ${spotlight ? "tour-overlay--spotlight" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="tour-title"
     >
-      {spotlight && hole ? (
+      {spotlight ? (
         <>
-          <div className="tour-spotlight-layer" aria-hidden>
-            <div
-              className="tour-spotlight-hole"
-              style={{
-                left: hole.left,
-                top: hole.top,
-                width: hole.width,
-                height: hole.height,
-              }}
-            />
-          </div>
-          <div
-            className="tour-spotlight-tooltip"
-            style={{
-              top: Math.min(
-                hole.top + hole.height + 14,
-                typeof window !== "undefined"
-                  ? window.innerHeight - 220
-                  : hole.top + hole.height + 14
-              ),
-            }}
-          >
-            <div className="tour-spotlight-tooltip__arrow" aria-hidden />
-            <div className="tour-spotlight-tooltip__inner">
-              <div className="tour-card__steps" aria-hidden>
-                {STEPS.map((_, i) => (
-                  <span
-                    key={i}
-                    className={`tour-dot ${i === safeStep ? "tour-dot--active" : ""}`}
-                  />
-                ))}
+          <div className="tour-spotlight-dim" aria-hidden />
+          {hole ? (
+            <>
+              <div
+                className="tour-spotlight-ring"
+                style={{
+                  left: hole.left,
+                  top: hole.top,
+                  width: hole.width,
+                  height: hole.height,
+                }}
+                aria-hidden
+              />
+              <div className="tour-spotlight-tooltip" style={{ ...tooltipPos }}>
+                <div className="tour-spotlight-tooltip__arrow" aria-hidden />
+                <div className="tour-spotlight-tooltip__inner">
+                  <div className="tour-card__steps" aria-hidden>
+                    {STEPS.map((_, i) => (
+                      <span
+                        key={i}
+                        className={`tour-dot ${i === safeStep ? "tour-dot--active" : ""}`}
+                      />
+                    ))}
+                  </div>
+                  <p className="tour-card__step-label">
+                    Шаг {safeStep + 1} из {STEPS.length}
+                  </p>
+                  <h2 id="tour-title" className="tour-card__title">
+                    {s.title}
+                  </h2>
+                  <p className="tour-card__body">{s.body}</p>
+                  <ul className="tour-bullets">
+                    {s.bullets.map((b) => (
+                      <li key={b.k}>
+                        <span className="tour-bullets__k">{b.k}</span>
+                        <span className="tour-bullets__v">{b.v}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="tour-card__actions tour-card__actions--spread">
+                    <button
+                      type="button"
+                      className="link-like"
+                      onClick={() => {
+                        markTourSeen();
+                        onClose();
+                      }}
+                    >
+                      Пропустить
+                    </button>
+                    {safeStep > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => onStepChange(safeStep - 1)}
+                      >
+                        Назад
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => {
+                        if (last) {
+                          markTourSeen();
+                          onClose();
+                        } else onStepChange(safeStep + 1);
+                      }}
+                    >
+                      {last ? "Понятно" : "Далее"}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <p className="tour-card__step-label">
-                Шаг {safeStep + 1} из {STEPS.length}
-              </p>
-              <h2 id="tour-title" className="tour-card__title">
-                {s.title}
-              </h2>
-              <p className="tour-card__body">{s.body}</p>
-              <ul className="tour-bullets">
-                {s.bullets.map((b) => (
-                  <li key={b.k}>
-                    <span className="tour-bullets__k">{b.k}</span>
-                    <span className="tour-bullets__v">{b.v}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="tour-card__actions tour-card__actions--spread">
-                <button
-                  type="button"
-                  className="link-like"
-                  onClick={() => {
-                    markTourSeen();
-                    onClose();
-                  }}
-                >
-                  Пропустить
-                </button>
-                {safeStep > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => onStepChange(safeStep - 1)}
-                  >
-                    Назад
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => {
-                    if (last) {
-                      markTourSeen();
-                      onClose();
-                    } else onStepChange(safeStep + 1);
-                  }}
-                >
-                  {last ? "Понятно" : "Далее"}
-                </button>
-              </div>
-            </div>
-          </div>
+            </>
+          ) : null}
         </>
       ) : (
         <div className="tour-shell">
@@ -337,4 +341,6 @@ export function FirstVisitTour({
       )}
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }

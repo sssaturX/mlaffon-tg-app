@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { verifySession } from "../lib/jwt.js";
+import { isUserBanned } from "../services/userBan.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -8,7 +9,7 @@ declare module "fastify" {
 }
 
 export async function registerAuth(app: FastifyInstance) {
-  app.addHook("preHandler", async (req: FastifyRequest) => {
+  app.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
     const path = req.url.split("?")[0] ?? "";
     if (path === "/health") return;
     if (path === "/api/v1/auth/telegram") return;
@@ -29,6 +30,23 @@ export async function registerAuth(app: FastifyInstance) {
       req.userId = p.sub;
     } catch {
       req.userId = undefined;
+    }
+
+    if (req.userId) {
+      try {
+        if (await isUserBanned(req.userId)) {
+          void reply.status(403).send({
+            error: {
+              code: "banned",
+              message:
+                "Доступ к приложению ограничен. Если это ошибка — напишите в поддержку.",
+            },
+          });
+          return;
+        }
+      } catch {
+        /* не блокируем запрос при сбое проверки БД */
+      }
     }
   });
 }

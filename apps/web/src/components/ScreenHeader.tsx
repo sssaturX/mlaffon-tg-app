@@ -56,6 +56,7 @@ export function routeTitle(pathname: string): string {
   if (pathname.startsWith("/leaderboard")) return "Топ";
   if (pathname.startsWith("/profile")) return "Профиль";
   if (pathname.startsWith("/oauth")) return "Подключение";
+  if (pathname === "/giveaways") return "Розыгрыши";
   if (pathname.startsWith("/giveaway/")) return "Розыгрыш";
   return "Mlaffon";
 }

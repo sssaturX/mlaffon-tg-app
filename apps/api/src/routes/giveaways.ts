@@ -1,9 +1,17 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authUser } from "../plugins/auth.js";
-import { getGiveawayPublicDetail, joinGiveaway } from "../services/giveaways.js";
+import {
+  getGiveawayPublicDetail,
+  joinGiveaway,
+  listGiveawaysPublic,
+} from "../services/giveaways.js";
 
 export async function registerGiveawayRoutes(app: FastifyInstance) {
+  app.get("/api/v1/giveaways", async () => {
+    return { giveaways: await listGiveawaysPublic() };
+  });
+
   app.get("/api/v1/giveaways/:id", async (req, reply) => {
     const id = (req.params as { id: string }).id;
     const detail = await getGiveawayPublicDetail(id, req.userId ?? null);
@@ -43,6 +51,8 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
         already_joined: 409,
         insufficient_coins: 400,
         duplicate_debit: 409,
+        channel_not_subscribed: 403,
+        channel_not_configured: 503,
       };
       const messages: Record<typeof r.code, string> = {
         not_found: "Розыгрыш не найден",
@@ -52,6 +62,10 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
         already_joined: "Вы уже участвуете",
         insufficient_coins: "Недостаточно монет на выбранной платформе",
         duplicate_debit: "Повторное списание",
+        channel_not_subscribed:
+          "Нужна подписка на канал: откройте ссылку в карточке розыгрыша и подпишитесь, затем снова нажмите «Участвовать»",
+        channel_not_configured:
+          "Проверка подписки недоступна (канал или бот не настроены). Обратитесь к администратору.",
       };
       return reply.status(status[r.code]).send({
         error: { code: r.code, message: messages[r.code] },
