@@ -31,7 +31,8 @@ import { useToast } from "./context/ToastContext";
 import { OnboardingModal, hasSeenOnboarding } from "./components/OnboardingModal";
 import { FirstVisitTour, hasSeenTour } from "./components/FirstVisitTour";
 import { routeTitle, ScreenHeader } from "./components/ScreenHeader";
-import { PageSkeleton } from "./components/PageSkeleton";
+import { AppLoadingSpinner } from "./components/AppLoadingSpinner";
+import { hasLinkedStreamingAccount } from "./utils/streamingAccount";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
 
@@ -46,6 +47,7 @@ const OAuthBrowserDone = lazy(() => import("./pages/OAuthBrowserDone"));
 const GiveawayPage = lazy(() => import("./pages/Giveaway"));
 const GiveawaysPage = lazy(() => import("./pages/Giveaways"));
 const BannedScreen = lazy(() => import("./pages/BannedScreen"));
+const WelcomeGate = lazy(() => import("./pages/WelcomeGate"));
 
 const devAuth =
   import.meta.env.VITE_ALLOW_DEV === "1" || import.meta.env.DEV;
@@ -167,20 +169,13 @@ export default function App() {
   }, [refreshMe, showToast]);
 
   useEffect(() => {
-    if (!ready || !getToken()) return;
+    if (!ready || !getToken() || !me) return;
+    if (!hasLinkedStreamingAccount(me)) return;
     if (!hasSeenOnboarding()) setOnboardingOpen(true);
-  }, [ready]);
+  }, [ready, me]);
 
   if (!ready) {
-    return (
-      <div className="app-shell">
-        <div className="app-main">
-          <div className="card login-card">
-            <p className="muted">Загрузка…</p>
-          </div>
-        </div>
-      </div>
-    );
+    return <AppLoadingSpinner />;
   }
 
   const oauthPathOk = /^\/oauth\/(twitch|kick)\/?$/.test(location.pathname);
@@ -192,7 +187,7 @@ export default function App() {
 
   if (oauthExternalNoToken) {
     return (
-      <Suspense fallback={<PageSkeleton />}>
+      <Suspense fallback={<AppLoadingSpinner />}>
         <OAuthBrowserDone />
       </Suspense>
     );
@@ -222,7 +217,7 @@ export default function App() {
       (me.username ? `@${me.username}` : "") ||
       "Игрок";
     return (
-      <Suspense fallback={<PageSkeleton />}>
+      <Suspense fallback={<AppLoadingSpinner />}>
         <BannedScreen
           displayName={displayName}
           banReason={me.banReason}
@@ -233,9 +228,14 @@ export default function App() {
     );
   }
 
+  if (!me) {
+    return <AppLoadingSpinner />;
+  }
+
   return (
     <AppShell
       me={me}
+      needsPlatformLink={!hasLinkedStreamingAccount(me)}
       online={online}
       onboardingOpen={onboardingOpen}
       onCloseOnboarding={() => setOnboardingOpen(false)}
@@ -250,13 +250,16 @@ const botFooter =
 
 function AppShell({
   me,
+  needsPlatformLink,
   online,
   onboardingOpen,
   onCloseOnboarding,
   onShowOnboarding,
   refreshMe,
 }: {
-  me: MeResponse | null;
+  me: MeResponse;
+  /** Полноэкранный экран привязки Kick/Twitch до первого OAuth. */
+  needsPlatformLink: boolean;
   online: boolean;
   onboardingOpen: boolean;
   onCloseOnboarding: () => void;
@@ -281,20 +284,16 @@ function AppShell({
   }, []);
 
   useEffect(() => {
-    if (!me || onboardingOpen) return;
+    if (!me || onboardingOpen || needsPlatformLink) return;
     if (!hasSeenTour()) setTourOpen(true);
-  }, [me, onboardingOpen]);
+  }, [me, onboardingOpen, needsPlatformLink]);
 
   useEffect(() => {
     if (tourOpen) setTourStep(0);
   }, [tourOpen]);
 
   const headerBalance =
-    me != null
-      ? activePlatform === "twitch"
-        ? me.coinsTwitch
-        : me.coinsKick
-      : null;
+    activePlatform === "twitch" ? me.coinsTwitch : me.coinsKick;
 
   useEffect(() => {
     const theme = getPlatformTheme(activePlatform);
@@ -305,13 +304,14 @@ function AppShell({
   }, [activePlatform]);
 
   useEffect(() => {
-    if (!me) return;
+    if (!me || needsPlatformLink) return;
     void loadDrop();
     const t = window.setInterval(() => void loadDrop(), 8000);
     return () => clearInterval(t);
-  }, [me, loadDrop]);
+  }, [me, loadDrop, needsPlatformLink]);
 
   useEffect(() => {
+    if (needsPlatformLink) return;
     if (!dropSnap?.hasActiveDrop || dropSnap.won) return;
     try {
       const k = `mlaffon_drop_auto_${dropSnap.dropId}`;
@@ -322,11 +322,12 @@ function AppShell({
     } catch {
       setDropOpen(true);
     }
-  }, [dropSnap]);
+  }, [dropSnap, needsPlatformLink]);
 
   useEffect(() => {
+    if (needsPlatformLink) return;
     if (dropOpen && me) void loadDrop();
-  }, [dropOpen, me, loadDrop]);
+  }, [dropOpen, me, loadDrop, needsPlatformLink]);
 
   const openDrop = useCallback(() => {
     void loadDrop();
@@ -350,37 +351,50 @@ function AppShell({
       : 0;
 
   const showDropTicker =
-    Boolean(me) && dropSnap?.hasActiveDrop === true && !dropSnap.won;
+    !needsPlatformLink &&
+    Boolean(me) &&
+    dropSnap?.hasActiveDrop === true &&
+    !dropSnap.won;
+
+  /** Пока идёт редирект OAuth — показываем полноэкранный спиннер, не welcome поверх. */
+  const oauthInProgress = /^\/oauth\/(twitch|kick)/.test(location.pathname);
+  const showWelcomeOverlay = needsPlatformLink && !oauthInProgress;
 
   return (
     <>
-      {!online && (
+      {!online && !needsPlatformLink ? (
         <div className="offline-banner" role="status">
           Нет сети — проверьте подключение
         </div>
-      )}
+      ) : null}
 
       {showDropTicker ? (
         <DropTicker secondsLeft={dropSecondsLeft} onOpen={openDrop} />
       ) : null}
 
-      <OnboardingModal open={onboardingOpen} onClose={onCloseOnboarding} />
+      {!needsPlatformLink ? (
+        <OnboardingModal open={onboardingOpen} onClose={onCloseOnboarding} />
+      ) : null}
 
-      <FirstVisitTour
-        open={tourOpen}
-        step={tourStep}
-        onStepChange={setTourStep}
-        onClose={() => setTourOpen(false)}
-      />
+      {!needsPlatformLink ? (
+        <FirstVisitTour
+          open={tourOpen}
+          step={tourStep}
+          onStepChange={setTourStep}
+          onClose={() => setTourOpen(false)}
+        />
+      ) : null}
 
       <div className="app-shell">
-        <ScreenHeader
-          title={routeTitle(location.pathname)}
-          balance={headerBalance}
-        />
+        {!needsPlatformLink ? (
+          <ScreenHeader
+            title={routeTitle(location.pathname)}
+            balance={headerBalance}
+          />
+        ) : null}
 
         <main key={location.pathname} className="app-main">
-          <Suspense fallback={<PageSkeleton />}>
+          <Suspense fallback={<AppLoadingSpinner />}>
             <Routes>
               <Route path="/" element={<HomePage me={me} onRefresh={refreshMe} />} />
               <Route path="/giveaways" element={<GiveawaysPage me={me} />} />
@@ -411,6 +425,7 @@ function AppShell({
           </Suspense>
         </main>
 
+        {!needsPlatformLink ? (
         <div className="nav-wrap">
           <nav className="nav" aria-label="Основное меню">
             <NavLink
@@ -462,9 +477,18 @@ function AppShell({
             <div className="nav-footer">@{botFooter}</div>
           ) : null}
         </div>
+        ) : null}
       </div>
 
-      {me ? (
+      {showWelcomeOverlay ? (
+        <div className="welcome-gate-overlay">
+          <Suspense fallback={<AppLoadingSpinner />}>
+            <WelcomeGate me={me} onRefresh={refreshMe} />
+          </Suspense>
+        </div>
+      ) : null}
+
+      {!needsPlatformLink && me ? (
         <DropOverlay
           open={dropOpen}
           onClose={() => setDropOpen(false)}

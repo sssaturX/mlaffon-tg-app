@@ -1867,6 +1867,204 @@ h3 {
   font-size: 13px;
 }
 
+/* App loading: centered spinner only */
+.app-loading {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg, #0c0e12);
+}
+
+.app-loading__spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: var(--accent, #a78bfa);
+  animation: app-spin 0.75s linear infinite;
+}
+
+@keyframes app-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Welcome gate — привязка Kick/Twitch */
+.welcome-gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  background: var(--bg, #0c0e12);
+  overflow: auto;
+}
+
+.welcome-gate {
+  min-height: 100%;
+  padding: 20px 16px 32px;
+  padding-bottom: calc(32px + env(safe-area-inset-bottom, 0));
+}
+
+.welcome-gate__scroll {
+  max-width: 440px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.welcome-gate__creator-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.welcome-gate__avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.welcome-gate__avatar--lg {
+  width: 64px;
+  height: 64px;
+}
+
+.welcome-gate__avatar--ph {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%);
+}
+
+.welcome-gate__creator-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.welcome-gate__creator-name {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.welcome-gate__kick-link {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #53fc18;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.welcome-gate__kick-link--static {
+  cursor: default;
+  text-decoration: none;
+}
+
+.welcome-gate__greeting {
+  margin: 14px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text, #e8eaed);
+}
+
+.welcome-gate__user-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.welcome-gate__user-handle {
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.welcome-gate__features {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.welcome-gate__feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px;
+}
+
+.welcome-gate__feature-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+  margin-top: 2px;
+}
+
+.welcome-gate__feature-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.welcome-gate__feature-desc {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.welcome-gate__hint {
+  margin: 8px 0 0;
+  font-size: 14px;
+  text-align: center;
+}
+
+.welcome-gate__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.welcome-gate__btn {
+  width: 100%;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: none;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.welcome-gate__btn--kick {
+  background: #53fc18;
+  color: #0a0a0a;
+}
+
+.welcome-gate__btn--kick:active {
+  filter: brightness(0.95);
+}
+
+.welcome-gate__btn--twitch {
+  background: #9146ff;
+  color: #fff;
+}
+
+.welcome-gate__btn--twitch:active {
+  filter: brightness(0.95);
+}
+
+.welcome-gate__stub {
+  margin: 0;
+  font-size: 12px;
+  text-align: center;
+}
+
 .banned-screen__modal-backdrop {
   position: fixed;
   inset: 0;

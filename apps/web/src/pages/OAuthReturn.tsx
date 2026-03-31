@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { AppLoadingSpinner } from "../components/AppLoadingSpinner";
 
 /**
  * Редирект после OAuth на наш домен: /oauth/twitch?connected=1 или ?error=...
@@ -32,11 +33,5 @@ export default function OAuthReturn({
     })();
   }, [platform, searchParams, navigate, onRefresh]);
 
-  return (
-    <div className="card">
-      <p className="muted m-0">
-        Возврат с {platform === "kick" ? "Kick" : "Twitch"}…
-      </p>
-    </div>
-  );
+  return <AppLoadingSpinner />;
 }
