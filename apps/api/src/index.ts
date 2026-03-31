@@ -250,6 +250,7 @@ app.post("/api/v1/live-broadcast/watch", async (req, reply) => {
     streak: res.streak,
     streakIncremented: res.streakIncremented,
     alreadyWatchedThisBroadcast: res.alreadyWatchedThisBroadcast,
+    bonusCoinsAwarded: res.bonusCoinsAwarded,
   };
 });
 

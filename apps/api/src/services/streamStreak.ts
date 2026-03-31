@@ -47,21 +47,27 @@ async function maybeStreamStreakBonus(
   userId: string,
   platform: "twitch" | "kick",
   newStreak: number
-): Promise<void> {
-  const { bonusEveryDays, bonusCoins } = gameConfig.streak;
-  if (bonusEveryDays <= 0 || newStreak <= 0 || newStreak % bonusEveryDays !== 0) {
-    return;
+): Promise<number> {
+  const cfg = gameConfig.streamStreak;
+  if (
+    cfg.bonusEveryStreams <= 0 ||
+    newStreak <= 0 ||
+    newStreak % cfg.bonusEveryStreams !== 0
+  ) {
+    return 0;
   }
   const idem = `stream_streak_bonus:${platform}:${userId}:${newStreak}`;
-  await applyCredit({
+  const res = await applyCredit({
     userId,
-    amount: bonusCoins,
+    amount: cfg.bonusCoins,
     idempotencyKey: idem,
     kind: "streak_bonus",
     platform,
     referenceType: "stream_streak",
     referenceId: `${platform}:${newStreak}`,
   });
+  if (res.ok) return res.creditedAmount;
+  return 0;
 }
 
 /**
@@ -76,7 +82,12 @@ async function maybeStreamStreakBonus(
 export async function applyStreamStreakBroadcastWatch(
   userId: string,
   platform: "twitch" | "kick"
-): Promise<{ ok: true; streak: number; utcDate: string }> {
+): Promise<{
+  ok: true;
+  streak: number;
+  utcDate: string;
+  bonusCoinsAwarded: number;
+}> {
   const today = utcDateString();
   const row = await ensureStreamStreakRow(userId);
 
@@ -102,8 +113,12 @@ export async function applyStreamStreakBroadcastWatch(
       })
       .where(eq(userStreamStreaks.userId, userId));
 
-    await maybeStreamStreakBonus(userId, "twitch", newStreak);
-    return { ok: true, streak: newStreak, utcDate: today };
+    const bonusCoinsAwarded = await maybeStreamStreakBonus(
+      userId,
+      "twitch",
+      newStreak
+    );
+    return { ok: true, streak: newStreak, utcDate: today, bonusCoinsAwarded };
   }
 
   const last = row.kickLast;
@@ -127,6 +142,10 @@ export async function applyStreamStreakBroadcastWatch(
     })
     .where(eq(userStreamStreaks.userId, userId));
 
-  await maybeStreamStreakBonus(userId, "kick", newStreak);
-  return { ok: true, streak: newStreak, utcDate: today };
+  const bonusCoinsAwarded = await maybeStreamStreakBonus(
+    userId,
+    "kick",
+    newStreak
+  );
+  return { ok: true, streak: newStreak, utcDate: today, bonusCoinsAwarded };
 }

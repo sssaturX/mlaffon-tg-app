@@ -72,6 +72,7 @@ export async function watchLiveBroadcast(
       streak: number;
       streakIncremented: boolean;
       alreadyWatchedThisBroadcast: boolean;
+      bonusCoinsAwarded: number;
     }
   | { ok: false; code: "not_active" | "bad_broadcast" }
 > {
@@ -110,6 +111,7 @@ export async function watchLiveBroadcast(
       streak: platform === "twitch" ? r.twitch : r.kick,
       streakIncremented: false,
       alreadyWatchedThisBroadcast: true,
+      bonusCoinsAwarded: 0,
     };
   }
 
@@ -126,5 +128,6 @@ export async function watchLiveBroadcast(
     streak: res.streak,
     streakIncremented: true,
     alreadyWatchedThisBroadcast: false,
+    bonusCoinsAwarded: res.bonusCoinsAwarded,
   };
 }

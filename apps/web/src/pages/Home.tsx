@@ -7,6 +7,7 @@ import {
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { flushSync } from "react-dom/client";
 import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
 import type { MeResponse } from "shared";
@@ -68,6 +69,11 @@ export default function Home({
   const { showToast } = useToast();
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const [watchingLive, setWatchingLive] = useState(false);
+  /** Сразу после ответа watch — полоска и число не ждут /me. */
+  const [streakOverride, setStreakOverride] = useState<{
+    platform: "twitch" | "kick";
+    streak: number;
+  } | null>(null);
   const [live, setLive] = useState<LiveBroadcastPublic | null>(null);
   const [pub, setPub] = useState<HomePublic | null>(null);
   const [promo, setPromo] = useState("");
@@ -144,7 +150,11 @@ export default function Home({
     ? live.platform
     : activePlatform;
   const streakForPlatform =
-    streakPlatform === "twitch" ? me.streakTwitch : me.streakKick;
+    streakOverride && streakOverride.platform === streakPlatform
+      ? streakOverride.streak
+      : streakPlatform === "twitch"
+        ? me.streakTwitch
+        : me.streakKick;
   const streakPct = Math.min(100, (streakForPlatform / STREAK_TARGET) * 100);
 
   const viewerFirstName = me.firstName?.trim() || "Друг";
@@ -166,6 +176,7 @@ export default function Home({
         streak: number;
         streakIncremented: boolean;
         alreadyWatchedThisBroadcast: boolean;
+        bonusCoinsAwarded: number;
       }>("/api/v1/live-broadcast/watch", {
         method: "POST",
         body: JSON.stringify({ broadcastId: live.id }),
@@ -174,12 +185,27 @@ export default function Home({
         notifyStreakWatchError(showToast, formatApiError(r));
         return;
       }
+      if (!r.data.alreadyWatchedThisBroadcast) {
+        flushSync(() => {
+          setStreakOverride({ platform: live.platform, streak: r.data.streak });
+        });
+      }
       await onRefresh();
+      setStreakOverride(null);
       setActivePlatform(live.platform);
       if (r.data.alreadyWatchedThisBroadcast) {
-        notifyStreakAlreadyWatchedThisBroadcast(showToast, platRu);
+        notifyStreakAlreadyWatchedThisBroadcast(
+          showToast,
+          platRu,
+          r.data.streak
+        );
       } else {
-        notifyStreakWatchSuccess(showToast, platRu, r.data.streak);
+        notifyStreakWatchSuccess(
+          showToast,
+          platRu,
+          r.data.streak,
+          r.data.bonusCoinsAwarded
+        );
       }
     } finally {
       setWatchingLive(false);

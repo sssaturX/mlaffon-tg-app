@@ -7,6 +7,10 @@
     "bonusEveryDays": 7,
     "bonusCoins": 50
   },
+  "streamStreak": {
+    "bonusEveryStreams": 7,
+    "bonusCoins": 500
+  },
   "referral": {
     "referrerReward": 100,
     "refereeBonus": 25,

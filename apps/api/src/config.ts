@@ -16,6 +16,11 @@ export interface GameConfig {
     bonusEveryDays: number;
     bonusCoins: number;
   };
+  /** Бонус за N стримов подряд на Twitch или Kick (отдельно от ежедневного стрика захода в приложение). */
+  streamStreak: {
+    bonusEveryStreams: number;
+    bonusCoins: number;
+  };
   referral: {
     referrerReward: number;
     refereeBonus: number;
@@ -51,6 +56,10 @@ const defaultConfig: GameConfig = {
   streak: {
     bonusEveryDays: 7,
     bonusCoins: 50,
+  },
+  streamStreak: {
+    bonusEveryStreams: 7,
+    bonusCoins: 500,
   },
   referral: {
     referrerReward: 0,

@@ -40,14 +40,15 @@ function hapticError() {
 export function notifyStreakWatchSuccess(
   showToast: ShowToast,
   platRu: string,
-  streak: number
+  streak: number,
+  bonusCoinsAwarded?: number
 ) {
   const bonus =
-    streak > 0 && streak % 7 === 0
-      ? " Бонус за каждые 7 шагов начислен на баланс (если включён в конфиге)."
+    bonusCoinsAwarded != null && bonusCoinsAwarded > 0
+      ? ` Бонус: +${bonusCoinsAwarded} монет на баланс ${platRu} за 7 стримов подряд.`
       : "";
   showToast(
-    `${platRu}: стрик ${streak} подряд!${bonus}`,
+    `Вам засчитан стрик: ${streak} подряд на ${platRu}.${bonus}`,
     "success",
     STREAK_TOAST
   );
@@ -57,10 +58,11 @@ export function notifyStreakWatchSuccess(
 /** Повторное нажатие в том же эфире */
 export function notifyStreakAlreadyWatchedThisBroadcast(
   showToast: ShowToast,
-  platRu: string
+  platRu: string,
+  currentStreak: number
 ) {
   showToast(
-    `Уже отмечали этот эфир (${platRu}). Повторно стрик не начисляется.`,
+    `Стрик по этой трансляции уже был засчитан. На ${platRu} у вас сейчас: ${currentStreak} подряд.`,
     "info",
     { durationMs: 6000 }
   );
