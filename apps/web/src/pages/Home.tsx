@@ -6,8 +6,7 @@ import {
   HelpCircle,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { flushSync } from "react-dom/client";
+import { useCallback, useEffect, useRef, useState } from "react";
 import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
 import type { MeResponse } from "shared";
@@ -62,19 +61,17 @@ function formatCountdown(iso: string): string {
 export default function Home({
   me,
   onRefresh,
+  patchMe,
 }: {
   me: MeResponse | null;
   onRefresh: () => Promise<MeResponse | null>;
+  patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
 }) {
   const { showToast } = useToast();
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const [watchingLive, setWatchingLive] = useState(false);
-  /** Сразу после ответа watch — полоска и число не ждут /me. */
-  const [streakOverride, setStreakOverride] = useState<{
-    platform: "twitch" | "kick";
-    streak: number;
-  } | null>(null);
   const [live, setLive] = useState<LiveBroadcastPublic | null>(null);
+  const liveActivePrevRef = useRef<boolean | null>(null);
   const [pub, setPub] = useState<HomePublic | null>(null);
   const [promo, setPromo] = useState("");
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
@@ -130,10 +127,43 @@ export default function Home({
     void loadLive();
   }, [loadLive]);
 
+  /** Чаще опрос + при возврате в мини-апп — иначе «Смотреть стрим» появляется только после перезапуска. */
   useEffect(() => {
-    const id = window.setInterval(() => void loadLive(), 20000);
-    return () => clearInterval(id);
+    const id = window.setInterval(() => void loadLive(), 5000);
+    const onForeground = () => void loadLive();
+    document.addEventListener("visibilitychange", onForeground);
+    window.addEventListener("focus", onForeground);
+    window.addEventListener("pageshow", onForeground);
+    const tg = WebApp as unknown as {
+      onEvent?: (ev: string, cb: () => void) => void;
+    };
+    tg.onEvent?.("viewport_changed", onForeground);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onForeground);
+      window.removeEventListener("focus", onForeground);
+      window.removeEventListener("pageshow", onForeground);
+    };
   }, [loadLive]);
+
+  useEffect(() => {
+    if (!live) return;
+    const now = live.active;
+    const prev = liveActivePrevRef.current;
+    if (prev === false && now === true) {
+      showToast(
+        "Эфир начался — нажмите «Смотреть стрим», чтобы засчитать стрик.",
+        "info",
+        { durationMs: 6500 }
+      );
+      try {
+        WebApp.HapticFeedback.notificationOccurred("success");
+      } catch {
+        /* ignore */
+      }
+    }
+    liveActivePrevRef.current = now;
+  }, [live, showToast]);
 
   if (!me) {
     return <PageSkeleton />;
@@ -150,11 +180,7 @@ export default function Home({
     ? live.platform
     : activePlatform;
   const streakForPlatform =
-    streakOverride && streakOverride.platform === streakPlatform
-      ? streakOverride.streak
-      : streakPlatform === "twitch"
-        ? me.streakTwitch
-        : me.streakKick;
+    streakPlatform === "twitch" ? me.streakTwitch : me.streakKick;
   const streakPct = Math.min(100, (streakForPlatform / STREAK_TARGET) * 100);
 
   const viewerFirstName = me.firstName?.trim() || "Друг";
@@ -185,13 +211,20 @@ export default function Home({
         notifyStreakWatchError(showToast, formatApiError(r));
         return;
       }
+      await onRefresh();
       if (!r.data.alreadyWatchedThisBroadcast) {
-        flushSync(() => {
-          setStreakOverride({ platform: live.platform, streak: r.data.streak });
+        const st = r.data.streak;
+        const p = live.platform;
+        patchMe((prev) => {
+          const streakTwitch = p === "twitch" ? st : prev.streakTwitch;
+          const streakKick = p === "kick" ? st : prev.streakKick;
+          return {
+            streakTwitch,
+            streakKick,
+            streak: Math.max(streakTwitch, streakKick),
+          };
         });
       }
-      await onRefresh();
-      setStreakOverride(null);
       setActivePlatform(live.platform);
       if (r.data.alreadyWatchedThisBroadcast) {
         notifyStreakAlreadyWatchedThisBroadcast(

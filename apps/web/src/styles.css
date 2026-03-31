@@ -1505,7 +1505,8 @@ h3 {
   top: calc(12px + env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1000;
+  /* Выше welcome / дропа / тура — иначе «всплывашки» не видны в TG */
+  z-index: 2147483000;
   width: min(420px, calc(100vw - 24px));
   display: flex;
   flex-direction: column;

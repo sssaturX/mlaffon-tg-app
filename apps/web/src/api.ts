@@ -56,7 +56,12 @@ export async function api<T>(
   }
 
   try {
-    const r = await fetch(path, { ...init, headers });
+    const method = (init?.method ?? "GET").toUpperCase();
+    const noStore =
+      method === "GET" || method === "HEAD"
+        ? ({ cache: "no-store" as const } satisfies Pick<RequestInit, "cache">)
+        : {};
+    const r = await fetch(path, { ...noStore, ...init, headers });
     let data: unknown = {};
     try {
       data = await r.json();

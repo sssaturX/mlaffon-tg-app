@@ -89,6 +89,14 @@ export default function App() {
     return null;
   }, [showToast]);
 
+  /** Подмешать данные с клиента (напр. стрик после watch), если GET /me отдал устаревшее из кэша. */
+  const patchMe = useCallback(
+    (updater: (prev: MeResponse) => Partial<MeResponse>) => {
+      setMe((prev) => (prev ? { ...prev, ...updater(prev) } : null));
+    },
+    []
+  );
+
   useEffect(() => {
     WebApp.ready();
     WebApp.expand();
@@ -247,6 +255,7 @@ export default function App() {
       onCloseOnboarding={() => setOnboardingOpen(false)}
       onShowOnboarding={() => setOnboardingOpen(true)}
       refreshMe={refreshMe}
+      patchMe={patchMe}
     />
   );
 }
@@ -262,6 +271,7 @@ function AppShell({
   onCloseOnboarding,
   onShowOnboarding,
   refreshMe,
+  patchMe,
 }: {
   me: MeResponse;
   /** Полноэкранный экран привязки Kick/Twitch до первого OAuth. */
@@ -271,6 +281,7 @@ function AppShell({
   onCloseOnboarding: () => void;
   onShowOnboarding: () => void;
   refreshMe: () => Promise<MeResponse | null>;
+  patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
 }) {
   const location = useLocation();
   const { activePlatform } = useActivePlatform();
@@ -402,7 +413,12 @@ function AppShell({
         <main key={location.pathname} className="app-main">
           <Suspense fallback={<AppLoadingSpinner />}>
             <Routes>
-              <Route path="/" element={<HomePage me={me} onRefresh={refreshMe} />} />
+              <Route
+                path="/"
+                element={
+                  <HomePage me={me} onRefresh={refreshMe} patchMe={patchMe} />
+                }
+              />
               <Route path="/giveaways" element={<GiveawaysPage me={me} />} />
               <Route
                 path="/giveaway/:id"

@@ -161,6 +161,10 @@ if (process.env.ALLOW_DEV_AUTH === "1") {
 app.get("/api/v1/me", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
+  void reply.header(
+    "Cache-Control",
+    "private, no-store, no-cache, must-revalidate"
+  );
   return buildMeResponse(userId);
 });
 
@@ -196,7 +200,11 @@ app.post("/api/v1/ban-appeal", async (req, reply) => {
   return { ok: true };
 });
 
-app.get("/api/v1/live-broadcast", async () => {
+app.get("/api/v1/live-broadcast", async (_req, reply) => {
+  void reply.header(
+    "Cache-Control",
+    "private, no-store, no-cache, must-revalidate"
+  );
   const b = await getActiveLiveBroadcast();
   if (!b) {
     return { active: false as const };
