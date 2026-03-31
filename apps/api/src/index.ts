@@ -33,7 +33,10 @@ import { registerDropRoutes } from "./routes/drops.js";
 import { buildHomePublicResponse } from "./services/homePublic.js";
 import { applyPromoForUser } from "./services/promo.js";
 import { assertClaimRateLimits } from "./lib/abuse.js";
-import { claimStreamStreak } from "./services/streamStreak.js";
+import {
+  getActiveLiveBroadcast,
+  watchLiveBroadcast,
+} from "./services/liveBroadcast.js";
 import { markReferralPercentEligible } from "./services/referralEligibility.js";
 
 const app = Fastify({ logger: true });
@@ -193,14 +196,29 @@ app.post("/api/v1/ban-appeal", async (req, reply) => {
   return { ok: true };
 });
 
-const streamStreakClaimBody = z.object({
-  platform: z.enum(["twitch", "kick"]),
+app.get("/api/v1/live-broadcast", async () => {
+  const b = await getActiveLiveBroadcast();
+  if (!b) {
+    return { active: false as const };
+  }
+  return {
+    active: true as const,
+    id: b.id,
+    platform: b.platform as "twitch" | "kick",
+    streamUrl: b.streamUrl,
+    vpnNote: b.vpnNote,
+    startedAt: b.startedAt.toISOString(),
+  };
 });
 
-app.post("/api/v1/stream-streak/claim", async (req, reply) => {
+const liveWatchBody = z.object({
+  broadcastId: z.string().uuid(),
+});
+
+app.post("/api/v1/live-broadcast/watch", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
-  const parsed = streamStreakClaimBody.safeParse(req.body);
+  const parsed = liveWatchBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return reply.status(400).send({
       error: { code: "bad_request", message: parsed.error.message },
@@ -216,31 +234,22 @@ app.post("/api/v1/stream-streak/claim", async (req, reply) => {
       },
     });
   }
-  const res = await claimStreamStreak(userId, parsed.data.platform);
+  const res = await watchLiveBroadcast(userId, parsed.data.broadcastId);
   if (!res.ok) {
-    const status: Record<typeof res.code, number> = {
-      not_configured: 503,
-      no_oauth: 403,
-      not_live: 400,
-      not_following: 400,
-      already_today: 409,
-    };
-    const messages: Record<typeof res.code, string> = {
-      not_configured: "Стрик стрима не настроен на сервере",
-      no_oauth: "Подключите аккаунт платформы",
-      not_live: "Стрим сейчас не в эфире",
-      not_following: "Нужна подписка на канал",
-      already_today: "Уже засчитано сегодня",
-    };
-    return reply.status(status[res.code]).send({
-      error: { code: res.code, message: messages[res.code] },
+    const msg =
+      res.code === "not_active"
+        ? "Эфир уже завершён"
+        : "Трансляция не найдена";
+    return reply.status(400).send({
+      error: { code: res.code, message: msg },
     });
   }
   return {
     ok: true,
     platform: res.platform,
     streak: res.streak,
-    utcDate: res.utcDate,
+    streakIncremented: res.streakIncremented,
+    alreadyWatchedThisBroadcast: res.alreadyWatchedThisBroadcast,
   };
 });
 

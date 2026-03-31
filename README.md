@@ -95,7 +95,8 @@ npm run dev
 | POST | `/api/v1/auth/telegram` |
 | POST | `/api/v1/auth/dev` (только `ALLOW_DEV_AUTH=1`) |
 | GET | `/api/v1/me` |
-| POST | `/api/v1/stream-streak/claim` |
+| GET | `/api/v1/live-broadcast` |
+| POST | `/api/v1/live-broadcast/watch` |
 | GET | `/api/v1/tasks?platform=` |
 | POST | `/api/v1/tasks/:id/claim` |
 | GET | `/api/v1/leaderboard?sort=&platform=` |

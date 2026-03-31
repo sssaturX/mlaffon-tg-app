@@ -3,16 +3,6 @@ import { db } from "../db/index.js";
 import { userStreamStreaks } from "../db/schema.js";
 import { gameConfig } from "../config.js";
 import { applyCredit } from "./economy.js";
-import { getKickAccount, getTwitchAccount } from "./platformTokens.js";
-import {
-  helixCheckFollow,
-  helixGetOwnUser,
-  helixIsStreamLive,
-} from "../platforms/twitch/helix.js";
-import {
-  kickCheckFollowChannel,
-  kickIsChannelLive,
-} from "../platforms/kick/api.js";
 import { utcDateString } from "./streak.js";
 
 function addDays(isoDate: string, days: number): string {
@@ -20,12 +10,6 @@ function addDays(isoDate: string, days: number): string {
   const dt = new Date(Date.UTC(y, m - 1, day));
   dt.setUTCDate(dt.getUTCDate() + days);
   return dt.toISOString().slice(0, 10);
-}
-
-function requireFollow(): boolean {
-  const v = process.env.STREAM_STREAK_REQUIRE_FOLLOW?.trim();
-  if (v === "0" || v === "false") return false;
-  return true;
 }
 
 export async function ensureStreamStreakRow(
@@ -59,54 +43,44 @@ export async function ensureStreamStreakRow(
   };
 }
 
-export type StreamStreakClaimResult =
-  | {
-      ok: true;
-      platform: "twitch" | "kick";
-      streak: number;
-      utcDate: string;
-    }
-  | {
-      ok: false;
-      code:
-        | "not_configured"
-        | "no_oauth"
-        | "not_live"
-        | "not_following"
-        | "already_today";
-    };
+async function maybeStreamStreakBonus(
+  userId: string,
+  platform: "twitch" | "kick",
+  newStreak: number
+): Promise<void> {
+  const { bonusEveryDays, bonusCoins } = gameConfig.streak;
+  if (bonusEveryDays <= 0 || newStreak <= 0 || newStreak % bonusEveryDays !== 0) {
+    return;
+  }
+  const idem = `stream_streak_bonus:${platform}:${userId}:${newStreak}`;
+  await applyCredit({
+    userId,
+    amount: bonusCoins,
+    idempotencyKey: idem,
+    kind: "streak_bonus",
+    platform,
+    referenceType: "stream_streak",
+    referenceId: `${platform}:${newStreak}`,
+  });
+}
 
-export async function claimStreamStreak(
+/**
+ * +1 день стрика по платформе (UTC), если сегодня ещё не засчитывали.
+ * Используется при нажатии «Смотреть стрим» во время эфира, заданного в админке.
+ */
+export async function applyStreamStreakDay(
   userId: string,
   platform: "twitch" | "kick"
-): Promise<StreamStreakClaimResult> {
+): Promise<
+  | { ok: true; streak: number; utcDate: string }
+  | { ok: false; code: "already_today" }
+> {
   const today = utcDateString();
   const row = await ensureStreamStreakRow(userId);
 
   if (platform === "twitch") {
     if (row.twitchLast === today) {
       return { ok: false, code: "already_today" };
-    }
-
-    const login = process.env.TWITCH_STREAM_STREAK_BROADCASTER_LOGIN?.trim();
-    if (!login) return { ok: false, code: "not_configured" };
-
-    const acc = await getTwitchAccount(userId);
-    if (!acc) return { ok: false, code: "no_oauth" };
-
-    const live = await helixIsStreamLive(acc.accessToken, login);
-    if (!live) return { ok: false, code: "not_live" };
-
-    const me = await helixGetOwnUser(acc.accessToken);
-    if (!me) return { ok: false, code: "no_oauth" };
-
-    if (requireFollow()) {
-      const following = await helixCheckFollow(
-        acc.accessToken,
-        me.id,
-        login
-      );
-      if (!following) return { ok: false, code: "not_following" };
     }
 
     let newStreak: number;
@@ -127,25 +101,11 @@ export async function claimStreamStreak(
       .where(eq(userStreamStreaks.userId, userId));
 
     await maybeStreamStreakBonus(userId, "twitch", newStreak);
-    return { ok: true, platform: "twitch", streak: newStreak, utcDate: today };
+    return { ok: true, streak: newStreak, utcDate: today };
   }
 
   if (row.kickLast === today) {
     return { ok: false, code: "already_today" };
-  }
-
-  const slug = process.env.KICK_STREAM_STREAK_CHANNEL_SLUG?.trim();
-  if (!slug) return { ok: false, code: "not_configured" };
-
-  const acc = await getKickAccount(userId);
-  if (!acc) return { ok: false, code: "no_oauth" };
-
-  const live = await kickIsChannelLive(slug);
-  if (!live) return { ok: false, code: "not_live" };
-
-  if (requireFollow()) {
-    const following = await kickCheckFollowChannel(acc.accessToken, slug);
-    if (!following) return { ok: false, code: "not_following" };
   }
 
   let newStreak: number;
@@ -166,26 +126,5 @@ export async function claimStreamStreak(
     .where(eq(userStreamStreaks.userId, userId));
 
   await maybeStreamStreakBonus(userId, "kick", newStreak);
-  return { ok: true, platform: "kick", streak: newStreak, utcDate: today };
-}
-
-async function maybeStreamStreakBonus(
-  userId: string,
-  platform: "twitch" | "kick",
-  newStreak: number
-): Promise<void> {
-  const { bonusEveryDays, bonusCoins } = gameConfig.streak;
-  if (bonusEveryDays <= 0 || newStreak <= 0 || newStreak % bonusEveryDays !== 0) {
-    return;
-  }
-  const idem = `stream_streak_bonus:${platform}:${userId}:${newStreak}`;
-  await applyCredit({
-    userId,
-    amount: bonusCoins,
-    idempotencyKey: idem,
-    kind: "streak_bonus",
-    platform,
-    referenceType: "stream_streak",
-    referenceId: `${platform}:${newStreak}`,
-  });
+  return { ok: true, streak: newStreak, utcDate: today };
 }

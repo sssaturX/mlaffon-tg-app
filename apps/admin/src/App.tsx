@@ -181,7 +181,7 @@ export function App() {
   const [promoCreditPlatform, setPromoCreditPlatform] = useState<"split" | "twitch" | "kick">("split");
 
   const [tab, setTab] = useState<
-    "giveaways" | "promos" | "users" | "drops" | "tasks" | "appeals"
+    "giveaways" | "promos" | "users" | "drops" | "live" | "tasks" | "appeals"
   >("giveaways");
   const [banAppeals, setBanAppeals] = useState<BanAppealRow[] | null>(null);
   const [adminUsers, setAdminUsers] = useState<AdminUserRow[] | null>(null);
@@ -195,6 +195,24 @@ export function App() {
   const [dropMaxWinners, setDropMaxWinners] = useState(100);
   const [dropRewardMin, setDropRewardMin] = useState(10);
   const [dropRewardMax, setDropRewardMax] = useState(100);
+
+  type AdminLiveBroadcast =
+    | { active: false }
+    | {
+        active: true;
+        id: string;
+        platform: string;
+        streamUrl: string;
+        vpnNote: string | null;
+        startedAt: string;
+      };
+  const [liveBroadcastStatus, setLiveBroadcastStatus] =
+    useState<AdminLiveBroadcast | null>(null);
+  const [liveStartPlatform, setLiveStartPlatform] = useState<"twitch" | "kick">(
+    "kick"
+  );
+  const [liveStartUrl, setLiveStartUrl] = useState("");
+  const [liveStartVpn, setLiveStartVpn] = useState("");
 
   const [adminTasks, setAdminTasks] = useState<AdminTaskRow[] | null>(null);
   const [taskEditingId, setTaskEditingId] = useState<string | null>(null);
@@ -330,6 +348,23 @@ export function App() {
     setDropStatus({ active: j.active, drop: j.drop ?? null });
   }, [token, authHeaders]);
 
+  const loadLiveBroadcast = useCallback(async () => {
+    if (!token) return;
+    setErr(null);
+    const r = await fetch(`${apiBase()}/api/admin/live-broadcast`, {
+      headers: authHeaders(),
+    });
+    const j = (await r.json()) as AdminLiveBroadcast & {
+      error?: { message?: string };
+    };
+    if (!r.ok) {
+      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+      if (r.status === 401) setToken(null);
+      return;
+    }
+    setLiveBroadcastStatus(j.active ? j : { active: false });
+  }, [token, authHeaders]);
+
   const loadAdminTasks = useCallback(async () => {
     if (!token) return;
     setErr(null);
@@ -361,6 +396,10 @@ export function App() {
   useEffect(() => {
     if (token && tab === "drops") void loadDropStatus();
   }, [token, tab, loadDropStatus]);
+
+  useEffect(() => {
+    if (token && tab === "live") void loadLiveBroadcast();
+  }, [token, tab, loadLiveBroadcast]);
 
   useEffect(() => {
     if (token && tab === "tasks") void loadAdminTasks();
@@ -650,6 +689,13 @@ export function App() {
           onClick={() => setTab("drops")}
         >
           Дропы
+        </button>
+        <button
+          type="button"
+          className={tab === "live" ? "admin-tab admin-tab--active" : "admin-tab"}
+          onClick={() => setTab("live")}
+        >
+          Эфир
         </button>
         <button
           type="button"
@@ -1802,6 +1848,132 @@ export function App() {
           >
             Остановить дроп
           </button>
+        </>
+      ) : null}
+
+      {tab === "live" ? (
+        <>
+          <h2 className="admin-mt-0">Трансляция</h2>
+          <p className="muted">
+            Запустите эфир: выберите платформу и вставьте ссылку на стрим. В приложении
+            появится карточка «Смотреть стрим»; стрик начисляется только на выбранной
+            платформе. Завершите эфир — карточка исчезнет.
+          </p>
+          {liveBroadcastStatus === null ? (
+            <p className="muted">Загрузка…</p>
+          ) : liveBroadcastStatus.active ? (
+            <div className="card stack">
+              <p className="admin-m-0">
+                <strong>Эфир активен</strong> · {liveBroadcastStatus.platform} ·{" "}
+                <a href={liveBroadcastStatus.streamUrl} target="_blank" rel="noreferrer">
+                  {liveBroadcastStatus.streamUrl}
+                </a>
+                <br />
+                Старт: {new Date(liveBroadcastStatus.startedAt).toLocaleString("ru-RU")}
+              </p>
+              {liveBroadcastStatus.vpnNote ? (
+                <p className="muted admin-m-0">VPN: {liveBroadcastStatus.vpnNote}</p>
+              ) : null}
+              <button
+                type="button"
+                className="secondary"
+                disabled={loading}
+                onClick={async () => {
+                  if (!token) return;
+                  setLoading(true);
+                  setErr(null);
+                  try {
+                    const r = await fetch(`${apiBase()}/api/admin/live-broadcast/end`, {
+                      method: "POST",
+                      headers: authHeaders(),
+                    });
+                    const j = (await r.json()) as { error?: { message?: string } };
+                    if (!r.ok) {
+                      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                      return;
+                    }
+                    await loadLiveBroadcast();
+                  } catch {
+                    setErr("Сеть недоступна");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
+                Завершить эфир
+              </button>
+            </div>
+          ) : (
+            <form
+              className="card stack"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!token) return;
+                setLoading(true);
+                setErr(null);
+                try {
+                  const r = await fetch(`${apiBase()}/api/admin/live-broadcast/start`, {
+                    method: "POST",
+                    headers: authHeaders(true),
+                    body: JSON.stringify({
+                      platform: liveStartPlatform,
+                      streamUrl: liveStartUrl.trim(),
+                      vpnNote: liveStartVpn.trim() || null,
+                    }),
+                  });
+                  const j = (await r.json()) as { error?: { message?: string } };
+                  if (!r.ok) {
+                    setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                    return;
+                  }
+                  setLiveStartUrl("");
+                  setLiveStartVpn("");
+                  await loadLiveBroadcast();
+                } catch {
+                  setErr("Сеть недоступна");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            >
+              <div>
+                <label htmlFor="livePlat">Платформа</label>
+                <select
+                  id="livePlat"
+                  value={liveStartPlatform}
+                  onChange={(e) =>
+                    setLiveStartPlatform(e.target.value as "twitch" | "kick")
+                  }
+                >
+                  <option value="kick">Kick</option>
+                  <option value="twitch">Twitch</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="liveUrl">Ссылка на стрим</label>
+                <input
+                  id="liveUrl"
+                  type="url"
+                  placeholder="https://kick.com/… или https://twitch.tv/…"
+                  value={liveStartUrl}
+                  onChange={(e) => setLiveStartUrl(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="liveVpn">Заметка про VPN (в карточке в приложении)</label>
+                <input
+                  id="liveVpn"
+                  placeholder="Например: Для захода на стрим нужен VPN."
+                  value={liveStartVpn}
+                  onChange={(e) => setLiveStartVpn(e.target.value)}
+                />
+              </div>
+              <button type="submit" className="primary" disabled={loading}>
+                Запустить эфир
+              </button>
+            </form>
+          )}
         </>
       ) : null}
     </>

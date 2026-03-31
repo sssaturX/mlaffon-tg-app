@@ -32,6 +32,11 @@ import {
   listBanAppealsAdmin,
   markBanAppealReviewed,
 } from "../services/banAppeals.js";
+import {
+  startLiveBroadcast,
+  endLiveBroadcast,
+  getActiveLiveBroadcast,
+} from "../services/liveBroadcast.js";
 
 function parseBearer(req: { headers: { authorization?: string } }): string | null {
   const h = req.headers.authorization;
@@ -636,6 +641,63 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           code: "not_found",
           message: "Апелляция не найдена или уже обработана",
         },
+      });
+    }
+    return { ok: true };
+  });
+
+  app.get("/api/admin/live-broadcast", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const b = await getActiveLiveBroadcast();
+    if (!b) return { active: false as const };
+    return {
+      active: true as const,
+      id: b.id,
+      platform: b.platform,
+      streamUrl: b.streamUrl,
+      vpnNote: b.vpnNote,
+      startedAt: b.startedAt.toISOString(),
+    };
+  });
+
+  const liveStartBody = z.object({
+    platform: z.enum(["twitch", "kick"]),
+    streamUrl: z.string().min(8),
+    vpnNote: z.string().max(500).optional().nullable(),
+  });
+
+  app.post("/api/admin/live-broadcast/start", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const parsed = liveStartBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const r = await startLiveBroadcast({
+      platform: parsed.data.platform,
+      streamUrl: parsed.data.streamUrl,
+      vpnNote: parsed.data.vpnNote,
+    });
+    if (!r.ok) {
+      const status = r.code === "bad_url" ? 400 : 409;
+      const msg =
+        r.code === "bad_url"
+          ? "Укажите ссылку с http:// или https://"
+          : "Уже идёт эфир — завершите его перед новым";
+      return reply.status(status).send({
+        error: { code: r.code, message: msg },
+      });
+    }
+    return { ok: true, id: r.id };
+  });
+
+  app.post("/api/admin/live-broadcast/end", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const r = await endLiveBroadcast();
+    if (!r.ok) {
+      return reply.status(400).send({
+        error: { code: "not_live", message: "Нет активного эфира" },
       });
     }
     return { ok: true };

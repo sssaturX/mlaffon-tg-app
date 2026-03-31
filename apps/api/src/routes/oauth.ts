@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "../db/index.js";
 import { platformAccounts } from "../db/schema.js";
@@ -99,6 +99,26 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
       const me = await helixGetOwnUser(tokens.access_token);
       if (!me) {
         return reply.redirect(redirectError("twitch", "helix_user"));
+      }
+
+      const [twitchTaken] = await db
+        .select({ id: platformAccounts.id })
+        .from(platformAccounts)
+        .where(
+          and(
+            eq(platformAccounts.platform, "twitch"),
+            eq(platformAccounts.externalUserId, me.id),
+            ne(platformAccounts.userId, userId)
+          )
+        )
+        .limit(1);
+      if (twitchTaken) {
+        return reply.redirect(
+          redirectError(
+            "twitch",
+            "Этот Twitch уже привязан к другому аккаунту Telegram"
+          )
+        );
       }
 
       const accessEnc = encryptSecret(tokens.access_token);
@@ -225,6 +245,28 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
       const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
       const displayName = me.username ?? "Kick";
       const avatarUrl = me.avatarUrl ?? null;
+
+      if (me.id && me.id !== "unknown") {
+        const [kickTaken] = await db
+          .select({ id: platformAccounts.id })
+          .from(platformAccounts)
+          .where(
+            and(
+              eq(platformAccounts.platform, "kick"),
+              eq(platformAccounts.externalUserId, me.id),
+              ne(platformAccounts.userId, parsed.userId)
+            )
+          )
+          .limit(1);
+        if (kickTaken) {
+          return reply.redirect(
+            redirectError(
+              "kick",
+              "Этот Kick уже привязан к другому аккаунту Telegram"
+            )
+          );
+        }
+      }
 
       await db
         .insert(platformAccounts)

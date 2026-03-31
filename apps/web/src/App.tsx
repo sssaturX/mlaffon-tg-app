@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { flushSync } from "react-dom/client";
 import { getPlatformTheme } from "./platformTheme";
 import { useActivePlatform } from "./context/PlatformContext";
 import {
@@ -32,7 +33,6 @@ import { OnboardingModal, hasSeenOnboarding } from "./components/OnboardingModal
 import { FirstVisitTour, hasSeenTour } from "./components/FirstVisitTour";
 import { routeTitle, ScreenHeader } from "./components/ScreenHeader";
 import { AppLoadingSpinner } from "./components/AppLoadingSpinner";
-import { getBotUsername } from "./botUsername";
 import { hasLinkedStreamingAccount } from "./utils/streamingAccount";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
@@ -65,23 +65,28 @@ export default function App() {
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
 
-  const refreshMe = useCallback(async () => {
+  const refreshMe = useCallback(async (): Promise<MeResponse | null> => {
     if (!getToken()) {
-      setMe(null);
-      return;
+      flushSync(() => setMe(null));
+      return null;
     }
     const r = await api<MeResponse>("/api/v1/me");
     if (r.ok) {
-      setMe(r.data);
-      return;
+      flushSync(() => {
+        setMe(r.data);
+      });
+      return r.data;
     }
     if (r.networkError) {
       showToast(formatApiError(r), "error");
-      return;
+      return null;
     }
-    setMe(null);
+    flushSync(() => {
+      setMe(null);
+    });
     setToken(null);
     showToast(formatApiError(r), "error");
+    return null;
   }, [showToast]);
 
   useEffect(() => {
@@ -246,7 +251,8 @@ export default function App() {
   );
 }
 
-const botFooter = getBotUsername();
+const botFooter =
+  import.meta.env.VITE_BOT_USERNAME?.trim().replace(/^@/, "") ?? "";
 
 function AppShell({
   me,
@@ -264,7 +270,7 @@ function AppShell({
   onboardingOpen: boolean;
   onCloseOnboarding: () => void;
   onShowOnboarding: () => void;
-  refreshMe: () => void;
+  refreshMe: () => Promise<MeResponse | null>;
 }) {
   const location = useLocation();
   const { activePlatform } = useActivePlatform();

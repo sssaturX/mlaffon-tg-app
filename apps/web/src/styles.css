@@ -993,6 +993,133 @@ h3 {
   letter-spacing: -0.02em;
 }
 
+.live-broadcast-card {
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: linear-gradient(
+    160deg,
+    rgba(20, 24, 28, 0.98),
+    rgba(12, 14, 18, 0.98)
+  );
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+.live-broadcast-card__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.live-broadcast-card__avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.live-broadcast-card__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+.live-broadcast-card__avatar--placeholder {
+  background: linear-gradient(
+    135deg,
+    rgba(80, 200, 120, 0.35),
+    rgba(30, 40, 50, 0.9)
+  );
+}
+
+.live-broadcast-card__live-badge {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: #e53935;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+}
+
+.live-broadcast-card__live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 6px #fff;
+}
+
+.live-broadcast-card__identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.live-broadcast-card__name {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.live-broadcast-card__platform {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.live-broadcast-card__platform--kick {
+  color: #53fc18;
+}
+
+.live-broadcast-card__platform--twitch {
+  color: #a970ff;
+}
+
+.live-broadcast-card__quote {
+  margin: 0 0 12px;
+  padding: 12px 14px 12px 16px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 12px 12px 0;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.live-broadcast-card__quote p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.live-broadcast-card__vpn {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #e6c84a;
+}
+
+.live-broadcast-card__cta {
+  width: 100%;
+  justify-content: center;
+  padding: 14px 16px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.stream-streak-grid--readonly .stream-streak-row {
+  justify-content: flex-start;
+}
+
 .streak-card {
   position: relative;
   overflow: hidden;

@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { relations } from "drizzle-orm";
 
 export const users = pgTable(
@@ -151,7 +152,53 @@ export const platformAccounts = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (t) => [uniqueIndex("platform_accounts_user_platform").on(t.userId, t.platform)]
+  (t) => [
+    uniqueIndex("platform_accounts_user_platform").on(t.userId, t.platform),
+    uniqueIndex("platform_accounts_platform_external_unique")
+      .on(t.platform, t.externalUserId)
+      .where(
+        sql`${t.externalUserId} is not null and ${t.externalUserId} <> 'unknown'`
+      ),
+  ]
+);
+
+/** Активный эфир: один ряд с ended_at = null (завершение = выставить ended_at). */
+export const liveBroadcasts = pgTable(
+  "live_broadcasts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    platform: text("platform").notNull(),
+    streamUrl: text("stream_url").notNull(),
+    vpnNote: text("vpn_note"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [index("live_broadcasts_ended_idx").on(t.endedAt)]
+);
+
+export const liveBroadcastViews = pgTable(
+  "live_broadcast_views",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    broadcastId: uuid("broadcast_id")
+      .notNull()
+      .references(() => liveBroadcasts.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("live_broadcast_views_broadcast_user").on(
+      t.broadcastId,
+      t.userId
+    ),
+    index("live_broadcast_views_user_idx").on(t.userId),
+  ]
 );
 
 export const referrals = pgTable(

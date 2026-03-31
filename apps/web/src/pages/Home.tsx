@@ -7,14 +7,25 @@ import {
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
 import type { MeResponse } from "shared";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
+import {
+  LiveBroadcastCard,
+  openExternal,
+  type LiveBroadcastActive,
+} from "../components/LiveBroadcastCard";
+import { OAUTH_TOAST_KEY } from "./OAuthReturn";
 
 const STREAK_TARGET = 7;
+
+type LiveBroadcastPublic =
+  | { active: false }
+  | LiveBroadcastActive;
 
 type HomePublic = {
   stats: { usersCount: number; coinsEarnedTotal: number };
@@ -51,7 +62,8 @@ export default function Home({
 }) {
   const { showToast } = useToast();
   const { activePlatform } = useActivePlatform();
-  const [claiming, setClaiming] = useState<"twitch" | "kick" | null>(null);
+  const [watchingLive, setWatchingLive] = useState(false);
+  const [live, setLive] = useState<LiveBroadcastPublic | null>(null);
   const [pub, setPub] = useState<HomePublic | null>(null);
   const [promo, setPromo] = useState("");
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
@@ -64,6 +76,45 @@ export default function Home({
   useEffect(() => {
     void loadPublic();
   }, [loadPublic]);
+
+  useEffect(() => {
+    let k: string | null = null;
+    try {
+      k = sessionStorage.getItem(OAUTH_TOAST_KEY);
+    } catch {
+      return;
+    }
+    if (!k) return;
+    try {
+      sessionStorage.removeItem(OAUTH_TOAST_KEY);
+    } catch {
+      /* ignore */
+    }
+    showToast(
+      k === "twitch" ? "Twitch подключён" : "Kick подключён",
+      "success",
+    );
+    try {
+      WebApp.HapticFeedback.notificationOccurred("success");
+    } catch {
+      /* ignore */
+    }
+    void onRefresh();
+  }, [showToast, onRefresh]);
+
+  const loadLive = useCallback(async () => {
+    const r = await api<LiveBroadcastPublic>("/api/v1/live-broadcast");
+    if (r.ok) setLive(r.data);
+  }, []);
+
+  useEffect(() => {
+    void loadLive();
+  }, [loadLive]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => void loadLive(), 20000);
+    return () => clearInterval(id);
+  }, [loadLive]);
 
   if (!me) {
     return <PageSkeleton />;
@@ -79,28 +130,37 @@ export default function Home({
     activePlatform === "twitch" ? me.streakTwitch : me.streakKick;
   const streakPct = Math.min(100, (streakForPlatform / STREAK_TARGET) * 100);
 
-  async function claimStreamStreak(platform: "twitch" | "kick") {
-    setClaiming(platform);
-    const r = await api<{
-      ok: boolean;
-      streak: number;
-      platform: string;
-    }>("/api/v1/stream-streak/claim", {
-      method: "POST",
-      body: JSON.stringify({ platform }),
-    });
-    setClaiming(null);
-    if (!r.ok) {
-      showToast(formatApiError(r), "error");
-      return;
+  const viewerFirstName = me.firstName?.trim() || "Друг";
+
+  async function watchLive() {
+    if (!live?.active) return;
+    setWatchingLive(true);
+    try {
+      openExternal(live.streamUrl);
+      const r = await api<{
+        ok: boolean;
+        streak: number;
+        streakIncremented: boolean;
+        alreadyWatchedThisBroadcast: boolean;
+      }>("/api/v1/live-broadcast/watch", {
+        method: "POST",
+        body: JSON.stringify({ broadcastId: live.id }),
+      });
+      if (!r.ok) {
+        showToast(formatApiError(r), "error");
+        return;
+      }
+      if (r.data.alreadyWatchedThisBroadcast) {
+        showToast("Вы уже отметились в этом эфире", "info");
+      } else if (r.data.streakIncremented) {
+        showToast(`Стрик: ${r.data.streak} дн.`, "success");
+      } else {
+        showToast("Сегодня день уже засчитан по этой платформе", "info");
+      }
+      onRefresh();
+    } finally {
+      setWatchingLive(false);
     }
-    showToast(
-      platform === "twitch"
-        ? `Twitch: стрик ${r.data.streak} дн.`
-        : `Kick: стрик ${r.data.streak} дн.`,
-      "success"
-    );
-    onRefresh();
   }
 
   async function applyPromo() {
@@ -166,6 +226,15 @@ export default function Home({
         </div>
       )}
 
+      {live?.active ? (
+        <LiveBroadcastCard
+          live={live}
+          viewerFirstName={viewerFirstName}
+          watching={watchingLive}
+          onWatch={watchLive}
+        />
+      ) : null}
+
       <div className="streak-card">
         <div className="streak-card__head">
           <div className="streak-card__flame" aria-hidden>
@@ -174,62 +243,31 @@ export default function Home({
           <div>
             <p className="streak-card__title">Начни свой стрик!</p>
             <p className="muted streak-card__text">
-              Не пропускай стримы с подписанного канала — бонус за серию дней
-              (UTC). Сейчас: {streakForPlatform} / {STREAK_TARGET}.
+              Когда идёт эфир, нажми «Смотреть стрим» в карточке выше — день
+              засчитается на той платформе (Twitch или Kick), которую выбрал
+              стример в админке (UTC). Сейчас: {streakForPlatform} /{" "}
+              {STREAK_TARGET}.
             </p>
           </div>
         </div>
 
-        <div className="stream-streak-grid">
-          {activePlatform === "twitch" ? (
-            <div className="stream-streak-row">
-              <div>
-                <span className="pill pill--twitch">Twitch</span>
-                <p className="stream-streak-row__val">
-                  {me.streakTwitch} дн. подряд
-                </p>
-              </div>
-              <button
-                type="button"
-                className="primary stream-streak-row__btn"
-                disabled={
-                  claiming !== null ||
-                  me.platforms.twitch.status === "not_connected"
-                }
-                onClick={() => void claimStreamStreak("twitch")}
-              >
-                {claiming === "twitch"
-                  ? "…"
-                  : me.platforms.twitch.status === "not_connected"
-                    ? "Нет Twitch"
-                    : "Засчитать"}
-              </button>
+        <div className="stream-streak-grid stream-streak-grid--readonly">
+          <div className="stream-streak-row">
+            <div>
+              <span className="pill pill--twitch">Twitch</span>
+              <p className="stream-streak-row__val">
+                {me.streakTwitch} дн. подряд
+              </p>
             </div>
-          ) : (
-            <div className="stream-streak-row">
-              <div>
-                <span className="pill pill--kick">Kick</span>
-                <p className="stream-streak-row__val">
-                  {me.streakKick} дн. подряд
-                </p>
-              </div>
-              <button
-                type="button"
-                className="primary stream-streak-row__btn"
-                disabled={
-                  claiming !== null ||
-                  me.platforms.kick.status === "not_connected"
-                }
-                onClick={() => void claimStreamStreak("kick")}
-              >
-                {claiming === "kick"
-                  ? "…"
-                  : me.platforms.kick.status === "not_connected"
-                    ? "Нет Kick"
-                    : "Засчитать"}
-              </button>
+          </div>
+          <div className="stream-streak-row">
+            <div>
+              <span className="pill pill--kick">Kick</span>
+              <p className="stream-streak-row__val">
+                {me.streakKick} дн. подряд
+              </p>
             </div>
-          )}
+          </div>
         </div>
 
         <div className="streak-card__bar streak-card__bar--spaced" aria-hidden>
