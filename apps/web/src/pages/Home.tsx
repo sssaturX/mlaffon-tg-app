@@ -7,6 +7,7 @@ import {
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom/client";
 import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
 import type { MeResponse } from "shared";
@@ -152,9 +153,9 @@ export default function Home({
     const prev = liveActivePrevRef.current;
     if (prev === false && now === true) {
       showToast(
-        "Эфир начался — нажмите «Смотреть стрим», чтобы засчитать стрик.",
+        "Эфир начался — зайдите в приложение и нажмите «Смотреть стрим», чтобы засчитать стрик на Twitch/Kick.",
         "info",
-        { durationMs: 6500 }
+        { durationMs: 7000 }
       );
       try {
         WebApp.HapticFeedback.notificationOccurred("success");
@@ -164,6 +165,15 @@ export default function Home({
     }
     liveActivePrevRef.current = now;
   }, [live, showToast]);
+
+  useEffect(() => {
+    if (!streakDisplay || !me) return;
+    const v =
+      streakDisplay.platform === "twitch" ? me.streakTwitch : me.streakKick;
+    if (v === streakDisplay.value) {
+      setStreakDisplay(null);
+    }
+  }, [me, streakDisplay]);
 
   if (!me) {
     return <PageSkeleton />;
@@ -180,7 +190,11 @@ export default function Home({
     ? live.platform
     : activePlatform;
   const streakForPlatform =
-    streakPlatform === "twitch" ? me.streakTwitch : me.streakKick;
+    streakDisplay && streakDisplay.platform === streakPlatform
+      ? streakDisplay.value
+      : streakPlatform === "twitch"
+        ? me.streakTwitch
+        : me.streakKick;
   const streakPct = Math.min(100, (streakForPlatform / STREAK_TARGET) * 100);
 
   const viewerFirstName = me.firstName?.trim() || "Друг";
@@ -210,6 +224,14 @@ export default function Home({
       if (!r.ok) {
         notifyStreakWatchError(showToast, formatApiError(r));
         return;
+      }
+      if (!r.data.alreadyWatchedThisBroadcast) {
+        flushSync(() => {
+          setStreakDisplay({
+            platform: live.platform,
+            value: r.data.streak,
+          });
+        });
       }
       await onRefresh();
       if (!r.data.alreadyWatchedThisBroadcast) {

@@ -70,7 +70,9 @@ export default function App() {
       flushSync(() => setMe(null));
       return null;
     }
-    const r = await api<MeResponse>("/api/v1/me");
+    const r = await api<MeResponse>(
+      `/api/v1/me?_=${Date.now()}`
+    );
     if (r.ok) {
       flushSync(() => {
         setMe(r.data);
@@ -92,7 +94,9 @@ export default function App() {
   /** Подмешать данные с клиента (напр. стрик после watch), если GET /me отдал устаревшее из кэша. */
   const patchMe = useCallback(
     (updater: (prev: MeResponse) => Partial<MeResponse>) => {
-      setMe((prev) => (prev ? { ...prev, ...updater(prev) } : null));
+      flushSync(() => {
+        setMe((prev) => (prev ? { ...prev, ...updater(prev) } : null));
+      });
     },
     []
   );
@@ -132,7 +136,7 @@ export default function App() {
       setError(null);
       const existing = getToken();
       if (existing) {
-        const r = await api<MeResponse>("/api/v1/me");
+        const r = await api<MeResponse>(`/api/v1/me?_=${Date.now()}`);
         if (cancelled) return;
         if (r.ok) {
           setMe(r.data);
