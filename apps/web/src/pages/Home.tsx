@@ -72,6 +72,11 @@ export default function Home({
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const [watchingLive, setWatchingLive] = useState(false);
   const [live, setLive] = useState<LiveBroadcastPublic | null>(null);
+  /** Локальный стрик сразу после watch — не зависит от задержки /me в WebView. */
+  const [streakDisplay, setStreakDisplay] = useState<{
+    platform: "twitch" | "kick";
+    value: number;
+  } | null>(null);
   const liveActivePrevRef = useRef<boolean | null>(null);
   const [pub, setPub] = useState<HomePublic | null>(null);
   const [promo, setPromo] = useState("");
