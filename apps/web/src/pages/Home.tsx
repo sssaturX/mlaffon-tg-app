@@ -137,8 +137,9 @@ export default function Home({
   async function watchLive() {
     if (!live?.active) return;
     setWatchingLive(true);
+    const platRu = live.platform === "kick" ? "Kick" : "Twitch";
     try {
-      openExternal(live.streamUrl);
+      /** Сначала API: после `openLink` WebView часто замирает — запрос не доходит. */
       const r = await api<{
         ok: boolean;
         streak: number;
@@ -150,16 +151,46 @@ export default function Home({
       });
       if (!r.ok) {
         showToast(formatApiError(r), "error");
+        try {
+          WebApp.HapticFeedback.notificationOccurred("error");
+        } catch {
+          /* ignore */
+        }
         return;
       }
       await onRefresh();
       if (r.data.alreadyWatchedThisBroadcast) {
-        showToast("Вы уже отметились в этом эфире", "info");
+        showToast(
+          `Вы уже нажимали «Смотреть стрим» в этом эфире (${platRu}). Повторно стрик не начисляется.`,
+          "info",
+        );
+        try {
+          WebApp.HapticFeedback.notificationOccurred("warning");
+        } catch {
+          /* ignore */
+        }
       } else if (r.data.streakIncremented) {
-        showToast(`Стрик: ${r.data.streak} дн.`, "success");
+        showToast(
+          `${platRu}: стрик ${r.data.streak} дн. подряд!`,
+          "success",
+        );
+        try {
+          WebApp.HapticFeedback.notificationOccurred("success");
+        } catch {
+          /* ignore */
+        }
       } else {
-        showToast("Сегодня день уже засчитан по этой платформе", "info");
+        showToast(
+          `Сегодня для ${platRu} день стрика уже засчитан (UTC). Заход сохранён, счётчик не вырос.`,
+          "info",
+        );
+        try {
+          WebApp.HapticFeedback.notificationOccurred("warning");
+        } catch {
+          /* ignore */
+        }
       }
+      openExternal(live.streamUrl);
     } finally {
       setWatchingLive(false);
     }
@@ -252,6 +283,15 @@ export default function Home({
             </p>
           </div>
         </div>
+
+        {live?.active && live.platform !== activePlatform ? (
+          <p className="muted streak-card__platform-hint">
+            Сейчас эфир на{" "}
+            <strong>{live.platform === "kick" ? "Kick" : "Twitch"}</strong> — стрик
+            начисляется в этой колонке (UTC). Переключи режим в шапке, чтобы полоска
+            совпадала с эфиром.
+          </p>
+        ) : null}
 
         <div className="stream-streak-grid stream-streak-grid--readonly">
           <div className="stream-streak-row">

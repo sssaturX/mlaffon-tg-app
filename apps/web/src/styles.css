@@ -309,6 +309,12 @@ select:focus-visible {
   font-size: var(--text-body);
 }
 
+.streak-card__platform-hint {
+  margin: 0 0 var(--space-3);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .streak-card__bar--spaced {
   margin-top: var(--space-3);
 }
