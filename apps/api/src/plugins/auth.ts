@@ -35,14 +35,18 @@ export async function registerAuth(app: FastifyInstance) {
     if (req.userId) {
       try {
         if (await isUserBanned(req.userId)) {
-          void reply.status(403).send({
-            error: {
-              code: "banned",
-              message:
-                "Доступ к приложению ограничен. Если это ошибка — напишите в поддержку.",
-            },
-          });
-          return;
+          const allowedWhenBanned =
+            path === "/api/v1/me" || path === "/api/v1/ban-appeal";
+          if (!allowedWhenBanned) {
+            void reply.status(403).send({
+              error: {
+                code: "banned",
+                message:
+                  "Доступ к приложению ограничен. Если это ошибка — напишите в поддержку.",
+              },
+            });
+            return;
+          }
         }
       } catch {
         /* не блокируем запрос при сбое проверки БД */

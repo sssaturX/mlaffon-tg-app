@@ -18,6 +18,7 @@ import {
   deleteUserAccount,
 } from "./services/users.js";
 import { buildMeResponse } from "./services/me.js";
+import { createBanAppeal } from "./services/banAppeals.js";
 import { listTasksForUser, claimTask } from "./services/tasks.js";
 import { getLeaderboard, rankOfUser } from "./services/leaderboard.js";
 import { referrals, users } from "./db/schema.js";
@@ -158,6 +159,38 @@ app.get("/api/v1/me", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
   return buildMeResponse(userId);
+});
+
+const banAppealBody = z.object({
+  message: z.string().min(10).max(4000),
+});
+
+app.post("/api/v1/ban-appeal", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  const parsed = banAppealBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return reply.status(400).send({
+      error: { code: "bad_request", message: parsed.error.message },
+    });
+  }
+  const r = await createBanAppeal(userId, parsed.data.message);
+  if (!r.ok) {
+    const status: Record<typeof r.code, number> = {
+      not_banned: 400,
+      already_pending: 409,
+      too_short: 400,
+    };
+    const messages: Record<typeof r.code, string> = {
+      not_banned: "Апелляция доступна только при активной блокировке",
+      already_pending: "Апелляция уже отправлена и ожидает рассмотрения",
+      too_short: "Текст слишком короткий",
+    };
+    return reply.status(status[r.code]).send({
+      error: { code: r.code, message: messages[r.code] },
+    });
+  }
+  return { ok: true };
 });
 
 const streamStreakClaimBody = z.object({

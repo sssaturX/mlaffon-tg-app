@@ -379,6 +379,25 @@ export const fortuneSpins = pgTable(
   (t) => [uniqueIndex("fortune_spins_user_day").on(t.userId, t.utcDate)]
 );
 
+/** Апелляции на блокировку — текст для админа. */
+export const banAppeals = pgTable(
+  "ban_appeals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    message: text("message").notNull(),
+    status: text("status").notNull().default("pending"),
+    adminNote: text("admin_note"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("ban_appeals_user_status_idx").on(t.userId, t.status)]
+);
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   balance: one(userBalances, {
     fields: [users.id],

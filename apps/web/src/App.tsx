@@ -45,6 +45,7 @@ const OAuthReturn = lazy(() => import("./pages/OAuthReturn"));
 const OAuthBrowserDone = lazy(() => import("./pages/OAuthBrowserDone"));
 const GiveawayPage = lazy(() => import("./pages/Giveaway"));
 const GiveawaysPage = lazy(() => import("./pages/Giveaways"));
+const BannedScreen = lazy(() => import("./pages/BannedScreen"));
 
 const devAuth =
   import.meta.env.VITE_ALLOW_DEV === "1" || import.meta.env.DEV;
@@ -212,6 +213,23 @@ export default function App() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (me?.banned) {
+    const displayName =
+      me.firstName?.trim() ||
+      (me.username ? `@${me.username}` : "") ||
+      "Игрок";
+    return (
+      <Suspense fallback={<PageSkeleton />}>
+        <BannedScreen
+          displayName={displayName}
+          banReason={me.banReason}
+          appealPending={me.banAppealPending}
+          onRefresh={refreshMe}
+        />
+      </Suspense>
     );
   }
 

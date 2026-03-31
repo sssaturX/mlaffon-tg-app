@@ -1749,6 +1749,184 @@ h3 {
   color: var(--accent);
 }
 
+/* Banned account */
+.banned-screen {
+  position: relative;
+  min-height: 100%;
+  padding: 24px 16px 48px;
+  overflow: hidden;
+}
+
+.banned-screen__glow {
+  position: absolute;
+  inset: -40% -20% auto;
+  height: 70%;
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    rgba(220, 38, 38, 0.22) 0%,
+    transparent 65%
+  );
+  pointer-events: none;
+}
+
+.banned-screen__inner {
+  position: relative;
+  max-width: 420px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.banned-screen__icon-wrap {
+  align-self: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(
+    145deg,
+    rgba(220, 38, 38, 0.25) 0%,
+    rgba(0, 0, 0, 0.35) 100%
+  );
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.banned-screen__icon {
+  color: #f87171;
+}
+
+.banned-screen__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-align: center;
+}
+
+.banned-screen__lead {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--muted);
+}
+
+.banned-screen__reason {
+  border-color: rgba(248, 113, 113, 0.25);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.banned-screen__reason-label {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f87171;
+}
+
+.banned-screen__reason-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.banned-screen__pending {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.banned-screen__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 18px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.banned-screen__foot {
+  margin: 0;
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.45;
+}
+
+.banned-screen__refresh {
+  align-self: center;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.banned-screen__modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.banned-screen__modal {
+  width: 100%;
+  max-width: 420px;
+  max-height: min(85vh, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: env(safe-area-inset-bottom, 0);
+  animation: banned-modal-in 0.2s ease-out;
+}
+
+@keyframes banned-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.banned-screen__modal-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.banned-screen__modal-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.banned-screen__textarea {
+  width: 100%;
+  min-height: 140px;
+  font-size: 14px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.banned-screen__modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 /* FAQ */
 .faq-section__head {
   display: flex;

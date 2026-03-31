@@ -341,17 +341,41 @@ button:disabled {
   margin: 6px 0 0;
 }
 
-.admin-checkbox-row {
+.admin-field-full {
+  width: 100%;
+}
+
+.admin-field-label {
+  display: block;
+  font-size: 12px;
+  color: #9aa0a6;
+  margin-bottom: 8px;
+}
+
+label.admin-checkbox-row {
   display: flex;
-  gap: 10px;
+  flex-direction: row;
   align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  width: 100%;
   font-weight: 400;
   cursor: pointer;
 }
 
-.admin-checkbox-row input {
+label.admin-checkbox-row input[type="checkbox"] {
+  width: auto;
+  min-width: 18px;
   margin-top: 3px;
   flex-shrink: 0;
+}
+
+.admin-checkbox-row__text {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #e8eaed;
 }
 
 .admin-detail-block {
@@ -368,4 +392,39 @@ button:disabled {
 
 .admin-table-nowrap {
   white-space: nowrap;
+}
+
+.admin-appeals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-appeal-card {
+  list-style: none;
+}
+
+.admin-appeal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin-bottom: 6px;
+}
+
+.admin-appeal-date {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.admin-appeal-msg {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.admin-appeal-note {
+  margin: 0;
+  font-size: 13px;
 }

@@ -28,6 +28,10 @@ import {
   updateTaskAdmin,
 } from "../services/adminTasks.js";
 import { signAdminToken, verifyAdminToken } from "../lib/adminJwt.js";
+import {
+  listBanAppealsAdmin,
+  markBanAppealReviewed,
+} from "../services/banAppeals.js";
 
 function parseBearer(req: { headers: { authorization?: string } }): string | null {
   const h = req.headers.authorization;
@@ -602,6 +606,36 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (!ok) {
       return reply.status(404).send({
         error: { code: "not_found", message: "Задание не найдено" },
+      });
+    }
+    return { ok: true };
+  });
+
+  app.get("/api/admin/ban-appeals", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    return { appeals: await listBanAppealsAdmin() };
+  });
+
+  const patchAppealBody = z.object({
+    adminNote: z.string().max(1000).nullable().optional(),
+  });
+
+  app.patch("/api/admin/ban-appeals/:id", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const parsed = patchAppealBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const ok = await markBanAppealReviewed(id, parsed.data.adminNote ?? null);
+    if (!ok) {
+      return reply.status(404).send({
+        error: {
+          code: "not_found",
+          message: "Апелляция не найдена или уже обработана",
+        },
       });
     }
     return { ok: true };

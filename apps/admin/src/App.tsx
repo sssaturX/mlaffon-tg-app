@@ -112,6 +112,19 @@ type AdminDropStatus = {
   } | null;
 };
 
+type BanAppealRow = {
+  id: string;
+  userId: string;
+  telegramId: string;
+  username: string | null;
+  firstName: string | null;
+  message: string;
+  status: string;
+  adminNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+};
+
 type AdminTaskRow = {
   id: string;
   title: string;
@@ -168,8 +181,9 @@ export function App() {
   const [promoCreditPlatform, setPromoCreditPlatform] = useState<"split" | "twitch" | "kick">("split");
 
   const [tab, setTab] = useState<
-    "giveaways" | "promos" | "users" | "drops" | "tasks"
+    "giveaways" | "promos" | "users" | "drops" | "tasks" | "appeals"
   >("giveaways");
+  const [banAppeals, setBanAppeals] = useState<BanAppealRow[] | null>(null);
   const [adminUsers, setAdminUsers] = useState<AdminUserRow[] | null>(null);
   const [usersTotal, setUsersTotal] = useState(0);
   const [usersOffset, setUsersOffset] = useState(0);
@@ -352,6 +366,26 @@ export function App() {
     if (token && tab === "tasks") void loadAdminTasks();
   }, [token, tab, loadAdminTasks]);
 
+  const loadBanAppeals = useCallback(async () => {
+    if (!token) return;
+    setErr(null);
+    const r = await fetch(`${apiBase()}/api/admin/ban-appeals`, { headers: authHeaders() });
+    const j = (await r.json()) as {
+      appeals?: BanAppealRow[];
+      error?: { message?: string };
+    };
+    if (!r.ok) {
+      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+      if (r.status === 401) setToken(null);
+      return;
+    }
+    setBanAppeals(j.appeals ?? []);
+  }, [token, authHeaders]);
+
+  useEffect(() => {
+    if (token && tab === "appeals") void loadBanAppeals();
+  }, [token, tab, loadBanAppeals]);
+
   useEffect(() => {
     if (taskFormPlatform !== "telegram") return;
     setTaskFormValidation((v) => (v === "api" ? "manual" : v));
@@ -393,6 +427,7 @@ export function App() {
     setStats(null);
     setExpandedId(null);
     setDetail(null);
+    setBanAppeals(null);
   }
 
   async function createGiveaway(e: React.FormEvent) {
@@ -626,6 +661,20 @@ export function App() {
         >
           Пользователи
         </button>
+        <button
+          type="button"
+          className={tab === "appeals" ? "admin-tab admin-tab--active" : "admin-tab"}
+          onClick={() => setTab("appeals")}
+        >
+          Апелляции
+        </button>
+        <button
+          type="button"
+          className={tab === "tasks" ? "admin-tab admin-tab--active" : "admin-tab"}
+          onClick={() => setTab("tasks")}
+        >
+          Задания
+        </button>
       </nav>
 
       <h2>Статистика</h2>
@@ -712,14 +761,18 @@ export function App() {
           <label htmlFor="gimg">Картинка URL (опционально)</label>
           <input id="gimg" type="url" value={gwImage} onChange={(e) => setGwImage(e.target.value)} />
         </div>
-        <div>
+        <div className="admin-field-full">
+          <span className="admin-field-label">Условие участия</span>
           <label className="admin-checkbox-row">
             <input
               type="checkbox"
               checked={gwRequireChannel}
               onChange={(e) => setGwRequireChannel(e.target.checked)}
             />
-            Условие: подписка на Telegram-канал (бот проверяет через getChatMember; бот — админ канала)
+            <span className="admin-checkbox-row__text">
+              Подписка на Telegram-канал (проверка через getChatMember; бот должен быть
+              администратором канала)
+            </span>
           </label>
         </div>
         {gwRequireChannel ? (
@@ -1099,6 +1152,86 @@ export function App() {
                 </button>
               </div>
             </>
+          )}
+        </>
+      ) : null}
+
+      {tab === "appeals" ? (
+        <>
+          <h2 className="admin-mt-0">Апелляции на блокировку</h2>
+          <p className="muted">
+            Тексты от заблокированных пользователей. После проверки отметьте апелляцию как
+            рассмотренную — пользователь увидит статус при следующем обновлении (ожидание снято
+            после пометки).
+          </p>
+          {banAppeals === null ? (
+            <p className="muted">Загрузка…</p>
+          ) : banAppeals.length === 0 ? (
+            <p className="muted">Пока нет апелляций.</p>
+          ) : (
+            <ul className="list admin-appeals-list">
+              {banAppeals.map((a) => (
+                <li key={a.id} className="admin-appeal-card">
+                  <div className="admin-appeal-head">
+                    <strong>
+                      {a.username ? `@${a.username}` : a.firstName || "Без имени"}
+                    </strong>
+                    <span className="muted mono">tg:{a.telegramId}</span>
+                  </div>
+                  <p className="muted admin-appeal-date">
+                    {new Date(a.createdAt).toLocaleString("ru-RU")} · статус: {a.status}
+                  </p>
+                  <p className="admin-appeal-msg">{a.message}</p>
+                  {a.status === "pending" ? (
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={loading}
+                      onClick={async () => {
+                        const note = window.prompt(
+                          "Заметка для себя (необязательно), затем ОК — апелляция помечена как рассмотренная"
+                        );
+                        if (note === null) return;
+                        if (!token) return;
+                        setLoading(true);
+                        setErr(null);
+                        try {
+                          const r = await fetch(
+                            `${apiBase()}/api/admin/ban-appeals/${encodeURIComponent(a.id)}`,
+                            {
+                              method: "PATCH",
+                              headers: authHeaders(true),
+                              body: JSON.stringify({
+                                adminNote: note.trim() ? note.trim() : null,
+                              }),
+                            }
+                          );
+                          const j = (await r.json()) as { error?: { message?: string } };
+                          if (!r.ok) {
+                            setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                            return;
+                          }
+                          await loadBanAppeals();
+                        } catch {
+                          setErr("Сеть недоступна");
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                    >
+                      Пометить рассмотренной
+                    </button>
+                  ) : (
+                    <p className="muted admin-appeal-note">
+                      {a.reviewedAt
+                        ? `Рассмотрено: ${new Date(a.reviewedAt).toLocaleString("ru-RU")}`
+                        : null}
+                      {a.adminNote ? ` · ${a.adminNote}` : ""}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </>
       ) : null}

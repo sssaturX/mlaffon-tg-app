@@ -8,6 +8,7 @@ import {
 } from "../db/schema.js";
 import { computeLevel, computeRewardMultiplier } from "../config.js";
 import { ensureStreamStreakRow } from "./streamStreak.js";
+import { hasPendingBanAppeal } from "./banAppeals.js";
 
 export async function buildMeResponse(userId: string): Promise<{
   id: string;
@@ -46,6 +47,9 @@ export async function buildMeResponse(userId: string): Promise<{
           avatarUrl: string | null;
         };
   };
+  banned: boolean;
+  banReason: string | null;
+  banAppealPending: boolean;
 }> {
   const streamStreak = await ensureStreamStreakRow(userId);
 
@@ -102,6 +106,9 @@ export async function buildMeResponse(userId: string): Promise<{
   const streakKick = streamStreak.kick;
   const streak = Math.max(streakTwitch, streakKick);
 
+  const banned = u.banned === true;
+  const banAppealPending = banned ? await hasPendingBanAppeal(userId) : false;
+
   return {
     id: u.id,
     telegramId: u.telegramId.toString(),
@@ -126,5 +133,8 @@ export async function buildMeResponse(userId: string): Promise<{
       twitch: platformDto("twitch"),
       kick: platformDto("kick"),
     },
+    banned,
+    banReason: u.banReason ?? null,
+    banAppealPending,
   };
 }

@@ -81,6 +81,11 @@ export interface MeResponse {
           avatarUrl: string | null;
         };
   };
+  /** Доступ к приложению закрыт (кроме /me и апелляции). */
+  banned: boolean;
+  banReason: string | null;
+  /** Отправлена апелляция, ожидает рассмотрения. */
+  banAppealPending: boolean;
 }
 
 export interface LeaderboardEntry {
