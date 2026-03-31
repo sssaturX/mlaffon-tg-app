@@ -1,10 +1,11 @@
 import { randomInt } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   giveawayParticipants,
   giveawayWinners,
   giveaways,
+  platformAccounts,
   users,
 } from "../db/schema.js";
 import { applyDebit } from "./economy.js";
@@ -45,6 +46,44 @@ export async function getParticipantCountsForGiveawayIds(
   return map;
 }
 
+export type GiveawayPlatformScope = "twitch" | "kick" | "both";
+
+async function userHasPlatform(
+  userId: string,
+  platform: "twitch" | "kick"
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: platformAccounts.id })
+    .from(platformAccounts)
+    .where(
+      and(
+        eq(platformAccounts.userId, userId),
+        eq(platformAccounts.platform, platform)
+      )
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/** Авто-завершение: розыгрыш с истекшим endsAt без итогов — выбираем победителей или закрываем. */
+export async function finalizeExpiredGiveaways(): Promise<void> {
+  const now = new Date();
+  const expired = await db
+    .select({ id: giveaways.id })
+    .from(giveaways)
+    .where(and(isNull(giveaways.drawnAt), sql`${giveaways.endsAt} <= ${now}`));
+
+  for (const { id } of expired) {
+    const r = await drawGiveawayWinners(id);
+    if (!r.ok && r.code === "no_participants") {
+      await db
+        .update(giveaways)
+        .set({ drawnAt: now, active: false })
+        .where(eq(giveaways.id, id));
+    }
+  }
+}
+
 export type GiveawayPublicDetail = {
   id: string;
   title: string;
@@ -52,6 +91,7 @@ export type GiveawayPublicDetail = {
   description: string | null;
   imageUrl: string | null;
   endsAt: string;
+  platform: GiveawayPlatformScope;
   active: boolean;
   winnerCount: number;
   ticketPriceCoins: number;
@@ -71,6 +111,8 @@ export async function getGiveawayPublicDetail(
   giveawayId: string,
   userId: string | null
 ): Promise<GiveawayPublicDetail | null> {
+  await finalizeExpiredGiveaways();
+
   const [g] = await db
     .select()
     .from(giveaways)
@@ -135,6 +177,7 @@ export async function getGiveawayPublicDetail(
     description: g.description ?? null,
     imageUrl: g.imageUrl,
     endsAt: g.endsAt.toISOString(),
+    platform: (g.platform ?? "both") as GiveawayPlatformScope,
     active: g.active,
     winnerCount: g.winnerCount,
     ticketPriceCoins: g.ticketPriceCoins,
@@ -173,7 +216,9 @@ export async function joinGiveaway(params: {
         | "insufficient_coins"
         | "duplicate_debit"
         | "channel_not_subscribed"
-        | "channel_not_configured";
+        | "channel_not_configured"
+        | "platform_not_connected"
+        | "platform_not_allowed";
     }
 > {
   const { giveawayId, userId, platform } = params;
@@ -188,6 +233,14 @@ export async function joinGiveaway(params: {
   if (g.drawnAt) return { ok: false, code: "already_drawn" };
   const now = new Date();
   if (g.endsAt <= now) return { ok: false, code: "ended" };
+
+  const gp = (g.platform ?? "both") as GiveawayPlatformScope;
+  if (gp === "twitch" && platform !== "twitch")
+    return { ok: false, code: "platform_not_allowed" };
+  if (gp === "kick" && platform !== "kick")
+    return { ok: false, code: "platform_not_allowed" };
+  if (!(await userHasPlatform(userId, platform)))
+    return { ok: false, code: "platform_not_connected" };
 
   if (g.requireChannelSubscription) {
     const ch = g.telegramChannelId?.trim();
@@ -262,8 +315,8 @@ export async function drawGiveawayWinners(giveawayId: string): Promise<
       code:
         | "not_found"
         | "already_drawn"
-        | "not_enough_participants"
-        | "zero_winners";
+        | "zero_winners"
+        | "no_participants";
     }
 > {
   const [g] = await db
@@ -280,10 +333,13 @@ export async function drawGiveawayWinners(giveawayId: string): Promise<
     .select({ userId: giveawayParticipants.userId })
     .from(giveawayParticipants)
     .where(eq(giveawayParticipants.giveawayId, giveawayId));
-  if (parts.length < need)
-    return { ok: false, code: "not_enough_participants" };
 
-  const picked = shuffleUserIds(parts.map((p) => p.userId)).slice(0, need);
+  if (parts.length === 0) {
+    return { ok: false, code: "no_participants" };
+  }
+
+  const pickCount = Math.min(need, parts.length);
+  const picked = shuffleUserIds(parts.map((p) => p.userId)).slice(0, pickCount);
 
   const drawnAt = new Date();
   await db.transaction(async (tx) => {
@@ -334,6 +390,7 @@ export type GiveawayListItem = {
   prizeText: string;
   imageUrl: string | null;
   endsAt: string;
+  platform: GiveawayPlatformScope;
   winnerCount: number;
   ticketPriceCoins: number;
   participantCount: number;
@@ -343,6 +400,8 @@ export type GiveawayListItem = {
 };
 
 export async function listGiveawaysPublic(): Promise<GiveawayListItem[]> {
+  await finalizeExpiredGiveaways();
+
   const rows = await db
     .select()
     .from(giveaways)
@@ -363,6 +422,7 @@ export async function listGiveawaysPublic(): Promise<GiveawayListItem[]> {
       prizeText: g.prizeText,
       imageUrl: g.imageUrl,
       endsAt: g.endsAt.toISOString(),
+      platform: (g.platform ?? "both") as GiveawayPlatformScope,
       winnerCount: g.winnerCount,
       ticketPriceCoins: g.ticketPriceCoins,
       participantCount: counts.get(g.id) ?? 0,

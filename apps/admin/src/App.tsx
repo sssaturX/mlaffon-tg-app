@@ -29,6 +29,7 @@ type GiveawayRow = {
   description: string | null;
   imageUrl: string | null;
   endsAt: string;
+  platform: string;
   active: boolean;
   sortOrder: number;
   winnerCount: number;
@@ -42,6 +43,7 @@ type GiveawayRow = {
 
 type PromoRow = {
   id: string;
+  displayName: string | null;
   code: string;
   rewardCoins: number;
   creditPlatform: string;
@@ -102,6 +104,7 @@ type AdminDropStatus = {
   active: boolean;
   drop: {
     id: string;
+    platform: string;
     code: string;
     rewardMin: number;
     rewardMax: number;
@@ -169,6 +172,7 @@ export function App() {
   const [gwRequireChannel, setGwRequireChannel] = useState(false);
   const [gwTelegramChannelId, setGwTelegramChannelId] = useState("");
   const [gwChannelInviteUrl, setGwChannelInviteUrl] = useState("");
+  const [gwPlatform, setGwPlatform] = useState<"twitch" | "kick" | "both">("both");
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<GiveawayDetailResponse | null>(null);
@@ -176,6 +180,7 @@ export function App() {
   const [drawLoadingId, setDrawLoadingId] = useState<string | null>(null);
 
   const [promoCode, setPromoCode] = useState("");
+  const [promoDisplayName, setPromoDisplayName] = useState("");
   const [promoReward, setPromoReward] = useState(100);
   const [promoMaxUses, setPromoMaxUses] = useState(100);
   const [promoCreditPlatform, setPromoCreditPlatform] = useState<"split" | "twitch" | "kick">("split");
@@ -193,8 +198,11 @@ export function App() {
   const [dropCode, setDropCode] = useState("4821");
   const [dropDurationSec, setDropDurationSec] = useState(120);
   const [dropMaxWinners, setDropMaxWinners] = useState(100);
-  const [dropRewardMin, setDropRewardMin] = useState(10);
+  const [dropRewardMin, setDropRewardMin] = useState(0);
   const [dropRewardMax, setDropRewardMax] = useState(100);
+  const [dropPlatform, setDropPlatform] = useState<"twitch" | "kick" | "both">(
+    "both"
+  );
 
   type AdminLiveBroadcast =
     | { active: false }
@@ -483,6 +491,7 @@ export function App() {
         active: true,
         winnerCount: gwWinnerCount,
         ticketPriceCoins: gwTicketPrice,
+        platform: gwPlatform,
       };
       if (gwImage.trim()) body.imageUrl = gwImage.trim();
       if (gwDescription.trim()) body.description = gwDescription.trim();
@@ -585,6 +594,7 @@ export function App() {
         method: "POST",
         headers: authHeaders(true),
         body: JSON.stringify({
+          displayName: promoDisplayName.trim() || null,
           code: promoCode.trim(),
           rewardCoins: promoReward,
           maxUses: promoMaxUses,
@@ -598,6 +608,7 @@ export function App() {
         return;
       }
       setPromoCode("");
+      setPromoDisplayName("");
       await loadPromos();
     } catch {
       setErr("Сеть недоступна");
@@ -758,6 +769,23 @@ export function App() {
         <div>
           <label htmlFor="gprize">Кратко о призах (строка)</label>
           <input id="gprize" value={gwPrize} onChange={(e) => setGwPrize(e.target.value)} required />
+        </div>
+        <div>
+          <label htmlFor="gplat">Платформа</label>
+          <select
+            id="gplat"
+            value={gwPlatform}
+            onChange={(e) =>
+              setGwPlatform(e.target.value as "twitch" | "kick" | "both")
+            }
+          >
+            <option value="both">Twitch + Kick (обе)</option>
+            <option value="twitch">Только Twitch</option>
+            <option value="kick">Только Kick</option>
+          </select>
+          <p className="muted admin-m-0" style={{ fontSize: 12, marginTop: 6 }}>
+            Участник должен иметь OAuth выбранной платформы в профиле.
+          </p>
         </div>
         <div>
           <label htmlFor="gdesc">Описание / правила (необязательно)</label>
@@ -976,7 +1004,17 @@ export function App() {
           </select>
         </div>
         <div>
-          <label htmlFor="pcode">Код (латиница/цифры)</label>
+          <label htmlFor="pname">Название (необязательно, можно дублировать)</label>
+          <input
+            id="pname"
+            value={promoDisplayName}
+            onChange={(e) => setPromoDisplayName(e.target.value)}
+            placeholder="Летняя акция"
+            autoComplete="off"
+          />
+        </div>
+        <div>
+          <label htmlFor="pcode">Код (уникален)</label>
           <input
             id="pcode"
             value={promoCode}
@@ -992,7 +1030,7 @@ export function App() {
             <input
               id="preward"
               type="number"
-              min={1}
+              min={0}
               value={promoReward}
               onChange={(e) => setPromoReward(Number(e.target.value))}
               required
@@ -1023,6 +1061,9 @@ export function App() {
         <ul className="list">
           {promos.map((p) => (
             <li key={p.id}>
+              {p.displayName ? (
+                <span className="muted">{p.displayName} · </span>
+              ) : null}
               <strong>{p.code}</strong> — {p.rewardCoins} мон. ·{" "}
               {(p.creditPlatform ?? "split") === "twitch"
                 ? "Twitch"
@@ -1385,7 +1426,12 @@ export function App() {
             }}
           >
             <div>
-              <label htmlFor="tid">ID (латиница, без пробелов)</label>
+              <label
+                htmlFor="tid"
+                title="Внутренний стабильный идентификатор задания в БД; после создания не меняется."
+              >
+                ID (латиница, без пробелов)
+              </label>
               <input
                 id="tid"
                 value={taskFormId}
@@ -1405,7 +1451,12 @@ export function App() {
               />
             </div>
             <div>
-              <label htmlFor="tdesc">Описание</label>
+              <label
+                htmlFor="tdesc"
+                title="Текст для пользователя: правила и что сделать для получения награды."
+              >
+                Описание
+              </label>
               <textarea
                 id="tdesc"
                 value={taskFormDescription}
@@ -1427,7 +1478,12 @@ export function App() {
                 />
               </div>
               <div>
-                <label htmlFor="tplat">Платформа</label>
+                <label
+                  htmlFor="tplat"
+                  title="Для какой платформы показывается задание: Twitch, Kick, общее или Telegram."
+                >
+                  Платформа
+                </label>
                 <select
                   id="tplat"
                   value={taskFormPlatform}
@@ -1446,7 +1502,12 @@ export function App() {
             </div>
             <div className="row">
               <div>
-                <label htmlFor="ttype">Тип</label>
+                <label
+                  htmlFor="ttype"
+                  title="daily — можно выполнять каждый день; one-time — один раз."
+                >
+                  Тип
+                </label>
                 <select
                   id="ttype"
                   value={taskFormType}
@@ -1457,7 +1518,12 @@ export function App() {
                 </select>
               </div>
               <div>
-                <label htmlFor="tval">Проверка</label>
+                <label
+                  htmlFor="tval"
+                  title="manual — подтверждение админом/синхронно; api — проверка через Helix/Kick и очередь."
+                >
+                  Проверка
+                </label>
                 <select
                   id="tval"
                   value={taskFormValidation}
@@ -1470,7 +1536,12 @@ export function App() {
               </div>
             </div>
             <div>
-              <label htmlFor="turl">Ссылка для кнопки (meta.actionUrl)</label>
+              <label
+                htmlFor="turl"
+                title="URL, куда ведёт кнопка «Подписаться» / действие в мини-приложении."
+              >
+                Ссылка для кнопки (meta.actionUrl)
+              </label>
               <input
                 id="turl"
                 type="url"
@@ -1704,8 +1775,10 @@ export function App() {
         <>
           <h2 className="admin-mt-0">Стрим-дропы</h2>
           <p className="muted">
-            Код вводят в приложении в модалке. Награда случайная в диапазоне (50/50 Twitch/Kick). Лимит
-            попыток и пауза между вводами отключены — можно сразу вводить снова.
+            Код вводят в модалке. Награда случайная в диапазоне. Платформа{" "}
+            <strong>both</strong> — split 50/50 (нужны OAuth Twitch и Kick);{" "}
+            <strong>twitch/kick</strong> — весь бонус на счёт платформы. Дроп
+            завершается по таймеру сам.
           </p>
           {dropStatus === null ? (
             <p className="muted">Загрузка…</p>
@@ -1715,7 +1788,8 @@ export function App() {
                 <strong>Статус:</strong>{" "}
                 {dropStatus.active && dropStatus.drop ? (
                   <>
-                    активен · код <code>{dropStatus.drop.code}</code> · победителей{" "}
+                    активен · {dropStatus.drop.platform} · код{" "}
+                    <code>{dropStatus.drop.code}</code> · победителей{" "}
                     {dropStatus.drop.winnersCount} / {dropStatus.drop.maxWinners} · до{" "}
                     {new Date(dropStatus.drop.endsAt).toLocaleString("ru-RU")}
                   </>
@@ -1742,6 +1816,7 @@ export function App() {
                     maxWinners: dropMaxWinners,
                     rewardMin: dropRewardMin,
                     rewardMax: dropRewardMax,
+                    platform: dropPlatform,
                   }),
                 });
                 const j = (await r.json()) as { ok?: boolean; error?: { message?: string } };
@@ -1767,13 +1842,27 @@ export function App() {
                 required
               />
             </div>
+            <div>
+              <label htmlFor="dplat">Платформа</label>
+              <select
+                id="dplat"
+                value={dropPlatform}
+                onChange={(e) =>
+                  setDropPlatform(e.target.value as "twitch" | "kick" | "both")
+                }
+              >
+                <option value="both">Both (split, нужны оба OAuth)</option>
+                <option value="twitch">Twitch</option>
+                <option value="kick">Kick</option>
+              </select>
+            </div>
             <div className="row">
               <div>
                 <label htmlFor="ddur">Длительность (сек)</label>
                 <input
                   id="ddur"
                   type="number"
-                  min={30}
+                  min={5}
                   max={86400}
                   value={dropDurationSec}
                   onChange={(e) => setDropDurationSec(Number(e.target.value))}
@@ -1798,7 +1887,7 @@ export function App() {
                 <input
                   id="dmin"
                   type="number"
-                  min={1}
+                  min={0}
                   value={dropRewardMin}
                   onChange={(e) => setDropRewardMin(Number(e.target.value))}
                   required
@@ -1809,7 +1898,7 @@ export function App() {
                 <input
                   id="dmaxr"
                   type="number"
-                  min={1}
+                  min={0}
                   value={dropRewardMax}
                   onChange={(e) => setDropRewardMax(Number(e.target.value))}
                   required
@@ -1820,34 +1909,6 @@ export function App() {
               Запустить дроп
             </button>
           </form>
-          <button
-            type="button"
-            className="secondary admin-btn-mt"
-            disabled={loading}
-            onClick={async () => {
-              if (!token) return;
-              setLoading(true);
-              setErr(null);
-              try {
-                const r = await fetch(`${apiBase()}/api/admin/drops/stop`, {
-                  method: "POST",
-                  headers: authHeaders(),
-                });
-                const j = (await r.json()) as { error?: { message?: string } };
-                if (!r.ok) {
-                  setErr(j.error?.message ?? `Ошибка ${r.status}`);
-                  return;
-                }
-                await loadDropStatus();
-              } catch {
-                setErr("Сеть недоступна");
-              } finally {
-                setLoading(false);
-              }
-            }}
-          >
-            Остановить дроп
-          </button>
         </>
       ) : null}
 

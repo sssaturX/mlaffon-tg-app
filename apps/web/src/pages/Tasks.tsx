@@ -118,12 +118,14 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
           </p>
         </div>
       ) : (
-        <div className="stack task-stack">
-          {tasks.map((t) => (
+        <div className="stack task-stack task-stack-grid">
+          {tasks.map((t) => {
+            const done = t.userStatus === "completed";
+            return (
             <button
               key={t.id}
               type="button"
-              className={`task-card task-card--interactive fade-in-soft ${t.validationType === "api" ? "task-card--border" : ""}`}
+              className={`task-card task-card--interactive fade-in-soft ${t.validationType === "api" ? "task-card--border" : ""} ${done ? "task-card--done" : ""}`}
               onClick={() => {
                 setModalMsg(null);
                 setSelected(t);
@@ -140,6 +142,9 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
                   {t.validationType === "api" ? (
                     <span className="pill pill--accent">API</span>
                   ) : null}
+                  {done ? (
+                    <span className="pill pill--accent">Выполнено</span>
+                  ) : null}
                 </div>
                 <div className="task-card__reward">
                   <Coins size={18} strokeWidth={2.2} aria-hidden />
@@ -147,17 +152,17 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
                 </div>
               </div>
               <p className="task-card__title">{t.title}</p>
-              <p className="task-card__desc">{t.description}</p>
+              <p className="task-card__desc task-card__desc--compact">{t.description}</p>
               {t.lastError ? (
                 <p className="err task-card__err">{t.lastError}</p>
               ) : null}
-              <p className="muted task-card__status">Статус: {t.userStatus}</p>
               <div className="task-card__row-open">
                 <span>Подробнее</span>
                 <ChevronRight size={18} className="muted" aria-hidden />
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
 

@@ -22,6 +22,7 @@ type GiveawayDetail = {
   description: string | null;
   imageUrl: string | null;
   endsAt: string;
+  platform: "twitch" | "kick" | "both";
   active: boolean;
   winnerCount: number;
   ticketPriceCoins: number;
@@ -152,10 +153,15 @@ export default function GiveawayPage({
   const structurallyCanJoin =
     g.active && !g.drawnAt && !ended && !g.isParticipant;
 
+  const platformMismatch =
+    (g.platform === "twitch" && activePlatform !== "twitch") ||
+    (g.platform === "kick" && activePlatform !== "kick");
+
   const joinDisabled =
     joining ||
     !structurallyCanJoin ||
     !channelOk ||
+    platformMismatch ||
     (g.ticketPriceCoins > 0 &&
       (activePlatform === "twitch"
         ? me.platforms.twitch.status !== "connected"
@@ -201,6 +207,16 @@ export default function GiveawayPage({
       {g.description ? (
         <div className="card giveaway-detail__desc">
           <p className="giveaway-detail__desc-text">{g.description}</p>
+        </div>
+      ) : null}
+
+      {platformMismatch && structurallyCanJoin ? (
+        <div className="card giveaway-detail__hint" style={{ borderColor: "var(--danger)" }}>
+          <p className="muted m-0" style={{ fontSize: 14 }}>
+            Переключите платформу в шапке на{" "}
+            <strong>{g.platform === "twitch" ? "Twitch" : "Kick"}</strong> — для
+            этого розыгрыша участие только с этой платформы.
+          </p>
         </div>
       ) : null}
 

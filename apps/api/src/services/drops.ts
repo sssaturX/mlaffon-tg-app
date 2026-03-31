@@ -1,8 +1,8 @@
 import { randomInt } from "node:crypto";
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { dropUserStates, drops } from "../db/schema.js";
-import { applyCreditSplit } from "./economy.js";
+import { dropUserStates, drops, platformAccounts } from "../db/schema.js";
+import { applyCredit, applyCreditSplit } from "./economy.js";
 
 function normalizeCode(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, 8);
@@ -13,11 +13,36 @@ function randomReward(min: number, max: number): number {
   return randomInt(min, max + 1);
 }
 
+export type DropPlatformScope = "twitch" | "kick" | "both";
+
+async function userConnectedPlatforms(
+  userId: string
+): Promise<{ twitch: boolean; kick: boolean }> {
+  const rows = await db
+    .select({ platform: platformAccounts.platform })
+    .from(platformAccounts)
+    .where(eq(platformAccounts.userId, userId));
+  const s = new Set(rows.map((r) => r.platform));
+  return { twitch: s.has("twitch"), kick: s.has("kick") };
+}
+
+function canParticipateDrop(
+  dropPlatform: string,
+  u: { twitch: boolean; kick: boolean }
+): boolean {
+  if (dropPlatform === "twitch") return u.twitch;
+  if (dropPlatform === "kick") return u.kick;
+  return u.twitch && u.kick;
+}
+
 export type ActiveDropPublic = {
   hasActiveDrop: true;
   dropId: string;
   endsAt: string;
+  /** ISO — для синхронизации таймера с клиентом */
+  serverNow: string;
   remainingSeconds: number;
+  platform: DropPlatformScope;
   maxWinners: number;
   winnersCount: number;
   won: boolean;
@@ -39,6 +64,10 @@ export async function getActiveDropSnapshot(
 
   if (!d) return { hasActiveDrop: false };
 
+  const platforms = await userConnectedPlatforms(userId);
+  const dp = (d.platform ?? "both") as DropPlatformScope;
+  if (!canParticipateDrop(dp, platforms)) return { hasActiveDrop: false };
+
   const remainingMs = Math.max(0, d.endsAt.getTime() - now.getTime());
   const remainingSeconds = Math.floor(remainingMs / 1000);
 
@@ -57,7 +86,9 @@ export async function getActiveDropSnapshot(
     hasActiveDrop: true,
     dropId: d.id,
     endsAt: d.endsAt.toISOString(),
+    serverNow: now.toISOString(),
     remainingSeconds,
+    platform: dp,
     maxWinners: d.maxWinners,
     winnersCount: d.winnersCount,
     won,
@@ -75,7 +106,8 @@ export type AttemptResult =
         | "wrong_code"
         | "already_won"
         | "pool_full"
-        | "duplicate";
+        | "duplicate"
+        | "not_eligible";
     };
 
 export async function attemptDropCode(
@@ -91,6 +123,10 @@ export async function attemptDropCode(
     .limit(1);
 
   if (!d) return { ok: false, code: "drop_ended" };
+
+  const platforms = await userConnectedPlatforms(userId);
+  const dp = (d.platform ?? "both") as DropPlatformScope;
+  if (!canParticipateDrop(dp, platforms)) return { ok: false, code: "not_eligible" };
 
   const input = normalizeCode(rawCode);
   const expected = normalizeCode(d.code);
@@ -126,40 +162,81 @@ export async function attemptDropCode(
 
   const reward = randomReward(d.rewardMin, d.rewardMax);
   const idem = `drop:${d.id}:${userId}`;
-  const credit = await applyCreditSplit({
-    userId,
-    amount: reward,
-    idempotencyKey: idem,
-    kind: "drop_reward",
-    referenceType: "drop",
-    referenceId: String(d.id),
-  });
 
-  if (!credit.ok) {
-    await db
-      .update(drops)
-      .set({ winnersCount: sql`${drops.winnersCount} - 1` })
-      .where(eq(drops.id, d.id));
-    if (credit.reason === "duplicate") {
-      const [st] = await db
-        .select()
-        .from(dropUserStates)
-        .where(
-          and(
-            eq(dropUserStates.dropId, d.id),
-            eq(dropUserStates.userId, userId)
-          )
-        )
-        .limit(1);
-      if (st?.won && st.rewardCoins != null) {
-        return { ok: true, reward: st.rewardCoins };
+  let paid = 0;
+
+  if (reward > 0) {
+    if (dp === "both") {
+      const credit = await applyCreditSplit({
+        userId,
+        amount: reward,
+        idempotencyKey: idem,
+        kind: "drop_reward",
+        referenceType: "drop",
+        referenceId: String(d.id),
+      });
+
+      if (!credit.ok) {
+        await db
+          .update(drops)
+          .set({ winnersCount: sql`${drops.winnersCount} - 1` })
+          .where(eq(drops.id, d.id));
+        if (credit.reason === "duplicate") {
+          const [st] = await db
+            .select()
+            .from(dropUserStates)
+            .where(
+              and(
+                eq(dropUserStates.dropId, d.id),
+                eq(dropUserStates.userId, userId)
+              )
+            )
+            .limit(1);
+          if (st?.won && st.rewardCoins != null) {
+            return { ok: true, reward: st.rewardCoins };
+          }
+          return { ok: false, code: "duplicate" };
+        }
+        return { ok: false, code: "wrong_code" };
       }
-      return { ok: false, code: "duplicate" };
-    }
-    return { ok: false, code: "wrong_code" };
-  }
+      paid = credit.creditedAmount;
+    } else {
+      const credit = await applyCredit({
+        userId,
+        amount: reward,
+        idempotencyKey: idem,
+        kind: "drop_reward",
+        platform: dp,
+        referenceType: "drop",
+        referenceId: String(d.id),
+      });
 
-  const paid = credit.creditedAmount;
+      if (!credit.ok) {
+        await db
+          .update(drops)
+          .set({ winnersCount: sql`${drops.winnersCount} - 1` })
+          .where(eq(drops.id, d.id));
+        if (credit.reason === "duplicate") {
+          const [st] = await db
+            .select()
+            .from(dropUserStates)
+            .where(
+              and(
+                eq(dropUserStates.dropId, d.id),
+                eq(dropUserStates.userId, userId)
+              )
+            )
+            .limit(1);
+          if (st?.won && st.rewardCoins != null) {
+            return { ok: true, reward: st.rewardCoins };
+          }
+          return { ok: false, code: "duplicate" };
+        }
+        return { ok: false, code: "wrong_code" };
+      }
+      paid = credit.creditedAmount;
+    }
+  }
 
   if (existing) {
     await db
@@ -190,6 +267,7 @@ export async function startDrop(params: {
   maxWinners: number;
   rewardMin: number;
   rewardMax: number;
+  platform: DropPlatformScope;
 }): Promise<{ id: string }> {
   const code = normalizeCode(params.code);
   if (code.length < 4) throw new Error("code_invalid");
@@ -205,6 +283,7 @@ export async function startDrop(params: {
   const [ins] = await db
     .insert(drops)
     .values({
+      platform: params.platform,
       code,
       rewardMin: min,
       rewardMax: max,
@@ -219,14 +298,11 @@ export async function startDrop(params: {
   return { id: ins!.id };
 }
 
-export async function stopActiveDrops(): Promise<void> {
-  await db.update(drops).set({ active: false }).where(eq(drops.active, true));
-}
-
 export async function getAdminDropStatus(): Promise<{
   active: boolean;
   drop: {
     id: string;
+    platform: string;
     code: string;
     rewardMin: number;
     rewardMax: number;
@@ -250,6 +326,7 @@ export async function getAdminDropStatus(): Promise<{
     active: true,
     drop: {
       id: d.id,
+      platform: d.platform ?? "both",
       code: d.code,
       rewardMin: d.rewardMin,
       rewardMax: d.rewardMax,

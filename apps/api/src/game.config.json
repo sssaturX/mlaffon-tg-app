@@ -34,6 +34,12 @@
     "maxPerWindow": 120,
     "timeWindowMs": 60000
   },
+  "routeRateLimits": {
+    "dropsAttempt": { "max": 20, "timeWindowMs": 60000 },
+    "promoApply": { "max": 15, "timeWindowMs": 60000 },
+    "giveawayJoin": { "max": 30, "timeWindowMs": 60000 },
+    "fortuneSpin": { "max": 25, "timeWindowMs": 60000 }
+  },
   "boost": {
     "maxMultiplier": 2,
     "inventoryItemId": "boost_x2"

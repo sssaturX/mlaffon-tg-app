@@ -228,6 +228,8 @@ export const giveaways = pgTable("giveaways", {
   id: uuid("id").defaultRandom().primaryKey(),
   title: text("title").notNull(),
   prizeText: text("prize_text").notNull(),
+  /** twitch | kick | both — для каких платформ доступен розыгрыш */
+  platform: text("platform").notNull().default("both"),
   /** Полное описание правил / призов (текст для карточки). */
   description: text("description"),
   imageUrl: text("image_url"),
@@ -299,6 +301,8 @@ export const promoCodes = pgTable(
   "promo_codes",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    /** Неуникальное имя для админки; уникален только code */
+    displayName: text("display_name"),
     code: text("code").notNull().unique(),
     rewardCoins: integer("reward_coins").notNull(),
     /** split — 50/50 Twitch/Kick; twitch / kick — весь бонус на счёт платформы. */
@@ -334,6 +338,8 @@ export const drops = pgTable(
   "drops",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    /** twitch | kick | both — награда на счёт платформы (both = split 50/50, нужны обе привязки). */
+    platform: text("platform").notNull().default("both"),
     /** Код со стрима (обычно 4 цифры). */
     code: text("code").notNull(),
     rewardMin: integer("reward_min").notNull(),

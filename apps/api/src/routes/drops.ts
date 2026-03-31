@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authUser } from "../plugins/auth.js";
+import { gameConfig } from "../config.js";
 import { attemptDropCode, getActiveDropSnapshot } from "../services/drops.js";
 
 export async function registerDropRoutes(app: FastifyInstance) {
@@ -14,7 +15,17 @@ export async function registerDropRoutes(app: FastifyInstance) {
     code: z.string().min(1),
   });
 
-  app.post("/api/v1/drops/attempt", async (req, reply) => {
+  app.post(
+    "/api/v1/drops/attempt",
+    {
+      config: {
+        rateLimit: {
+          max: gameConfig.routeRateLimits.dropsAttempt.max,
+          timeWindow: gameConfig.routeRateLimits.dropsAttempt.timeWindowMs,
+        },
+      },
+    },
+    async (req, reply) => {
     const userId = authUser(req, reply);
     if (!userId) return;
     const parsed = attemptBody.safeParse(req.body ?? {});
@@ -34,6 +45,7 @@ export async function registerDropRoutes(app: FastifyInstance) {
       already_won: 409,
       pool_full: 409,
       duplicate: 409,
+      not_eligible: 403,
     };
     const messages: Record<string, string> = {
       not_found: "Дроп не найден",
@@ -42,11 +54,13 @@ export async function registerDropRoutes(app: FastifyInstance) {
       already_won: "Награда уже получена",
       pool_full: "Лимит победителей исчерпан",
       duplicate: "Повторный запрос",
+      not_eligible: "Подключите нужную платформу (Twitch/Kick) в профиле",
     };
     return reply.status(status[r.code] ?? 400).send({
       ok: false,
       error: r.code,
       message: messages[r.code] ?? r.code,
     });
-  });
+  }
+  );
 }

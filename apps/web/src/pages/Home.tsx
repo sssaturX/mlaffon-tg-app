@@ -4,7 +4,6 @@ import {
   Flame,
   Gift,
   HelpCircle,
-  Users,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom/client";
@@ -314,15 +313,6 @@ export default function Home({
 
       {pub && (
         <div className="home-stats home-stats--public">
-          <div className="stat-tile">
-            <div className="stat-tile__label">
-              <Users size={16} strokeWidth={2} aria-hidden />
-              Пользователей
-            </div>
-            <div className="stat-tile__value stat-tile__value--accent">
-              {pub.stats.usersCount.toLocaleString("ru-RU")}
-            </div>
-          </div>
           <div className="stat-tile">
             <div className="stat-tile__label">
               <Coins size={16} strokeWidth={2} aria-hidden />

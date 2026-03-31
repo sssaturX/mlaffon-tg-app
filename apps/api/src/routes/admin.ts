@@ -16,11 +16,7 @@ import {
   getParticipantCountsForGiveawayIds,
   listGiveawayParticipantsWithUsernames,
 } from "../services/giveaways.js";
-import {
-  getAdminDropStatus,
-  startDrop,
-  stopActiveDrops,
-} from "../services/drops.js";
+import { getAdminDropStatus, startDrop } from "../services/drops.js";
 import {
   createTaskAdmin,
   listTasksAdmin,
@@ -247,6 +243,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         requireChannelSubscription: g.requireChannelSubscription,
         telegramChannelId: g.telegramChannelId ?? null,
         channelInviteUrl: g.channelInviteUrl ?? null,
+        platform: g.platform ?? "both",
       })),
     };
   });
@@ -258,6 +255,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       description: z.string().optional().nullable(),
       imageUrl: z.string().url().optional().nullable(),
       endsAt: z.string().datetime(),
+      platform: z.enum(["twitch", "kick", "both"]).optional(),
       active: z.boolean().optional(),
       sortOrder: z.number().int().optional(),
       winnerCount: z.number().int().min(1).max(100).optional(),
@@ -300,6 +298,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         description: d.description?.trim() ? d.description.trim() : null,
         imageUrl: d.imageUrl ?? null,
         endsAt: new Date(d.endsAt),
+        platform: d.platform ?? "both",
         active: d.active ?? true,
         sortOrder: d.sortOrder ?? 0,
         winnerCount: d.winnerCount ?? 1,
@@ -339,6 +338,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         requireChannelSubscription: g.requireChannelSubscription,
         telegramChannelId: g.telegramChannelId ?? null,
         channelInviteUrl: g.channelInviteUrl ?? null,
+        platform: g.platform ?? "both",
       },
       participants,
       publicSnapshot: detail,
@@ -365,14 +365,14 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       const status: Record<typeof r.code, number> = {
         not_found: 404,
         already_drawn: 409,
-        not_enough_participants: 400,
         zero_winners: 400,
+        no_participants: 400,
       };
       const messages: Record<typeof r.code, string> = {
         not_found: "Розыгрыш не найден",
         already_drawn: "Победители уже выбраны",
-        not_enough_participants: "Недостаточно участников для выбранного числа победителей",
         zero_winners: "Число победителей должно быть ≥ 1",
+        no_participants: "Нет участников — нечего разыгрывать",
       };
       return reply.status(status[r.code]).send({
         error: { code: r.code, message: messages[r.code] },
@@ -418,6 +418,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     return {
       promos: rows.map((p) => ({
         id: p.id,
+        displayName: p.displayName ?? null,
         code: p.code,
         rewardCoins: p.rewardCoins,
         creditPlatform: p.creditPlatform,
@@ -430,8 +431,9 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   const createPromo = z.object({
+    displayName: z.string().max(200).optional().nullable(),
     code: z.string().min(1),
-    rewardCoins: z.number().int().positive(),
+    rewardCoins: z.number().int().min(0),
     maxUses: z.number().int().min(0),
     active: z.boolean().optional(),
     creditPlatform: z.enum(["split", "twitch", "kick"]).optional(),
@@ -450,6 +452,9 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       const [ins] = await db
         .insert(promoCodes)
         .values({
+          displayName: parsed.data.displayName?.trim()
+            ? parsed.data.displayName.trim()
+            : null,
           code,
           rewardCoins: parsed.data.rewardCoins,
           maxUses: parsed.data.maxUses,
@@ -474,13 +479,19 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     return getAdminDropStatus();
   });
 
-  const startDropBody = z.object({
-    code: z.string().min(4).max(16),
-    durationSeconds: z.number().int().min(30).max(86400),
-    maxWinners: z.number().int().min(1).max(1_000_000),
-    rewardMin: z.number().int().min(1),
-    rewardMax: z.number().int().min(1),
-  });
+  const startDropBody = z
+    .object({
+      code: z.string().min(4).max(16),
+      durationSeconds: z.number().int().min(5).max(86400),
+      maxWinners: z.number().int().min(1).max(1_000_000),
+      rewardMin: z.number().int().min(0),
+      rewardMax: z.number().int().min(0),
+      platform: z.enum(["twitch", "kick", "both"]).optional(),
+    })
+    .refine((d) => d.rewardMax >= d.rewardMin, {
+      message: "rewardMax должен быть ≥ rewardMin",
+      path: ["rewardMax"],
+    });
 
   app.post("/api/admin/drops/start", async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
@@ -491,7 +502,10 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       });
     }
     try {
-      const { id } = await startDrop(parsed.data);
+      const { id } = await startDrop({
+        ...parsed.data,
+        platform: parsed.data.platform ?? "both",
+      });
       return { ok: true, id };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -502,12 +516,6 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       }
       throw e;
     }
-  });
-
-  app.post("/api/admin/drops/stop", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    await stopActiveDrops();
-    return { ok: true };
   });
 
   const taskCreateBody = z

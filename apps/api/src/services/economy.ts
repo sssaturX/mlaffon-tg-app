@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { transactions, userBalances, userInventory } from "../db/schema.js";
 import { gameConfig } from "../config.js";
+import { publishBalanceUpdate } from "./balanceEvents.js";
 
 export type CreditReason =
   | "task_reward"
@@ -177,7 +178,16 @@ export async function applyCredit(params: {
   } = params;
   if (baseAmount <= 0) throw new Error("amount_must_be_positive");
 
-  return await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<
+    | {
+        ok: true;
+        newCoins: number;
+        newTwitchCoins: number;
+        newKickCoins: number;
+        creditedAmount: number;
+      }
+    | { ok: false; reason: "duplicate" }
+  > => {
     const [existing] = await tx
       .select({ id: transactions.id })
       .from(transactions)
@@ -218,6 +228,8 @@ export async function applyCredit(params: {
       creditedAmount: finalAmount,
     };
   });
+  if (result.ok) void publishBalanceUpdate(userId);
+  return result;
 }
 
 /** Награды без привязки к платформе — делим 50/50 между Twitch и Kick. Один заряд буста на всю сумму. */
@@ -253,7 +265,16 @@ export async function applyCreditSplit(params: {
   const keyTw = `${idempotencyKey}:tw`;
   const keyKick = `${idempotencyKey}:kick`;
 
-  return await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<
+    | {
+        ok: true;
+        newCoins: number;
+        newTwitchCoins: number;
+        newKickCoins: number;
+        creditedAmount: number;
+      }
+    | { ok: false; reason: "duplicate" }
+  > => {
     const [dupTw] = await tx
       .select({ id: transactions.id })
       .from(transactions)
@@ -312,6 +333,8 @@ export async function applyCreditSplit(params: {
       creditedAmount: finalAmount,
     };
   });
+  if (result.ok) void publishBalanceUpdate(userId);
+  return result;
 }
 
 export async function applyDebit(params: {
@@ -339,7 +362,10 @@ export async function applyDebit(params: {
   } = params;
   if (amount <= 0) throw new Error("amount_must_be_positive");
 
-  return await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<
+    | { ok: true; newCoins: number; newTwitchCoins: number; newKickCoins: number }
+    | { ok: false; reason: "duplicate" | "insufficient" }
+  > => {
     const [existing] = await tx
       .select({ id: transactions.id })
       .from(transactions)
@@ -390,6 +416,8 @@ export async function applyDebit(params: {
     }
 
     const b = await readBalances(tx, userId);
-    return { ok: true as const, ...b };
+    return { ok: true, ...b };
   });
+  if (result.ok) void publishBalanceUpdate(userId);
+  return result;
 }

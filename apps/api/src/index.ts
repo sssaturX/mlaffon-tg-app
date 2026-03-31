@@ -2,6 +2,7 @@ import "dotenv/config";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
+import websocket from "@fastify/websocket";
 import { z } from "zod";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "./db/index.js";
@@ -38,6 +39,8 @@ import {
   watchLiveBroadcast,
 } from "./services/liveBroadcast.js";
 import { markReferralPercentEligible } from "./services/referralEligibility.js";
+import { handleBalanceWsConnection } from "./services/balanceWs.js";
+import { startBalanceEventSubscriber } from "./services/balanceEvents.js";
 
 const app = Fastify({ logger: true });
 
@@ -49,9 +52,16 @@ await app.register(cors, {
 await app.register(rateLimit, {
   max: gameConfig.rateLimit.maxPerWindow,
   timeWindow: gameConfig.rateLimit.timeWindowMs,
+  allowList: (req) => (req.url.split("?")[0] ?? "") === "/api/v1/ws",
 });
 
+await app.register(websocket);
+
 await registerAuth(app);
+
+app.get("/api/v1/ws", { websocket: true }, (socket, req) => {
+  void handleBalanceWsConnection(socket, req.url);
+});
 await registerOAuthRoutes(app);
 await registerAdminRoutes(app);
 await registerGiveawayRoutes(app);
@@ -65,7 +75,17 @@ const promoBody = z.object({
   code: z.string().min(1),
 });
 
-app.post("/api/v1/promo/apply", async (req, reply) => {
+app.post(
+  "/api/v1/promo/apply",
+  {
+    config: {
+      rateLimit: {
+        max: gameConfig.routeRateLimits.promoApply.max,
+        timeWindow: gameConfig.routeRateLimits.promoApply.timeWindowMs,
+      },
+    },
+  },
+  async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
   const parsed = promoBody.safeParse(req.body ?? {});
@@ -88,7 +108,8 @@ app.post("/api/v1/promo/apply", async (req, reply) => {
     });
   }
   return { ok: true, reward: r.reward };
-});
+  }
+);
 
 const authBody = z.object({
   initData: z.string().min(1),
@@ -458,7 +479,17 @@ const fortuneSpinBody = z.object({
   platform: z.enum(["twitch", "kick"]),
 });
 
-app.post("/api/v1/games/fortune/spin", async (req, reply) => {
+app.post(
+  "/api/v1/games/fortune/spin",
+  {
+    config: {
+      rateLimit: {
+        max: gameConfig.routeRateLimits.fortuneSpin.max,
+        timeWindow: gameConfig.routeRateLimits.fortuneSpin.timeWindowMs,
+      },
+    },
+  },
+  async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
   const parsed = fortuneSpinBody.safeParse(req.body ?? {});
@@ -475,7 +506,8 @@ app.post("/api/v1/games/fortune/spin", async (req, reply) => {
     });
   }
   return res;
-});
+  }
+);
 
 app.get("/api/v1/shop/items", async (req, reply) => {
   const userId = authUser(req, reply);
@@ -519,6 +551,7 @@ const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
 try {
+  await startBalanceEventSubscriber(app.log);
   await app.listen({ port, host });
   app.log.info(`API http://${host}:${port}`);
 } catch (err) {

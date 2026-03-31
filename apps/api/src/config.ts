@@ -41,6 +41,13 @@ export interface GameConfig {
     maxPerWindow: number;
     timeWindowMs: number;
   };
+  /** Ужесточённые лимиты для отдельных сценариев (поверх глобального rate-limit). */
+  routeRateLimits: {
+    dropsAttempt: { max: number; timeWindowMs: number };
+    promoApply: { max: number; timeWindowMs: number };
+    giveawayJoin: { max: number; timeWindowMs: number };
+    fortuneSpin: { max: number; timeWindowMs: number };
+  };
   /** Множитель к наградам при заряде в инвентаре (см. inventoryItemId). Не выше maxMultiplier. */
   boost: {
     maxMultiplier: number;
@@ -86,6 +93,12 @@ const defaultConfig: GameConfig = {
     maxPerWindow: 120,
     timeWindowMs: 60_000,
   },
+  routeRateLimits: {
+    dropsAttempt: { max: 20, timeWindowMs: 60_000 },
+    promoApply: { max: 15, timeWindowMs: 60_000 },
+    giveawayJoin: { max: 30, timeWindowMs: 60_000 },
+    fortuneSpin: { max: 25, timeWindowMs: 60_000 },
+  },
   boost: {
     maxMultiplier: 2,
     inventoryItemId: "boost_x2",
@@ -96,7 +109,15 @@ function loadConfig(): GameConfig {
   try {
     const path = join(__dir, "game.config.json");
     const raw = readFileSync(path, "utf-8");
-    return { ...defaultConfig, ...JSON.parse(raw) } as GameConfig;
+    const parsed = JSON.parse(raw) as Partial<GameConfig>;
+    return {
+      ...defaultConfig,
+      ...parsed,
+      routeRateLimits: {
+        ...defaultConfig.routeRateLimits,
+        ...parsed.routeRateLimits,
+      },
+    };
   } catch {
     return defaultConfig;
   }

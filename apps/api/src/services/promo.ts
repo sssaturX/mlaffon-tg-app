@@ -39,27 +39,31 @@ export async function applyPromoForUser(
   const refId = String(p.id);
   const platform = p.creditPlatform;
 
-  const credit =
-    platform === "twitch" || platform === "kick"
-      ? await applyCredit({
-          userId,
-          amount: p.rewardCoins,
-          idempotencyKey: idem,
-          kind: "promo_code",
-          platform,
-          referenceType: "promo",
-          referenceId: refId,
-        })
-      : await applyCreditSplit({
-          userId,
-          amount: p.rewardCoins,
-          idempotencyKey: idem,
-          kind: "promo_code",
-          referenceType: "promo",
-          referenceId: refId,
-        });
-  if (!credit.ok) {
-    return { ok: false, error: "duplicate" };
+  let credited = 0;
+  if (p.rewardCoins > 0) {
+    const credit =
+      platform === "twitch" || platform === "kick"
+        ? await applyCredit({
+            userId,
+            amount: p.rewardCoins,
+            idempotencyKey: idem,
+            kind: "promo_code",
+            platform,
+            referenceType: "promo",
+            referenceId: refId,
+          })
+        : await applyCreditSplit({
+            userId,
+            amount: p.rewardCoins,
+            idempotencyKey: idem,
+            kind: "promo_code",
+            referenceType: "promo",
+            referenceId: refId,
+          });
+    if (!credit.ok) {
+      return { ok: false, error: "duplicate" };
+    }
+    credited = credit.creditedAmount;
   }
 
   await db.insert(promoRedemptions).values({
@@ -72,5 +76,5 @@ export async function applyPromoForUser(
     .set({ usesCount: sql`${promoCodes.usesCount} + 1` })
     .where(eq(promoCodes.id, p.id));
 
-  return { ok: true, reward: credit.creditedAmount };
+  return { ok: true, reward: credited };
 }

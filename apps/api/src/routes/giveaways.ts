@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authUser } from "../plugins/auth.js";
+import { gameConfig } from "../config.js";
 import {
   getGiveawayPublicDetail,
   joinGiveaway,
@@ -27,7 +28,17 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
     platform: z.enum(["twitch", "kick"]),
   });
 
-  app.post("/api/v1/giveaways/:id/join", async (req, reply) => {
+  app.post(
+    "/api/v1/giveaways/:id/join",
+    {
+      config: {
+        rateLimit: {
+          max: gameConfig.routeRateLimits.giveawayJoin.max,
+          timeWindow: gameConfig.routeRateLimits.giveawayJoin.timeWindowMs,
+        },
+      },
+    },
+    async (req, reply) => {
     const userId = authUser(req, reply);
     if (!userId) return;
     const id = (req.params as { id: string }).id;
@@ -53,6 +64,8 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
         duplicate_debit: 409,
         channel_not_subscribed: 403,
         channel_not_configured: 503,
+        platform_not_connected: 403,
+        platform_not_allowed: 400,
       };
       const messages: Record<typeof r.code, string> = {
         not_found: "Розыгрыш не найден",
@@ -66,11 +79,16 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
           "Нужна подписка на канал: откройте ссылку в карточке розыгрыша и подпишитесь, затем снова нажмите «Участвовать»",
         channel_not_configured:
           "Проверка подписки недоступна (канал или бот не настроены). Обратитесь к администратору.",
+        platform_not_connected:
+          "Подключите выбранную платформу в профиле (OAuth)",
+        platform_not_allowed:
+          "Этот розыгрыш только для другой платформы — переключите платформу в шапке или выберите другой розыгрыш",
       };
       return reply.status(status[r.code]).send({
         error: { code: r.code, message: messages[r.code] },
       });
     }
     return { ok: true, joinedAt: r.joinedAt };
-  });
+  }
+  );
 }

@@ -1,12 +1,8 @@
 import { Gift, X } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import WebApp from "@twa-dev/sdk";
 import { api } from "../api";
+import { useSyncedCountdownMs } from "../hooks/useSyncedCountdown";
 
 const DIGITS = 4;
 
@@ -16,7 +12,10 @@ export type DropSnapshot =
       hasActiveDrop: true;
       dropId: string;
       endsAt: string;
+      /** Серверное время на момент ответа — для синхронизации таймера */
+      serverNow?: string;
       remainingSeconds: number;
+      platform?: "twitch" | "kick" | "both";
       maxWinners: number;
       winnersCount: number;
       won: boolean;
@@ -33,7 +32,9 @@ function playWinSound() {
   try {
     const AC =
       typeof window !== "undefined" &&
-      (window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
+      (window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext);
     if (!AC) return;
     const ctx = new AC();
     const o = ctx.createOscillator();
@@ -66,7 +67,8 @@ function haptic(kind: "light" | "medium" | "heavy" | "error") {
   }
 }
 
-function formatMmSs(total: number): string {
+function formatMmSsFromMs(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
@@ -83,7 +85,6 @@ export function DropOverlay({
   onClose: () => void;
   snapshot: DropSnapshot | null;
   onAfterClaim: () => void | Promise<void>;
-  /** После ошибки ввода — обновить лимиты/кулдаун с сервера */
   onRefreshSnapshot?: () => void | Promise<void>;
 }) {
   const [digits, setDigits] = useState<string[]>(() => Array(DIGITS).fill(""));
@@ -91,27 +92,27 @@ export function DropOverlay({
   const [shake, setShake] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [displayReward, setDisplayReward] = useState(0);
-  const [tick, setTick] = useState(0);
   const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  const submitRef = useRef<() => Promise<void>>(async () => {});
 
-  useEffect(() => {
-    setTick(0);
-  }, [snapshot?.hasActiveDrop ? snapshot?.dropId : null]);
+  const active =
+    open &&
+    Boolean(snapshot?.hasActiveDrop) &&
+    !snapshot.won;
 
-  useEffect(() => {
-    if (!open || !snapshot?.hasActiveDrop) return;
-    const id = window.setInterval(() => setTick((x) => x + 1), 1000);
-    return () => clearInterval(id);
-  }, [open, snapshot]);
+  const endsAt = snapshot?.hasActiveDrop ? snapshot.endsAt : null;
+  const serverNowIso = snapshot?.hasActiveDrop
+    ? snapshot.serverNow ??
+      new Date(
+        Date.now() - snapshot.remainingSeconds * 1000
+      ).toISOString()
+    : null;
 
-  const remaining =
-    snapshot?.hasActiveDrop
-      ? Math.max(0, snapshot.remainingSeconds - tick)
-      : 0;
-
-  const codeFilled = digits.join("").length >= DIGITS;
-  /** Подсветка кнопки после первой введённой цифры — не гаснет после нажатия (нет кулдауна). */
-  const submitGlow = digits.some((d) => d !== "") && !submitting;
+  const remainingMs = useSyncedCountdownMs(endsAt, serverNowIso, active);
+  const timeUp =
+    Boolean(snapshot?.hasActiveDrop) &&
+    !snapshot.won &&
+    remainingMs <= 0;
 
   const resetInput = useCallback(() => {
     setDigits(Array(DIGITS).fill(""));
@@ -129,6 +130,65 @@ export function DropOverlay({
     const t = setTimeout(() => inputsRef.current[0]?.focus(), 350);
     return () => clearTimeout(t);
   }, [open, resetInput]);
+
+  const submit = useCallback(async () => {
+    const code = digits.join("");
+    if (code.length < DIGITS) {
+      setErr("Введите 4 цифры");
+      return;
+    }
+    setSubmitting(true);
+    setErr(null);
+    const r = await api<{ ok: boolean; reward?: number }>("/api/v1/drops/attempt", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+    if (r.ok && r.data.ok && typeof r.data.reward === "number") {
+      haptic("heavy");
+      setDisplayReward(0);
+      setDigits(Array(DIGITS).fill(""));
+      setSubmitting(false);
+      await Promise.resolve(onAfterClaim());
+      return;
+    }
+    setSubmitting(false);
+    const body = !r.ok
+      ? (r.err as { error?: string; message?: string })
+      : null;
+    const codeErr = body?.error;
+    haptic("error");
+    setShake(true);
+    setTimeout(() => setShake(false), 500);
+    setDigits(Array(DIGITS).fill(""));
+    if (codeErr === "wrong_code") {
+      setErr("Неверный код");
+    } else if (codeErr === "pool_full") {
+      setErr("Места закончились");
+    } else if (codeErr === "already_won") {
+      setErr("Уже получено");
+    } else {
+      setErr(body?.message ?? "Ошибка");
+    }
+    queueMicrotask(() => inputsRef.current[0]?.focus());
+    await Promise.resolve(onRefreshSnapshot?.());
+  }, [digits, onAfterClaim, onRefreshSnapshot]);
+
+  submitRef.current = submit;
+
+  useEffect(() => {
+    if (!open || !snapshot?.hasActiveDrop || snapshot.won) return;
+    const code = digits.join("");
+    if (code.length !== DIGITS || submitting) return;
+    const t = window.setTimeout(() => void submitRef.current(), 100);
+    return () => clearTimeout(t);
+  }, [
+    digits,
+    submitting,
+    open,
+    snapshot?.hasActiveDrop,
+    snapshot?.won,
+    snapshot?.dropId,
+  ]);
 
   useEffect(() => {
     if (!open || !snapshot?.hasActiveDrop || !snapshot.won || snapshot.rewardCoins == null) {
@@ -153,70 +213,17 @@ export function DropOverlay({
     return () => cancelAnimationFrame(frame);
   }, [open, snapshot]);
 
-  const setDigit = (i: number, ch: string) => {
-    const d = ch.replace(/\D/g, "").slice(-1);
-    const next = [...digits];
-    next[i] = d;
-    setDigits(next);
-    setErr(null);
-    if (d && i < DIGITS - 1) inputsRef.current[i + 1]?.focus();
-  };
+  useEffect(() => {
+    if (!open || !snapshot?.hasActiveDrop || !snapshot.won) return;
+    const closeT = window.setTimeout(() => onClose(), 900);
+    return () => clearTimeout(closeT);
+  }, [open, onClose, snapshot?.hasActiveDrop, snapshot?.won, snapshot?.dropId]);
 
-  const onKeyDown = (i: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !digits[i] && i > 0) {
-      inputsRef.current[i - 1]?.focus();
-    }
-  };
-
-  const onPaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const t = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, DIGITS);
-    const arr = t.split("");
-    while (arr.length < DIGITS) arr.push("");
-    setDigits(arr.slice(0, DIGITS).map((c) => c || ""));
-    const last = Math.min(t.length, DIGITS) - 1;
-    if (last >= 0) inputsRef.current[last]?.focus();
-  };
-
-  async function submit() {
-    const code = digits.join("");
-    if (code.length < DIGITS) {
-      setErr("Введите 4 цифры");
-      return;
-    }
-    setSubmitting(true);
-    setErr(null);
-    const r = await api<{ ok: boolean; reward?: number }>("/api/v1/drops/attempt", {
-      method: "POST",
-      body: JSON.stringify({ code }),
-    });
-    setSubmitting(false);
-    if (r.ok && r.data.ok && typeof r.data.reward === "number") {
-      haptic("heavy");
-      setDisplayReward(0);
-      await Promise.resolve(onAfterClaim());
-      return;
-    }
-    const body = !r.ok
-      ? (r.err as { error?: string; message?: string })
-      : null;
-    const codeErr = body?.error;
-    haptic("error");
-    setShake(true);
-    setTimeout(() => setShake(false), 500);
-    setDigits(Array(DIGITS).fill(""));
-    if (codeErr === "wrong_code") {
-      setErr("Неверный код");
-    } else if (codeErr === "pool_full") {
-      setErr("Места закончились");
-    } else if (codeErr === "already_won") {
-      setErr("Уже получено");
-    } else {
-      setErr(body?.message ?? "Ошибка");
-    }
-    queueMicrotask(() => inputsRef.current[0]?.focus());
-    await Promise.resolve(onRefreshSnapshot?.());
-  }
+  useEffect(() => {
+    if (!open || !timeUp) return;
+    const closeT = window.setTimeout(() => onClose(), 750);
+    return () => clearTimeout(closeT);
+  }, [open, timeUp, onClose]);
 
   if (!open) return null;
 
@@ -274,11 +281,20 @@ export function DropOverlay({
               Ок
             </button>
           </div>
+        ) : timeUp ? (
+          <div className="drop-overlay__body">
+            <p className="drop-overlay__badge">⏳</p>
+            <h2 className="drop-overlay__title">Время вышло</h2>
+            <p className="drop-overlay__sub">Дроп завершился</p>
+          </div>
         ) : snapshot.won ? (
           <div className="drop-overlay__body">
             <div className="drop-overlay__confetti" aria-hidden>
               {Array.from({ length: 14 }).map((_, i) => (
-                <span key={i} className={`drop-overlay__confetti-bit drop-overlay__confetti-bit--${i % 5}`} />
+                <span
+                  key={i}
+                  className={`drop-overlay__confetti-bit drop-overlay__confetti-bit--${i % 5}`}
+                />
               ))}
             </div>
             <p className="drop-overlay__badge">🎉</p>
@@ -287,13 +303,9 @@ export function DropOverlay({
             <p className="drop-overlay__reward">
               💰 {displayReward.toLocaleString("ru-RU")} монет
             </p>
-            <button
-              type="button"
-              className="primary drop-overlay__btn drop-overlay__btn--pulse"
-              onClick={onClose}
-            >
-              Забрать
-            </button>
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              Окно закроется автоматически…
+            </p>
           </div>
         ) : (
           <div className="drop-overlay__body">
@@ -304,10 +316,24 @@ export function DropOverlay({
             <p className="drop-overlay__sub">Введи код со стрима</p>
 
             <div className="drop-overlay__timer">
-              Осталось: <strong>{formatMmSs(remaining)}</strong>
+              Осталось: <strong>{formatMmSsFromMs(remainingMs)}</strong>
             </div>
 
-            <div className={`drop-overlay__otp ${shake ? "drop-overlay__otp--shake" : ""}`} onPaste={onPaste}>
+            <div
+              className={`drop-overlay__otp ${shake ? "drop-overlay__otp--shake" : ""}`}
+              onPaste={(e) => {
+                e.preventDefault();
+                const t = e.clipboardData
+                  .getData("text")
+                  .replace(/\D/g, "")
+                  .slice(0, DIGITS);
+                const arr = t.split("");
+                while (arr.length < DIGITS) arr.push("");
+                setDigits(arr.slice(0, DIGITS).map((c) => c || ""));
+                const last = Math.min(t.length, DIGITS) - 1;
+                if (last >= 0) inputsRef.current[last]?.focus();
+              }}
+            >
               {Array.from({ length: DIGITS }).map((_, i) => (
                 <input
                   key={i}
@@ -319,22 +345,34 @@ export function DropOverlay({
                   maxLength={1}
                   value={digits[i]}
                   aria-label={`Цифра ${i + 1}`}
-                  onChange={(e) => setDigit(i, e.target.value)}
-                  onKeyDown={(e) => onKeyDown(i, e)}
+                  onChange={(e) => {
+                    const d = e.target.value.replace(/\D/g, "").slice(-1);
+                    const next = [...digits];
+                    next[i] = d;
+                    setDigits(next);
+                    setErr(null);
+                    if (d && i < DIGITS - 1) inputsRef.current[i + 1]?.focus();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Backspace" && !digits[i] && i > 0) {
+                      inputsRef.current[i - 1]?.focus();
+                    }
+                  }}
                 />
               ))}
             </div>
 
             {err ? <p className="drop-overlay__err">{err}</p> : null}
 
-            <button
-              type="button"
-              className={`primary drop-overlay__btn${submitGlow ? " drop-overlay__btn--pulse" : ""}`}
-              disabled={submitting || !codeFilled}
-              onClick={() => void submit()}
-            >
-              {submitting ? "…" : "Получить награду"}
-            </button>
+            {submitting ? (
+              <p className="muted" style={{ margin: 0, textAlign: "center" }}>
+                Отправка…
+              </p>
+            ) : (
+              <p className="muted" style={{ margin: 0, fontSize: 12, textAlign: "center" }}>
+                Код отправится сам после ввода 4-й цифры
+              </p>
+            )}
           </div>
         )}
       </div>

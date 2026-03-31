@@ -1,5 +1,5 @@
 import { ChevronLeft } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { MeResponse } from "shared";
 import { api, formatApiError } from "../api";
@@ -12,6 +12,7 @@ type GiveawayListItem = {
   prizeText: string;
   imageUrl: string | null;
   endsAt: string;
+  platform: "twitch" | "kick" | "both";
   winnerCount: number;
   ticketPriceCoins: number;
   participantCount: number;
@@ -35,9 +36,15 @@ function statusLabel(s: GiveawayListItem["status"]): string {
   return "Активен";
 }
 
+function platformShort(p: GiveawayListItem["platform"]): string {
+  if (p === "both") return "Twitch · Kick";
+  return p === "twitch" ? "Twitch" : "Kick";
+}
+
 export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
   const { showToast } = useToast();
   const [items, setItems] = useState<GiveawayListItem[] | null>(null);
+  const [tab, setTab] = useState<"active" | "done">("active");
 
   const load = useCallback(async () => {
     const r = await api<{ giveaways: GiveawayListItem[] }>("/api/v1/giveaways");
@@ -49,6 +56,16 @@ export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
     void load();
   }, [load]);
 
+  const filtered = useMemo(() => {
+    if (!items) return [];
+    if (tab === "active") {
+      return items.filter(
+        (g) => g.status === "live" || g.status === "ended_awaiting_draw"
+      );
+    }
+    return items.filter((g) => g.status === "completed");
+  }, [items, tab]);
+
   if (!me) {
     return <PageSkeleton />;
   }
@@ -59,14 +76,41 @@ export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
         <ChevronLeft size={22} />
         Назад
       </Link>
-      <h2 className="giveaways-list-page__title">Все розыгрыши</h2>
+
+      <div className="segment" role="tablist" aria-label="Розыгрыши">
+        <button
+          type="button"
+          className={tab === "active" ? "on" : ""}
+          onClick={() => setTab("active")}
+        >
+          Активные
+        </button>
+        <button
+          type="button"
+          className={tab === "done" ? "on" : ""}
+          onClick={() => setTab("done")}
+        >
+          Завершённые
+        </button>
+      </div>
+
       {items === null ? (
         <PageSkeleton />
-      ) : items.length === 0 ? (
-        <p className="muted">Пока нет розыгрышей.</p>
+      ) : filtered.length === 0 ? (
+        <p className="muted">
+          {tab === "active"
+            ? "Нет активных розыгрышей."
+            : "Пока нет завершённых розыгрышей."}
+        </p>
       ) : (
-        <div className="stack">
-          {items.map((g) => (
+        <div
+          className={
+            filtered.length === 1
+              ? "giveaways-grid giveaways-grid--single"
+              : "giveaways-grid"
+          }
+        >
+          {filtered.map((g) => (
             <Link
               key={g.id}
               to={`/giveaway/${g.id}`}
@@ -84,28 +128,30 @@ export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
                 <div className="giveaway-card__placeholder" aria-hidden />
               )}
               <div className="giveaway-card__body">
-                <p className="giveaway-card__status muted">{statusLabel(g.status)}</p>
                 <p className="giveaway-card__prize">{g.prizeText}</p>
                 <p className="giveaway-card__title">{g.title}</p>
                 <p className="giveaway-card__meta muted">
-                  {g.participantCount.toLocaleString("ru-RU")} уч. · {g.winnerCount}{" "}
-                  победител
-                  {g.winnerCount === 1 ? "ь" : g.winnerCount < 5 ? "я" : "ей"}
+                  {platformShort(g.platform)} ·{" "}
+                  {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
+                  {g.winnerCount} поб. ·{" "}
                   {g.ticketPriceCoins > 0
-                    ? ` · билет ${g.ticketPriceCoins} мон.`
-                    : " · бесплатно"}
+                    ? `билет ${g.ticketPriceCoins} мон.`
+                    : "бесплатно"}
                 </p>
                 <div className="giveaway-card__timer">
+                  <span className="giveaway-card__status-label">
+                    {statusLabel(g.status)}
+                  </span>
                   {g.status === "completed"
                     ? g.drawnAt
-                      ? `Итоги: ${new Date(g.drawnAt).toLocaleString("ru-RU", {
+                      ? ` · ${new Date(g.drawnAt).toLocaleString("ru-RU", {
                           day: "numeric",
                           month: "short",
                           hour: "2-digit",
                           minute: "2-digit",
                         })}`
-                      : "Завершён"
-                    : formatCountdown(g.endsAt)}
+                      : ""
+                    : ` · ${formatCountdown(g.endsAt)}`}
                 </div>
               </div>
             </Link>

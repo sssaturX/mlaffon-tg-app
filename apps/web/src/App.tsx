@@ -36,6 +36,8 @@ import { AppLoadingSpinner } from "./components/AppLoadingSpinner";
 import { hasLinkedStreamingAccount } from "./utils/streamingAccount";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
+import { useSyncedCountdownMs } from "./hooks/useSyncedCountdown";
+import { useBalanceWebSocket } from "./hooks/useBalanceWebSocket";
 
 const HomePage = lazy(() => import("./pages/Home"));
 const Tasks = lazy(() => import("./pages/Tasks"));
@@ -313,6 +315,22 @@ function AppShell({
     if (tourOpen) setTourStep(0);
   }, [tourOpen]);
 
+  const balanceWsConnected = useBalanceWebSocket(
+    () => {
+      void refreshMe();
+    },
+    !needsPlatformLink && !!me
+  );
+
+  useEffect(() => {
+    if (needsPlatformLink) return;
+    const ms = balanceWsConnected ? 60_000 : 5_000;
+    const id = window.setInterval(() => {
+      void refreshMe();
+    }, ms);
+    return () => clearInterval(id);
+  }, [needsPlatformLink, refreshMe, balanceWsConnected]);
+
   const headerBalance =
     activePlatform === "twitch" ? me.coinsTwitch : me.coinsKick;
 
@@ -355,21 +373,28 @@ function AppShell({
     setDropOpen(true);
   }, [loadDrop]);
 
-  const [dropSecTick, setDropSecTick] = useState(0);
-  useEffect(() => {
-    setDropSecTick(0);
-  }, [dropSnap?.hasActiveDrop ? dropSnap?.dropId : null]);
+  const dropTickerActive =
+    Boolean(me) &&
+    !needsPlatformLink &&
+    dropSnap?.hasActiveDrop === true &&
+    !dropSnap.won;
 
-  useEffect(() => {
-    if (!dropSnap?.hasActiveDrop || dropSnap.won) return;
-    const id = window.setInterval(() => setDropSecTick((x) => x + 1), 1000);
-    return () => clearInterval(id);
-  }, [dropSnap]);
+  const dropServerNow =
+    dropSnap?.hasActiveDrop && dropSnap.serverNow
+      ? dropSnap.serverNow
+      : dropSnap?.hasActiveDrop
+        ? new Date(
+            Date.now() - dropSnap.remainingSeconds * 1000
+          ).toISOString()
+        : null;
 
-  const dropSecondsLeft =
-    dropSnap?.hasActiveDrop && !dropSnap.won
-      ? Math.max(0, dropSnap.remainingSeconds - dropSecTick)
-      : 0;
+  const dropRemainingMs = useSyncedCountdownMs(
+    dropSnap?.hasActiveDrop ? dropSnap.endsAt : null,
+    dropServerNow,
+    dropTickerActive
+  );
+
+  const dropSecondsLeft = Math.max(0, Math.ceil(dropRemainingMs / 1000));
 
   const showDropTicker =
     !needsPlatformLink &&

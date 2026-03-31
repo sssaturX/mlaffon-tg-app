@@ -1403,6 +1403,21 @@ h3 {
 }
 
 /* Profile */
+.profile-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  text-align: center;
+}
+
+.profile-stat-cell {
+  min-width: 0;
+}
+
+.profile-stat-cell .text-caption {
+  margin-bottom: 4px;
+}
+
 .profile-hero {
   display: flex;
   align-items: center;
@@ -1734,6 +1749,28 @@ h3 {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.giveaway-card__status-label {
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.giveaways-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.giveaways-grid--single {
+  grid-template-columns: 1fr;
+}
+
+.giveaways-list-page .segment {
+  margin-bottom: 14px;
 }
 
 .home-giveaways-all {
@@ -3226,6 +3263,31 @@ h3 {
 
 .task-stack.stack {
   gap: 10px;
+}
+
+.task-stack-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 400px) {
+  .task-stack-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.task-card--done {
+  border-color: rgba(0, 200, 150, 0.45) !important;
+  box-shadow: 0 0 0 1px rgba(0, 200, 150, 0.18);
+}
+
+.task-card__desc--compact {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 0;
 }
 
 .task-card--interactive {
