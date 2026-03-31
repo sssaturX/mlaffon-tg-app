@@ -4,6 +4,7 @@ import { platformAccounts } from "../db/schema.js";
 import { decryptSecret, encryptSecret } from "../lib/crypto.js";
 import { refreshTwitchToken } from "../platforms/twitch/oauth.js";
 import { refreshKickToken } from "../platforms/kick/oauth.js";
+import { kickValidateToken } from "../platforms/kick/api.js";
 
 export interface DecryptedPlatformAccount {
   id: string;
@@ -116,6 +117,19 @@ export async function getKickAccount(
           updatedAt: new Date(),
         })
         .where(eq(platformAccounts.id, row.id));
+
+      const me = await kickValidateToken(accessToken);
+      if (me) {
+        await db
+          .update(platformAccounts)
+          .set({
+            externalUserId: me.id,
+            displayName: me.username ?? row.displayName,
+            avatarUrl: me.avatarUrl ?? row.avatarUrl,
+            updatedAt: new Date(),
+          })
+          .where(eq(platformAccounts.id, row.id));
+      }
     }
 
     return {

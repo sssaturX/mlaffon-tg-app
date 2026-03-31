@@ -1,6 +1,7 @@
 import { CheckCircle2, ExternalLink, MessageCircle, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
+import { getBotUsername } from "../botUsername";
 
 /**
  * Показ во внешнем браузере после OAuth: токена нет (открыли Twitch/Kick не из WebView мини-аппа).
@@ -16,8 +17,8 @@ export default function OAuthBrowserDone() {
   const connected = searchParams.get("connected") === "1";
   const errRaw = searchParams.get("error");
 
-  const bot = import.meta.env.VITE_BOT_USERNAME?.trim().replace(/^@/, "") ?? "";
-  const tme = bot ? `https://t.me/${bot}` : "https://t.me";
+  const bot = getBotUsername();
+  const tme = `https://t.me/${bot}`;
 
   const errText = useMemo(() => {
     if (!errRaw) return null;
@@ -52,7 +53,7 @@ export default function OAuthBrowserDone() {
               rel="noopener noreferrer"
             >
               <ExternalLink size={16} aria-hidden />
-              {bot ? `t.me/${bot}` : "Telegram"}
+              t.me/{bot}
             </a>
             <p className="muted oauth-browser-done__hint">
               Если окно закроется — найдите бота в Telegram и нажмите «Menu» / «Открыть приложение».

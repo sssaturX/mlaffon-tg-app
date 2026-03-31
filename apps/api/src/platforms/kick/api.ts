@@ -7,27 +7,26 @@ function parseKickUserPayload(j: unknown): {
   username?: string;
   avatarUrl?: string;
 } | null {
-  const walk = (node: unknown): Record<string, unknown> | null => {
-    if (!node || typeof node !== "object") return null;
-    return node as Record<string, unknown>;
+  const candidates: Record<string, unknown>[] = [];
+
+  const collect = (node: unknown): void => {
+    if (node == null) return;
+    if (Array.isArray(node)) {
+      for (const item of node) collect(item);
+      return;
+    }
+    if (typeof node !== "object") return;
+    const o = node as Record<string, unknown>;
+    candidates.push(o);
+    if (o.data !== undefined) collect(o.data);
+    if (o.user !== undefined) collect(o.user);
   };
 
-  const candidates: Record<string, unknown>[] = [];
-  const root = walk(j);
-  if (root) {
-    candidates.push(root);
-    const d = walk(root.data);
-    if (d) {
-      candidates.push(d);
-      const u = walk(d.user);
-      if (u) candidates.push(u);
-    }
-    const u2 = walk(root.user);
-    if (u2) candidates.push(u2);
-  }
+  collect(j);
 
   for (const c of candidates) {
-    const idRaw = c.id ?? c.user_id;
+    /** Официальный ответ GET /public/v1/users: data[].user_id, name, profile_picture */
+    const idRaw = c.user_id ?? c.id ?? c.streamer_id;
     if (idRaw == null || idRaw === "") continue;
     const id = String(idRaw);
     const username = (c.username ?? c.slug ?? c.name ?? c.channel_slug) as
@@ -37,7 +36,11 @@ function parseKickUserPayload(j: unknown): {
       c.profile_picture_url ??
       c.avatar ??
       c.profile_pic) as string | undefined;
-    return { id, username: username?.trim() || undefined, avatarUrl };
+    return {
+      id,
+      username: username?.trim() || undefined,
+      avatarUrl: typeof avatarUrl === "string" && avatarUrl ? avatarUrl : undefined,
+    };
   }
   return null;
 }
@@ -48,12 +51,20 @@ export async function kickValidateToken(accessToken: string): Promise<{
   avatarUrl?: string;
 } | null> {
   const base = process.env.KICK_API_BASE ?? "https://api.kick.com";
-  const paths = ["/public/v1/users/me", "/v1/users/me"];
+  /** Документация Kick: GET /public/v1/users без id — текущий пользователь по Bearer. */
+  const paths = [
+    "/public/v1/users",
+    "/public/v1/users/me",
+    "/v1/users/me",
+  ];
 
   for (const p of paths) {
     try {
       const r = await fetch(`${base}${p}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
       });
       if (!r.ok) continue;
       const j = (await r.json()) as unknown;

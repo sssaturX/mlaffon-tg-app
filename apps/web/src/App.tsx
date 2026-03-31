@@ -32,6 +32,7 @@ import { OnboardingModal, hasSeenOnboarding } from "./components/OnboardingModal
 import { FirstVisitTour, hasSeenTour } from "./components/FirstVisitTour";
 import { routeTitle, ScreenHeader } from "./components/ScreenHeader";
 import { AppLoadingSpinner } from "./components/AppLoadingSpinner";
+import { getBotUsername } from "./botUsername";
 import { hasLinkedStreamingAccount } from "./utils/streamingAccount";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
@@ -245,8 +246,7 @@ export default function App() {
   );
 }
 
-const botFooter =
-  import.meta.env.VITE_BOT_USERNAME?.trim().replace(/^@/, "") ?? "";
+const botFooter = getBotUsername();
 
 function AppShell({
   me,
