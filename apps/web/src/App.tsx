@@ -1,5 +1,4 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom/client";
 import { getPlatformTheme } from "./platformTheme";
 import { useActivePlatform } from "./context/PlatformContext";
 import {
@@ -19,7 +18,6 @@ import {
   Trophy,
   User,
 } from "lucide-react";
-import type { MeResponse } from "shared";
 import {
   api,
   authDev,
@@ -35,10 +33,9 @@ import { routeTitle, ScreenHeader } from "./components/ScreenHeader";
 import { AppLoadingSpinner } from "./components/AppLoadingSpinner";
 import { hasLinkedStreamingAccount } from "./utils/streamingAccount";
 import { MeEconomySyncProvider } from "./context/MeEconomySyncContext";
-import {
-  isMeEconomyPatch,
-  mergeEconomyIntoMe,
-} from "./utils/mergeEconomyPatch";
+import { useMeStore } from "./store/meStore";
+import { useMeRefresh } from "./hooks/useMeRefresh";
+import { handleMeUpdateFromWs, refreshMe as refreshMeFromService } from "./services/meService";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
 import { useSyncedCountdownMs } from "./hooks/useSyncedCountdown";
@@ -68,61 +65,13 @@ export default function App() {
   const { showToast } = useToast();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [me, setMe] = useState<MeResponse | null>(null);
+  const me = useMeStore((s) => s.me);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [online, setOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
 
-  /**
-   * Каждый вызов — отдельный GET /me. Раньше второй вызов ждал тот же Promise, что и первый,
-   * и получал ответ **до** мутации (покупка/награда) — баланс в шапке не обновлялся.
-   * Ответ применяем только если это ещё актуальный запрос (`myId === refreshSeqRef`).
-   */
-  const refreshSeqRef = useRef(0);
-
-  /** Инвалидирует ответы уже ушедших GET /me — иначе устаревший /me перетирает свежий баланс из WS. */
-  const invalidateInflightRefresh = useCallback(() => {
-    refreshSeqRef.current++;
-  }, []);
-
-  const refreshMe = useCallback(async (): Promise<MeResponse | null> => {
-    if (!getToken()) {
-      flushSync(() => setMe(null));
-      return null;
-    }
-    const myId = ++refreshSeqRef.current;
-    const r = await api<MeResponse>(`/api/v1/me?_=${Date.now()}`);
-    if (myId !== refreshSeqRef.current) {
-      return null;
-    }
-    if (r.ok) {
-      flushSync(() => {
-        setMe(r.data);
-      });
-      return r.data;
-    }
-    if (r.networkError) {
-      showToast(formatApiError(r), "error");
-      return null;
-    }
-    flushSync(() => {
-      setMe(null);
-    });
-    setToken(null);
-    showToast(formatApiError(r), "error");
-    return null;
-  }, [showToast]);
-
-  /** Подмешать данные с клиента (напр. стрик после watch), если GET /me отдал устаревшее из кэша. */
-  const patchMe = useCallback(
-    (updater: (prev: MeResponse) => Partial<MeResponse>) => {
-      flushSync(() => {
-        setMe((prev) => (prev ? { ...prev, ...updater(prev) } : null));
-      });
-    },
-    []
-  );
+  const refreshMe = useMeRefresh();
 
   useEffect(() => {
     WebApp.ready();
@@ -159,17 +108,8 @@ export default function App() {
       setError(null);
       const existing = getToken();
       if (existing) {
-        const r = await api<MeResponse>(`/api/v1/me?_=${Date.now()}`);
+        await refreshMe();
         if (cancelled) return;
-        if (r.ok) {
-          setMe(r.data);
-        } else if (r.networkError) {
-          showToast(formatApiError(r), "error");
-        } else {
-          setMe(null);
-          setToken(null);
-          showToast(formatApiError(r), "error");
-        }
         setReady(true);
         return;
       }
@@ -275,15 +215,11 @@ export default function App() {
 
   return (
     <AppShell
-      me={me}
       needsPlatformLink={!hasLinkedStreamingAccount(me)}
       online={online}
       onboardingOpen={onboardingOpen}
       onCloseOnboarding={() => setOnboardingOpen(false)}
       onShowOnboarding={() => setOnboardingOpen(true)}
-      refreshMe={refreshMe}
-      patchMe={patchMe}
-      invalidateInflightRefresh={invalidateInflightRefresh}
     />
   );
 }
@@ -292,27 +228,21 @@ const botFooter =
   import.meta.env.VITE_BOT_USERNAME?.trim().replace(/^@/, "") ?? "";
 
 function AppShell({
-  me,
   needsPlatformLink,
   online,
   onboardingOpen,
   onCloseOnboarding,
   onShowOnboarding,
-  refreshMe,
-  patchMe,
-  invalidateInflightRefresh,
 }: {
-  me: MeResponse;
   /** Полноэкранный экран привязки Kick/Twitch до первого OAuth. */
   needsPlatformLink: boolean;
   online: boolean;
   onboardingOpen: boolean;
   onCloseOnboarding: () => void;
   onShowOnboarding: () => void;
-  refreshMe: () => Promise<MeResponse | null>;
-  patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
-  invalidateInflightRefresh: () => void;
 }) {
+  const me = useMeStore((s) => s.me);
+  const refreshMe = useMeRefresh();
   const location = useLocation();
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const liveBroadcast = useLiveBroadcastStore((s) => s.broadcast);
@@ -353,12 +283,7 @@ function AppShell({
   const realtimeConnected = useRealtimeWebSocket(
     {
       onMePatch: (patch) => {
-        invalidateInflightRefresh();
-        if (isMeEconomyPatch(patch)) {
-          patchMe(mergeEconomyIntoMe(patch));
-        } else {
-          void refreshMe();
-        }
+        handleMeUpdateFromWs(patch);
       },
       onDropStarted: () => void loadDrop(),
       onDropFinished: (dropId) => {
@@ -383,6 +308,7 @@ function AppShell({
         useLiveBroadcastStore.getState().applyLiveEndedFromWs();
       },
       onOpen: () => {
+        void refreshMeFromService();
         void loadDrop();
         void useLiveBroadcastStore.getState().hydrateFromApi();
       },
@@ -430,7 +356,11 @@ function AppShell({
   ]);
 
   const headerBalance =
-    activePlatform === "twitch" ? me.coinsTwitch : me.coinsKick;
+    me == null
+      ? null
+      : activePlatform === "twitch"
+        ? me.coinsTwitch
+        : me.coinsKick;
 
   useEffect(() => {
     const theme = getPlatformTheme(activePlatform);
@@ -520,7 +450,7 @@ function AppShell({
   const showWelcomeOverlay = needsPlatformLink && !oauthInProgress;
 
   return (
-    <MeEconomySyncProvider patchMe={patchMe} refreshMe={refreshMe}>
+    <MeEconomySyncProvider>
     <>
       {!online && !needsPlatformLink ? (
         <div className="offline-banner" role="status">
@@ -549,7 +479,7 @@ function AppShell({
         {!needsPlatformLink ? (
           <ScreenHeader
             title={routeTitle(location.pathname)}
-            balance={headerBalance}
+            balance={headerBalance ?? 0}
           />
         ) : null}
 

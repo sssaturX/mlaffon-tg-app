@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { getToken } from "../api";
-import type { MeEconomyPatch } from "shared";
 
 type LiveStartedPayload = {
   id: string;
@@ -17,7 +16,8 @@ type LiveStartedPayload = {
  */
 export function useRealtimeWebSocket(
   handlers: {
-    onMePatch: (patch: MeEconomyPatch) => void;
+    /** `me_update` — полный economy или частичный объект. */
+    onMePatch: (data: unknown) => void;
     /** Новый дроп (broadcast) — один раз подтянуть снапшот с сервера. */
     onDropStarted: () => void;
     onDropFinished: (dropId: string) => void;
@@ -107,7 +107,7 @@ export function useRealtimeWebSocket(
           };
           const h = ref.current;
           if (d.type === "me_update" && d.data && typeof d.data === "object") {
-            h.onMePatch(d.data as MeEconomyPatch);
+            h.onMePatch(d.data);
             return;
           }
           if (d.type === "drop_started") {

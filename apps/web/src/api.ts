@@ -76,7 +76,10 @@ export async function api<T>(
       return { ok: false, status: r.status, err: data };
     }
     return { ok: true, data: data as T };
-  } catch {
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      return { ok: false, status: 0, err: null, networkError: true };
+    }
     return { ok: false, status: 0, err: null, networkError: true };
   }
 }

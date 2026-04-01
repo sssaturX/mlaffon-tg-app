@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Coins } from "lucide-react";
 import { api, formatApiError } from "../api";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
+import { scheduleSmartRefresh } from "../services/meService";
 import { useActivePlatform } from "../context/PlatformContext";
 
 type Item = {
@@ -69,6 +70,7 @@ export default function Shop() {
         coinsTwitch: r.data.coinsTwitch,
         coinsKick: r.data.coinsKick,
       }));
+      scheduleSmartRefresh(300);
       reconcileFromServer();
     } else {
       setMsg(formatApiError(r));

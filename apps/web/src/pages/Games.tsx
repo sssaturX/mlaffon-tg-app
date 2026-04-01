@@ -3,6 +3,7 @@ import WebApp from "@twa-dev/sdk";
 import { Sparkles, Gift, Ban } from "lucide-react";
 import { api, formatApiError } from "../api";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
+import { scheduleSmartRefresh } from "../services/meService";
 import { useActivePlatform } from "../context/PlatformContext";
 import { AppLoadingSpinner } from "../components/AppLoadingSpinner";
 import {
@@ -115,6 +116,7 @@ export default function Games() {
       coinsTwitch: r.data.coinsTwitch,
       coinsKick: r.data.coinsKick,
     }));
+    scheduleSmartRefresh(300);
     reconcileFromServer();
 
     const n = status.segments.length;

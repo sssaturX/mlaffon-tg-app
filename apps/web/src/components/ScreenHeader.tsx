@@ -15,7 +15,8 @@ export function ScreenHeader({
   balance,
 }: {
   title: string;
-  balance: number | null;
+  /** Баланс выбранной платформы; 0 — валидное значение. */
+  balance: number;
 }) {
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const broadcast = useLiveBroadcastStore((s) => s.broadcast);
@@ -67,15 +68,10 @@ export function ScreenHeader({
             Kick
           </button>
         </div>
-        {balance != null && (
-          <div className="balance-pill" aria-label="Баланс выбранной платформы">
-            <Coins className="balance-pill__icon" size={18} strokeWidth={2.2} />
-            <BalanceWithAnimation
-              key={activePlatform}
-              value={balance}
-            />
-          </div>
-        )}
+        <div className="balance-pill" aria-label="Баланс выбранной платформы">
+          <Coins className="balance-pill__icon" size={18} strokeWidth={2.2} />
+          <BalanceWithAnimation key={activePlatform} value={balance} />
+        </div>
       </div>
     </header>
   );

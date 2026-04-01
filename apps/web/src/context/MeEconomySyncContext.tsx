@@ -3,60 +3,50 @@ import {
   useCallback,
   useContext,
   useMemo,
-  useRef,
 } from "react";
 import type { MeEconomyPatch, MeResponse } from "shared";
+import { useMeStore } from "../store/meStore";
 import {
-  isMeEconomyPatch,
-  mergeEconomyIntoMe,
-} from "../utils/mergeEconomyPatch";
+  applyEconomyFromMutationResponse,
+  refreshMe as refreshMeCore,
+  scheduleSmartRefresh,
+} from "../services/meService";
+import { useToast } from "./ToastContext";
 
 type Ctx = {
-  /** Произвольный мерж в `me` (стрик, частичные поля). */
   patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
-  /** Срез баланса с сервера (как в WS `me_update`). Без валидного среза — только reconcile. */
+  /** Ответ мутации / дроп: валидный economy → patch + отложенный GET; иначе только debounce GET. */
   patchEconomy: (patch: MeEconomyPatch | null | undefined) => void;
-  /** Полный профиль с сервера — если нет среза в ответе мутации. */
   refreshMe: () => Promise<MeResponse | null>;
-  /**
-   * После начисления/списания: отложенный GET /me (Telegram WebView и реплики
-   * иногда отдают устаревшее; мгновенный patch + reconcile = актуальная шапка).
-   */
+  /** Отложенная синхронизация с сервером после начислений. */
   reconcileFromServer: () => void;
 };
 
 const MeEconomySyncContext = createContext<Ctx | null>(null);
 
-const RECONCILE_MS = 450;
-
 export function MeEconomySyncProvider({
   children,
-  patchMe,
-  refreshMe,
 }: {
   children: React.ReactNode;
-  patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
-  refreshMe: () => Promise<MeResponse | null>;
 }) {
-  const reconcileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { showToast } = useToast();
 
-  const reconcileFromServer = useCallback(() => {
-    if (reconcileTimerRef.current) clearTimeout(reconcileTimerRef.current);
-    reconcileTimerRef.current = setTimeout(() => {
-      reconcileTimerRef.current = null;
-      void refreshMe();
-    }, RECONCILE_MS);
-  }, [refreshMe]);
+  const patchMe = useCallback((u: (prev: MeResponse) => Partial<MeResponse>) => {
+    useMeStore.getState().patchMe(u);
+  }, []);
 
   const patchEconomy = useCallback(
     (patch: MeEconomyPatch | null | undefined) => {
-      if (isMeEconomyPatch(patch)) {
-        patchMe(mergeEconomyIntoMe(patch));
-      }
-      reconcileFromServer();
+      applyEconomyFromMutationResponse(patch);
     },
-    [patchMe, reconcileFromServer]
+    []
   );
+
+  const refreshMe = useCallback(() => refreshMeCore(showToast), [showToast]);
+
+  const reconcileFromServer = useCallback(() => {
+    scheduleSmartRefresh(450);
+  }, []);
 
   const value = useMemo(
     () => ({ patchMe, patchEconomy, refreshMe, reconcileFromServer }),
