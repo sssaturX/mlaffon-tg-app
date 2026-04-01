@@ -21,7 +21,7 @@ function shopEmoji(title: string, kind: string): string {
 }
 
 export default function Shop() {
-  const { patchMe } = useMeEconomySync();
+  const { patchMe, reconcileFromServer } = useMeEconomySync();
   const { activePlatform } = useActivePlatform();
   const [items, setItems] = useState<Item[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
@@ -69,6 +69,7 @@ export default function Shop() {
         coinsTwitch: r.data.coinsTwitch,
         coinsKick: r.data.coinsKick,
       }));
+      reconcileFromServer();
     } else {
       setMsg(formatApiError(r));
     }

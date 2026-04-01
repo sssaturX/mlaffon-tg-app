@@ -156,7 +156,7 @@ export function DropOverlay({
       setDisplayReward(0);
       setDigits(Array(DIGITS).fill(""));
       setSubmitting(false);
-      if (r.data.economy) patchEconomy(r.data.economy);
+      patchEconomy(r.data.economy);
       await Promise.resolve(onAfterClaim(r.data.reward));
       return;
     }

@@ -33,7 +33,7 @@ function TaskListSkeleton() {
 }
 
 export default function Tasks() {
-  const { patchMe, refreshMe } = useMeEconomySync();
+  const { patchMe, refreshMe, reconcileFromServer } = useMeEconomySync();
   const { activePlatform } = useActivePlatform();
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
@@ -101,6 +101,7 @@ export default function Tasks() {
           coinsTwitch: r.data.coinsTwitch,
           coinsKick: r.data.coinsKick,
         }));
+        reconcileFromServer();
       } else {
         void refreshMe();
       }

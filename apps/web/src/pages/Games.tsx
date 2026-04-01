@@ -29,7 +29,7 @@ function formatSpinResult(data: {
 }
 
 export default function Games() {
-  const { patchMe } = useMeEconomySync();
+  const { patchMe, reconcileFromServer } = useMeEconomySync();
   const { activePlatform } = useActivePlatform();
   const [status, setStatus] = useState<FortuneStatus | null>(null);
   const [rotation, setRotation] = useState(0);
@@ -75,6 +75,13 @@ export default function Games() {
       return;
     }
 
+    patchMe(() => ({
+      coins: r.data.coins,
+      coinsTwitch: r.data.coinsTwitch,
+      coinsKick: r.data.coinsKick,
+    }));
+    reconcileFromServer();
+
     const n = status.segments.length;
     const next = nextRotationDeg(
       rotationRef.current,
@@ -95,11 +102,6 @@ export default function Games() {
         pendingMsgRef.current = null;
       }
       void load();
-      patchMe(() => ({
-        coins: r.data.coins,
-        coinsTwitch: r.data.coinsTwitch,
-        coinsKick: r.data.coinsKick,
-      }));
     }, SPIN_MS);
   }
 

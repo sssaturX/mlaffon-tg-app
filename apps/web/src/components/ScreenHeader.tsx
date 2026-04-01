@@ -3,6 +3,13 @@ import { useActivePlatform } from "../context/PlatformContext";
 import { useAnimatedNumber } from "../hooks/useAnimatedNumber";
 import { useLiveBroadcastStore } from "../store/liveBroadcastStore";
 
+/** Отдельный mount при смене числа — в TG WebView иногда не доезжает обновление хука. */
+function BalanceWithAnimation({ value }: { value: number }) {
+  const animated = useAnimatedNumber(value);
+  if (animated == null) return null;
+  return <span>{animated.toLocaleString("ru-RU")}</span>;
+}
+
 export function ScreenHeader({
   title,
   balance,
@@ -14,7 +21,6 @@ export function ScreenHeader({
   const broadcast = useLiveBroadcastStore((s) => s.broadcast);
   const liveLocks =
     broadcast?.active === true ? broadcast.platform : null;
-  const animatedBalance = useAnimatedNumber(balance);
 
   const lockHint =
     liveLocks === "twitch"
@@ -61,10 +67,13 @@ export function ScreenHeader({
             Kick
           </button>
         </div>
-        {balance != null && animatedBalance != null && (
+        {balance != null && (
           <div className="balance-pill" aria-label="Баланс выбранной платформы">
             <Coins className="balance-pill__icon" size={18} strokeWidth={2.2} />
-            <span>{animatedBalance.toLocaleString("ru-RU")}</span>
+            <BalanceWithAnimation
+              key={`${activePlatform}-${balance}`}
+              value={balance}
+            />
           </div>
         )}
       </div>

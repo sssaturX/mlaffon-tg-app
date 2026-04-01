@@ -57,6 +57,10 @@ export async function api<T>(
 
   try {
     const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "GET" || method === "HEAD") {
+      (headers as Record<string, string>)["Cache-Control"] = "no-cache";
+      (headers as Record<string, string>)["Pragma"] = "no-cache";
+    }
     const noStore =
       method === "GET" || method === "HEAD"
         ? ({ cache: "no-store" as const } satisfies Pick<RequestInit, "cache">)
