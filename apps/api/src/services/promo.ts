@@ -2,12 +2,14 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { promoCodes, promoRedemptions } from "../db/schema.js";
 import { applyCredit, applyCreditSplit } from "./economy.js";
+import { buildMeEconomyPatch } from "./me.js";
 
 export async function applyPromoForUser(
   userId: string,
   rawCode: string
 ): Promise<
-  { ok: true; reward: number } | { ok: false; error: string }
+  | { ok: true; reward: number; economy: Awaited<ReturnType<typeof buildMeEconomyPatch>> }
+  | { ok: false; error: string }
 > {
   const code = rawCode.trim().toUpperCase();
   if (!code) return { ok: false, error: "empty_code" };
@@ -69,7 +71,8 @@ export async function applyPromoForUser(
   const platform = p.creditPlatform;
 
   if (p.rewardCoins <= 0) {
-    return { ok: true, reward: 0 };
+    const economy = await buildMeEconomyPatch(userId);
+    return { ok: true, reward: 0, economy };
   }
 
   const credit =
@@ -113,5 +116,6 @@ export async function applyPromoForUser(
     };
   }
 
-  return { ok: true, reward: credit.creditedAmount };
+  const economy = await buildMeEconomyPatch(userId);
+  return { ok: true, reward: credit.creditedAmount, economy };
 }

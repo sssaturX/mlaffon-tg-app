@@ -12,20 +12,20 @@ import type { MeResponse, ReferralsResponse } from "shared";
 import WebApp from "@twa-dev/sdk";
 import { api, formatApiError, setToken } from "../api";
 import { useToast } from "../context/ToastContext";
+import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { useOAuthLink } from "../hooks/useOAuthLink";
 
 export default function Profile({
   me,
-  onRefresh,
   onShowOnboarding,
 }: {
   me: MeResponse | null;
-  onRefresh: () => void;
   onShowOnboarding?: () => void;
 }) {
   const { showToast } = useToast();
-  const { startOAuth, connectStub, stub } = useOAuthLink(onRefresh);
+  const { refreshMe } = useMeEconomySync();
+  const { startOAuth, connectStub, stub } = useOAuthLink();
   const [refs, setRefs] = useState<ReferralsResponse | null>(null);
 
   const loadRefs = useCallback(async () => {
@@ -47,7 +47,7 @@ export default function Profile({
     window.history.replaceState({}, "", "/profile");
 
     void (async () => {
-      await onRefresh();
+      await refreshMe();
       await loadRefs();
       if (ok) {
         showToast(
@@ -76,13 +76,13 @@ export default function Profile({
         }
       }
     })();
-  }, [onRefresh, loadRefs, showToast]);
+  }, [refreshMe, loadRefs, showToast]);
 
   async function disconnect(platform: string) {
     const r = await api(`/api/v1/platforms/${platform}`, { method: "DELETE" });
     if (r.ok) {
       showToast("Отключено", "info");
-      onRefresh();
+      void refreshMe();
     } else showToast(formatApiError(r), "error");
   }
 

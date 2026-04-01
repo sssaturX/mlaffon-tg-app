@@ -1,9 +1,11 @@
 import WebApp from "@twa-dev/sdk";
 import { api, formatApiError } from "../api";
+import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useToast } from "../context/ToastContext";
 
-export function useOAuthLink(onRefresh: () => void) {
+export function useOAuthLink() {
   const { showToast } = useToast();
+  const { refreshMe } = useMeEconomySync();
 
   async function startOAuth(platform: "twitch" | "kick") {
     const path =
@@ -30,7 +32,7 @@ export function useOAuthLink(onRefresh: () => void) {
     });
     if (r.ok) {
       showToast("Stub-подключение", "success");
-      onRefresh();
+      void refreshMe();
     } else showToast(formatApiError(r), "error");
   }
 

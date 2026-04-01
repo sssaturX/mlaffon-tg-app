@@ -10,7 +10,13 @@ export async function purchaseItem(
   itemId: string,
   platform: EconomyPlatform
 ): Promise<
-  { ok: true; coins: number } | { ok: false; error: string }
+  | {
+      ok: true;
+      coins: number;
+      coinsTwitch: number;
+      coinsKick: number;
+    }
+  | { ok: false; error: string }
 > {
   const [item] = await db
     .select()
@@ -68,7 +74,12 @@ export async function purchaseItem(
       });
   }
 
-  return { ok: true, coins: debit.newCoins };
+  return {
+    ok: true,
+    coins: debit.newCoins,
+    coinsTwitch: debit.newTwitchCoins,
+    coinsKick: debit.newKickCoins,
+  };
 }
 
 export async function listShopItems() {

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { MeResponse } from "shared";
 import { AppLoadingSpinner } from "../components/AppLoadingSpinner";
+import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { hasLinkedStreamingAccount } from "../utils/streamingAccount";
 
 export const OAUTH_TOAST_KEY = "mlaffon_oauth_toast";
@@ -21,11 +22,8 @@ async function refreshUntilLinked(
  * Редирект после OAuth на /oauth/twitch|kick?connected=1 — обновляем /me (с повтором),
  * затем сразу главная + тост (без ручной перезагрузки).
  */
-export default function OAuthReturn({
-  onRefresh,
-}: {
-  onRefresh: () => Promise<MeResponse | null>;
-}) {
+export default function OAuthReturn() {
+  const { refreshMe } = useMeEconomySync();
   const { platform } = useParams<{ platform: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -39,7 +37,7 @@ export default function OAuthReturn({
 
     void (async () => {
       if (connected === "1") {
-        await refreshUntilLinked(onRefresh);
+        await refreshUntilLinked(refreshMe);
         if (cancelled) return;
         try {
           sessionStorage.setItem(OAUTH_TOAST_KEY, p);
@@ -54,13 +52,13 @@ export default function OAuthReturn({
       if (err) {
         const qs = new URLSearchParams();
         qs.set("oauth_err", err);
-        await onRefresh();
+        await refreshMe();
         if (cancelled) return;
         navigate(`/profile?${qs.toString()}`, { replace: true });
         return;
       }
 
-      await onRefresh();
+      await refreshMe();
       if (cancelled) return;
       navigate("/profile", { replace: true });
     })();
@@ -68,7 +66,7 @@ export default function OAuthReturn({
     return () => {
       cancelled = true;
     };
-  }, [platform, searchParams, navigate, onRefresh]);
+  }, [platform, searchParams, navigate, refreshMe]);
 
   return <AppLoadingSpinner />;
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronRight, Coins, Lightbulb } from "lucide-react";
 import type { Platform, TaskDto } from "shared";
 import { api, formatApiError } from "../api";
+import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { TaskDetailModal } from "../components/TaskDetailModal";
 function platformPillClass(p: Platform): string {
@@ -31,7 +32,8 @@ function TaskListSkeleton() {
   );
 }
 
-export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
+export default function Tasks() {
+  const { patchMe, refreshMe } = useMeEconomySync();
   const { activePlatform } = useActivePlatform();
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
@@ -69,6 +71,8 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
     const r = await api<{
       reward?: number;
       coins?: number;
+      coinsTwitch?: number;
+      coinsKick?: number;
       status?: string;
       jobId?: string;
     }>(`/api/v1/tasks/${id}/claim`, { method: "POST" });
@@ -80,14 +84,26 @@ export default function Tasks({ onRefresh }: { onRefresh: () => void }) {
         setModalMsg(m);
         setMsg(m);
         await load({ silent: true });
-        onRefresh();
+        void refreshMe();
         return;
       }
       const okMsg = `+${r.data.reward ?? 0} монет`;
       setModalMsg(okMsg);
       setMsg(okMsg);
       await load({ silent: true });
-      void onRefresh();
+      if (
+        typeof r.data.coins === "number" &&
+        typeof r.data.coinsTwitch === "number" &&
+        typeof r.data.coinsKick === "number"
+      ) {
+        patchMe(() => ({
+          coins: r.data.coins,
+          coinsTwitch: r.data.coinsTwitch,
+          coinsKick: r.data.coinsKick,
+        }));
+      } else {
+        void refreshMe();
+      }
     } else {
       const err = formatApiError(r);
       setModalMsg(err);

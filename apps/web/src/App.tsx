@@ -34,6 +34,7 @@ import { FirstVisitTour, hasSeenTour } from "./components/FirstVisitTour";
 import { routeTitle, ScreenHeader } from "./components/ScreenHeader";
 import { AppLoadingSpinner } from "./components/AppLoadingSpinner";
 import { hasLinkedStreamingAccount } from "./utils/streamingAccount";
+import { MeEconomySyncProvider } from "./context/MeEconomySyncContext";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
 import { useSyncedCountdownMs } from "./hooks/useSyncedCountdown";
@@ -69,45 +70,39 @@ export default function App() {
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
 
-  const refreshInFlightRef = useRef<Promise<MeResponse | null> | null>(null);
+  /**
+   * Каждый вызов — отдельный GET /me. Раньше второй вызов ждал тот же Promise, что и первый,
+   * и получал ответ **до** мутации (покупка/награда) — баланс в шапке не обновлялся.
+   * Ответ применяем только если это ещё актуальный запрос (`myId === refreshSeqRef`).
+   */
+  const refreshSeqRef = useRef(0);
 
   const refreshMe = useCallback(async (): Promise<MeResponse | null> => {
     if (!getToken()) {
       flushSync(() => setMe(null));
       return null;
     }
-    if (refreshInFlightRef.current) {
-      return refreshInFlightRef.current;
+    const myId = ++refreshSeqRef.current;
+    const r = await api<MeResponse>(`/api/v1/me?_=${Date.now()}`);
+    if (myId !== refreshSeqRef.current) {
+      return null;
     }
-    const p = (async (): Promise<MeResponse | null> => {
-      const r = await api<MeResponse>(
-        `/api/v1/me?_=${Date.now()}`
-      );
-      if (r.ok) {
-        flushSync(() => {
-          setMe(r.data);
-        });
-        return r.data;
-      }
-      if (r.networkError) {
-        showToast(formatApiError(r), "error");
-        return null;
-      }
+    if (r.ok) {
       flushSync(() => {
-        setMe(null);
+        setMe(r.data);
       });
-      setToken(null);
+      return r.data;
+    }
+    if (r.networkError) {
       showToast(formatApiError(r), "error");
       return null;
-    })();
-    refreshInFlightRef.current = p;
-    try {
-      return await p;
-    } finally {
-      if (refreshInFlightRef.current === p) {
-        refreshInFlightRef.current = null;
-      }
     }
+    flushSync(() => {
+      setMe(null);
+    });
+    setToken(null);
+    showToast(formatApiError(r), "error");
+    return null;
   }, [showToast]);
 
   /** Подмешать данные с клиента (напр. стрик после watch), если GET /me отдал устаревшее из кэша. */
@@ -374,6 +369,7 @@ function AppShell({
         void loadDrop();
         void useLiveBroadcastStore.getState().hydrateFromApi();
       },
+      onLegacyBalancePing: () => void refreshMe(),
     },
     !needsPlatformLink && !!me
   );
@@ -507,6 +503,7 @@ function AppShell({
   const showWelcomeOverlay = needsPlatformLink && !oauthInProgress;
 
   return (
+    <MeEconomySyncProvider patchMe={patchMe} refreshMe={refreshMe}>
     <>
       {!online && !needsPlatformLink ? (
         <div className="offline-banner" role="status">
@@ -547,8 +544,6 @@ function AppShell({
                 element={
                   <HomePage
                     me={me}
-                    onRefresh={refreshMe}
-                    patchMe={patchMe}
                     realtimeWsConnected={realtimeConnected}
                   />
                 }
@@ -556,21 +551,21 @@ function AppShell({
               <Route path="/giveaways" element={<GiveawaysPage me={me} />} />
               <Route
                 path="/giveaway/:id"
-                element={<GiveawayPage me={me} onRefresh={refreshMe} />}
+                element={<GiveawayPage me={me} />}
               />
-              <Route path="/tasks" element={<Tasks onRefresh={refreshMe} />} />
+              <Route path="/tasks" element={<Tasks />} />
               <Route
                 path="/games"
-                element={<Games onRefresh={refreshMe} />}
+                element={<Games />}
               />
               <Route
                 path="/shop"
-                element={<Shop onRefresh={refreshMe} />}
+                element={<Shop />}
               />
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route
                 path="/oauth/:platform"
-                element={<OAuthReturn onRefresh={refreshMe} />}
+                element={<OAuthReturn />}
               />
               <Route
                 path="/profile"
@@ -645,7 +640,7 @@ function AppShell({
       {showWelcomeOverlay ? (
         <div className="welcome-gate-overlay">
           <Suspense fallback={<AppLoadingSpinner />}>
-            <WelcomeGate me={me} onRefresh={refreshMe} />
+            <WelcomeGate me={me} />
           </Suspense>
         </div>
       ) : null}
@@ -661,11 +656,11 @@ function AppShell({
                 ? { ...prev, won: true, rewardCoins: reward }
                 : prev
             );
-            void refreshMe();
           }}
           onRefreshSnapshot={loadDrop}
         />
       ) : null}
     </>
+    </MeEconomySyncProvider>
   );
 }

@@ -88,7 +88,7 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
         error: { code: r.code, message: messages[r.code] },
       });
     }
-    return { ok: true, joinedAt: r.joinedAt };
+    return { ok: true, joinedAt: r.joinedAt, economy: r.economy };
   }
   );
 }

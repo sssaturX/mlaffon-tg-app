@@ -91,6 +91,8 @@ export async function spinFortuneWheel(
       segmentIndex: number;
       amount?: number;
       coins: number;
+      coinsTwitch: number;
+      coinsKick: number;
     }
   | { ok: false; error: string }
 > {
@@ -181,7 +183,11 @@ export async function spinFortuneWheel(
   }
 
   const [b] = await db
-    .select({ coins: userBalances.coins })
+    .select({
+      coins: userBalances.coins,
+      twitchCoins: userBalances.twitchCoins,
+      kickCoins: userBalances.kickCoins,
+    })
     .from(userBalances)
     .where(eq(userBalances.userId, userId))
     .limit(1);
@@ -192,5 +198,7 @@ export async function spinFortuneWheel(
     segmentIndex,
     amount: outcome.type === "coins" ? coinsCredited : undefined,
     coins: b?.coins ?? 0,
+    coinsTwitch: b?.twitchCoins ?? 0,
+    coinsKick: b?.kickCoins ?? 0,
   };
 }

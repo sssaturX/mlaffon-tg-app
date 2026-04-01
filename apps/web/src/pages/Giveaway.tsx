@@ -9,11 +9,12 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import WebApp from "@twa-dev/sdk";
-import type { MeResponse } from "shared";
+import type { MeEconomyPatch, MeResponse } from "shared";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { useMeEconomySync } from "../context/MeEconomySyncContext";
 
 type GiveawayDetail = {
   id: string;
@@ -46,13 +47,8 @@ function formatCountdownFull(iso: string): string {
   return `${d}д ${h}ч ${m}м`;
 }
 
-export default function GiveawayPage({
-  me,
-  onRefresh,
-}: {
-  me: MeResponse | null;
-  onRefresh: () => void | Promise<unknown>;
-}) {
+export default function GiveawayPage({ me }: { me: MeResponse | null }) {
+  const { patchEconomy } = useMeEconomySync();
   const { id } = useParams<{ id: string }>();
   const { showToast } = useToast();
   const { activePlatform } = useActivePlatform();
@@ -76,21 +72,22 @@ export default function GiveawayPage({
   async function join() {
     if (!id || !data) return;
     setJoining(true);
-    const r = await api<{ ok: boolean; joinedAt: string }>(
-      `/api/v1/giveaways/${id}/join`,
-      {
-        method: "POST",
-        body: JSON.stringify({ platform: activePlatform }),
-      }
-    );
+    const r = await api<{
+      ok: boolean;
+      joinedAt: string;
+      economy: MeEconomyPatch;
+    }>(`/api/v1/giveaways/${id}/join`, {
+      method: "POST",
+      body: JSON.stringify({ platform: activePlatform }),
+    });
     setJoining(false);
     if (!r.ok) {
       showToast(formatApiError(r), "error");
       return;
     }
+    patchEconomy(r.data.economy);
     showToast("Вы участвуете в розыгрыше", "success");
     await load();
-    void onRefresh();
   }
 
   async function share() {

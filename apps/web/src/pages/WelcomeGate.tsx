@@ -26,14 +26,8 @@ function openExternal(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-export default function WelcomeGate({
-  me,
-  onRefresh,
-}: {
-  me: MeResponse;
-  onRefresh: () => void;
-}) {
-  const { startOAuth, connectStub, stub } = useOAuthLink(onRefresh);
+export default function WelcomeGate({ me }: { me: MeResponse }) {
+  const { startOAuth, connectStub, stub } = useOAuthLink();
 
   const helloName =
     me.firstName?.trim() ||

@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom/client";
 import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
-import type { MeResponse } from "shared";
+import type { MeEconomyPatch, MeResponse } from "shared";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
@@ -30,6 +30,7 @@ import {
   useLiveBroadcastStore,
   type LiveBroadcastPublic,
 } from "../store/liveBroadcastStore";
+import { useMeEconomySync } from "../context/MeEconomySyncContext";
 
 const STREAK_TARGET = 7;
 
@@ -61,16 +62,13 @@ function formatCountdown(iso: string): string {
 
 export default function Home({
   me,
-  onRefresh,
-  patchMe,
   realtimeWsConnected,
 }: {
   me: MeResponse | null;
-  onRefresh: () => Promise<MeResponse | null>;
-  patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
   /** Стабильное WS — реже опрашиваем GET /live-broadcast. */
   realtimeWsConnected: boolean;
 }) {
+  const { patchMe, patchEconomy, refreshMe } = useMeEconomySync();
   const { showToast } = useToast();
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const [watchingLive, setWatchingLive] = useState(false);
@@ -120,9 +118,9 @@ export default function Home({
       /* ignore */
     }
     void (async () => {
-      await onRefresh();
+      await refreshMe();
     })();
-  }, [showToast, onRefresh]);
+  }, [showToast, refreshMe]);
 
   const hydrateLive = useCallback(() => {
     void useLiveBroadcastStore.getState().hydrateFromApi();
@@ -246,6 +244,7 @@ export default function Home({
         streakIncremented: boolean;
         alreadyWatchedThisBroadcast: boolean;
         bonusCoinsAwarded: number;
+        economy: MeEconomyPatch;
       }>("/api/v1/live-broadcast/watch", {
         method: "POST",
         body: JSON.stringify({ broadcastId: live.id }),
@@ -254,6 +253,7 @@ export default function Home({
         notifyStreakWatchError(showToast, formatApiError(r));
         return;
       }
+      patchEconomy(r.data.economy);
       if (!r.data.alreadyWatchedThisBroadcast) {
         flushSync(() => {
           setStreakDisplay({
@@ -262,7 +262,6 @@ export default function Home({
           });
         });
       }
-      await onRefresh();
       if (!r.data.alreadyWatchedThisBroadcast) {
         const st = r.data.streak;
         const p = live.platform;
@@ -299,17 +298,21 @@ export default function Home({
   async function applyPromo() {
     const code = promo.trim();
     if (!code) return;
-    const r = await api<{ ok: boolean; reward: number }>(
-      "/api/v1/promo/apply",
-      { method: "POST", body: JSON.stringify({ code }) }
-    );
+    const r = await api<{
+      ok: boolean;
+      reward: number;
+      economy: MeEconomyPatch;
+    }>("/api/v1/promo/apply", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
     if (!r.ok) {
       showToast(formatApiError(r), "error");
       return;
     }
+    patchEconomy(r.data.economy);
     showToast(`+${r.data.reward} монет`, "success");
     setPromo("");
-    void onRefresh();
   }
 
   return (

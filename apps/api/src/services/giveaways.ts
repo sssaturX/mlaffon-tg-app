@@ -9,6 +9,7 @@ import {
   users,
 } from "../db/schema.js";
 import { applyDebit } from "./economy.js";
+import { buildMeEconomyPatch } from "./me.js";
 import { checkTelegramChannelMembership } from "./telegramChannel.js";
 
 export function displayUsername(u: {
@@ -204,7 +205,11 @@ export async function joinGiveaway(params: {
   userId: string;
   platform: "twitch" | "kick";
 }): Promise<
-  | { ok: true; joinedAt: string }
+  | {
+      ok: true;
+      joinedAt: string;
+      economy: Awaited<ReturnType<typeof buildMeEconomyPatch>>;
+    }
   | {
       ok: false;
       code:
@@ -293,7 +298,8 @@ export async function joinGiveaway(params: {
     .values({ giveawayId, userId })
     .returning({ createdAt: giveawayParticipants.createdAt });
 
-  return { ok: true, joinedAt: ins!.createdAt.toISOString() };
+  const economy = await buildMeEconomyPatch(userId);
+  return { ok: true, joinedAt: ins!.createdAt.toISOString(), economy };
 }
 
 function shuffleUserIds(ids: string[]): string[] {

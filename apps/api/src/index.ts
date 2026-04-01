@@ -18,7 +18,7 @@ import {
   ensureUserFromTelegram,
   deleteUserAccount,
 } from "./services/users.js";
-import { buildMeResponse } from "./services/me.js";
+import { buildMeEconomyPatch, buildMeResponse } from "./services/me.js";
 import { createBanAppeal } from "./services/banAppeals.js";
 import { listTasksForUser, claimTask } from "./services/tasks.js";
 import { getLeaderboard, rankOfUser } from "./services/leaderboard.js";
@@ -108,7 +108,7 @@ app.post(
       error: { code: r.error, message: r.error },
     });
   }
-  return { ok: true, reward: r.reward };
+  return { ok: true, reward: r.reward, economy: r.economy };
   }
 );
 
@@ -279,6 +279,7 @@ app.post("/api/v1/live-broadcast/watch", async (req, reply) => {
       error: { code: res.code, message: msg },
     });
   }
+  const economy = await buildMeEconomyPatch(userId);
   return {
     ok: true,
     platform: res.platform,
@@ -286,6 +287,7 @@ app.post("/api/v1/live-broadcast/watch", async (req, reply) => {
     streakIncremented: res.streakIncremented,
     alreadyWatchedThisBroadcast: res.alreadyWatchedThisBroadcast,
     bonusCoinsAwarded: res.bonusCoinsAwarded,
+    economy,
   };
 });
 

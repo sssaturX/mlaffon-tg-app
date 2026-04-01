@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, formatApiError } from "../api";
+import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { AppLoadingSpinner } from "../components/AppLoadingSpinner";
 import {
@@ -27,11 +28,8 @@ function formatSpinResult(data: {
   return "Выпало: без приза — удачи в следующий раз";
 }
 
-export default function Games({
-  onRefresh,
-}: {
-  onRefresh: () => void | Promise<unknown>;
-}) {
+export default function Games() {
+  const { patchMe } = useMeEconomySync();
   const { activePlatform } = useActivePlatform();
   const [status, setStatus] = useState<FortuneStatus | null>(null);
   const [rotation, setRotation] = useState(0);
@@ -64,6 +62,8 @@ export default function Games({
       outcome: string;
       amount?: number;
       coins: number;
+      coinsTwitch: number;
+      coinsKick: number;
     }>("/api/v1/games/fortune/spin", {
       method: "POST",
       body: JSON.stringify({ mode, platform: activePlatform }),
@@ -95,7 +95,11 @@ export default function Games({
         pendingMsgRef.current = null;
       }
       void load();
-      void onRefresh();
+      patchMe(() => ({
+        coins: r.data.coins,
+        coinsTwitch: r.data.coinsTwitch,
+        coinsKick: r.data.coinsKick,
+      }));
     }, SPIN_MS);
   }
 

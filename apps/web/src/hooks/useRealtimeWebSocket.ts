@@ -26,6 +26,8 @@ export function useRealtimeWebSocket(
     onLiveEnded: () => void;
     /** После reconnect — синхронизация дропа. */
     onOpen: () => void;
+    /** Legacy: без тела — подтянуть баланс через GET /me. */
+    onLegacyBalancePing?: () => void;
   },
   enabled: boolean
 ): boolean {
@@ -139,7 +141,8 @@ export function useRealtimeWebSocket(
             return;
           }
           if (d.type === "balance_updated") {
-            /* legacy: сервер шлёт me_update через publishBalanceUpdate */
+            h.onLegacyBalancePing?.();
+            return;
           }
         } catch {
           /* ignore */

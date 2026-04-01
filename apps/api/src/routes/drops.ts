@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authUser } from "../plugins/auth.js";
 import { gameConfig } from "../config.js";
 import { attemptDropCode, getActiveDropSnapshot } from "../services/drops.js";
+import { buildMeEconomyPatch } from "../services/me.js";
 
 export async function registerDropRoutes(app: FastifyInstance) {
   app.get("/api/v1/drops/active", async (req, reply) => {
@@ -36,7 +37,8 @@ export async function registerDropRoutes(app: FastifyInstance) {
     }
     const r = await attemptDropCode(userId, parsed.data.code);
     if (r.ok) {
-      return { ok: true, reward: r.reward };
+      const economy = await buildMeEconomyPatch(userId);
+      return { ok: true, reward: r.reward, economy };
     }
     const status: Record<string, number> = {
       not_found: 404,

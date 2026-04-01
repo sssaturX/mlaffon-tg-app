@@ -91,7 +91,14 @@ export async function claimTask(
   userId: string,
   taskId: string
 ): Promise<
-  | { ok: true; mode: "sync"; coins: number; reward: number }
+  | {
+      ok: true;
+      mode: "sync";
+      coins: number;
+      coinsTwitch: number;
+      coinsKick: number;
+      reward: number;
+    }
   | { ok: true; mode: "async"; jobId: string }
   | { ok: false; error: string }
 > {
@@ -282,6 +289,8 @@ export async function claimTask(
     ok: true,
     mode: "sync",
     coins: credit.newCoins,
+    coinsTwitch: credit.newTwitchCoins,
+    coinsKick: credit.newKickCoins,
     reward: credit.creditedAmount,
   };
 }
