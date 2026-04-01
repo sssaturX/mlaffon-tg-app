@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import WebApp from "@twa-dev/sdk";
+import { Sparkles, Gift, Ban } from "lucide-react";
 import { api, formatApiError } from "../api";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useActivePlatform } from "../context/PlatformContext";
@@ -18,14 +20,45 @@ type FortuneStatus = {
   segments: FortuneSegment[];
 };
 
-function formatSpinResult(data: {
-  outcome: string;
+type SpinReveal = {
+  outcome: "coins" | "boost" | "nothing";
   amount?: number;
-}): string {
-  if (data.outcome === "coins")
-    return `Выпало: ${data.amount ?? 0} монет на баланс платформы`;
-  if (data.outcome === "boost") return "Выпало: буст ×2 в инвентарь";
-  return "Выпало: без приза — удачи в следующий раз";
+  segmentLabel: string;
+};
+
+function SpinResultCard({ result }: { result: SpinReveal }) {
+  if (result.outcome === "coins") {
+    const n = result.amount ?? 0;
+    return (
+      <div className="games-win-card games-win-card--coins" role="status">
+        <Sparkles className="games-win-card__icon" aria-hidden size={28} strokeWidth={2} />
+        <p className="games-win-card__eyebrow">Выпало</p>
+        <p className="games-win-card__value">
+          +{n.toLocaleString("ru-RU")}{" "}
+          <span className="games-win-card__unit">монет</span>
+        </p>
+        <p className="games-win-card__hint">{result.segmentLabel}</p>
+      </div>
+    );
+  }
+  if (result.outcome === "boost") {
+    return (
+      <div className="games-win-card games-win-card--boost" role="status">
+        <Gift className="games-win-card__icon" aria-hidden size={28} strokeWidth={2} />
+        <p className="games-win-card__eyebrow">В инвентарь</p>
+        <p className="games-win-card__value">Буст ×2</p>
+        <p className="games-win-card__hint">{result.segmentLabel}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="games-win-card games-win-card--empty" role="status">
+      <Ban className="games-win-card__icon games-win-card__icon--muted" aria-hidden size={26} strokeWidth={2} />
+      <p className="games-win-card__eyebrow">В этот раз</p>
+      <p className="games-win-card__value">Без приза</p>
+      <p className="games-win-card__hint">Удачи в следующий раз</p>
+    </div>
+  );
 }
 
 export default function Games() {
@@ -35,9 +68,10 @@ export default function Games() {
   const [rotation, setRotation] = useState(0);
   const rotationRef = useRef(0);
   const [spinning, setSpinning] = useState(false);
-  const [last, setLast] = useState<string | null>(null);
+  const [lastReveal, setLastReveal] = useState<SpinReveal | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
-  const pendingMsgRef = useRef<string | null>(null);
+  const [spinErr, setSpinErr] = useState<string | null>(null);
+  const pendingRevealRef = useRef<SpinReveal | null>(null);
 
   const load = useCallback(async () => {
     const r = await api<FortuneStatus>("/api/v1/games/fortune");
@@ -53,13 +87,14 @@ export default function Games() {
 
   async function spin(mode: "free" | "paid") {
     if (spinning || !status?.segments.length) return;
-    setLast(null);
+    setLastReveal(null);
+    setSpinErr(null);
     setSpinning(true);
-    pendingMsgRef.current = null;
+    pendingRevealRef.current = null;
 
     const r = await api<{
       segmentIndex: number;
-      outcome: string;
+      outcome: "coins" | "boost" | "nothing";
       amount?: number;
       coins: number;
       coinsTwitch: number;
@@ -71,7 +106,7 @@ export default function Games() {
 
     if (!r.ok) {
       setSpinning(false);
-      setLast(formatApiError(r));
+      setSpinErr(formatApiError(r));
       return;
     }
 
@@ -83,23 +118,44 @@ export default function Games() {
     reconcileFromServer();
 
     const n = status.segments.length;
-    const next = nextRotationDeg(
-      rotationRef.current,
-      r.data.segmentIndex,
-      n,
-      5
-    );
-    rotationRef.current = next;
-    setRotation(next);
+    const rawIdx = Number(r.data.segmentIndex);
+    const idx =
+      Number.isFinite(rawIdx) && rawIdx >= 0
+        ? Math.min(n - 1, Math.floor(rawIdx))
+        : 0;
+    const seg = status.segments[idx];
+    const reveal: SpinReveal = {
+      outcome: r.data.outcome,
+      amount: r.data.amount,
+      segmentLabel: seg?.label ?? "Сектор",
+    };
+    pendingRevealRef.current = reveal;
 
-    const msg = formatSpinResult(r.data);
-    pendingMsgRef.current = msg;
+    const next = nextRotationDeg(rotationRef.current, idx, n, 5);
+    if (!Number.isFinite(next)) {
+      setSpinning(false);
+      setLastReveal(reveal);
+      void load();
+      return;
+    }
+    rotationRef.current = next;
+    /* Два rAF: в WebView иначе transition на transform иногда не стартует. */
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setRotation(next);
+      });
+    });
 
     window.setTimeout(() => {
       setSpinning(false);
-      if (pendingMsgRef.current) {
-        setLast(pendingMsgRef.current);
-        pendingMsgRef.current = null;
+      if (pendingRevealRef.current) {
+        setLastReveal(pendingRevealRef.current);
+        pendingRevealRef.current = null;
+        try {
+          WebApp.HapticFeedback.notificationOccurred("success");
+        } catch {
+          /* ignore */
+        }
       }
       void load();
     }, SPIN_MS);
@@ -145,6 +201,12 @@ export default function Games() {
               />
             </div>
 
+            {spinErr ? (
+              <p className="err games-spin-err" role="alert">
+                {spinErr}
+              </p>
+            ) : null}
+
             <div className="row games-actions">
               <button
                 type="button"
@@ -164,11 +226,7 @@ export default function Games() {
               </button>
             </div>
 
-            {last ? (
-              <p className="games-result" role="status">
-                {last}
-              </p>
-            ) : null}
+            {lastReveal ? <SpinResultCard result={lastReveal} /> : null}
           </>
         )}
       </div>

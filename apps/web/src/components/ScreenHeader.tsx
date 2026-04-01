@@ -3,7 +3,7 @@ import { useActivePlatform } from "../context/PlatformContext";
 import { useAnimatedNumber } from "../hooks/useAnimatedNumber";
 import { useLiveBroadcastStore } from "../store/liveBroadcastStore";
 
-/** Отдельный mount при смене числа — в TG WebView иногда не доезжает обновление хука. */
+/** key только по платформе — число анимируется внутри; при key=баланс при каждом тике ломалась анимация и WS-обновления. */
 function BalanceWithAnimation({ value }: { value: number }) {
   const animated = useAnimatedNumber(value);
   if (animated == null) return null;
@@ -71,7 +71,7 @@ export function ScreenHeader({
           <div className="balance-pill" aria-label="Баланс выбранной платформы">
             <Coins className="balance-pill__icon" size={18} strokeWidth={2.2} />
             <BalanceWithAnimation
-              key={`${activePlatform}-${balance}`}
+              key={activePlatform}
               value={balance}
             />
           </div>

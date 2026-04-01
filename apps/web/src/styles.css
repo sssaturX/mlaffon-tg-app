@@ -502,6 +502,99 @@ select:focus-visible {
   text-align: center;
 }
 
+.games-spin-err {
+  margin: var(--space-2) 0 0;
+  text-align: center;
+}
+
+.games-win-card {
+  margin: var(--space-4) auto 0;
+  max-width: 320px;
+  padding: var(--space-4) var(--space-5);
+  border-radius: 16px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(
+    145deg,
+    rgba(88, 28, 135, 0.35) 0%,
+    rgba(30, 20, 45, 0.85) 100%
+  );
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: games-win-pop 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.games-win-card--coins {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.games-win-card--boost {
+  border-color: rgba(96, 165, 250, 0.4);
+}
+
+.games-win-card--empty {
+  opacity: 0.95;
+}
+
+.games-win-card__icon {
+  display: block;
+  margin: 0 auto var(--space-2);
+  color: #fbbf24;
+  filter: drop-shadow(0 2px 8px rgba(251, 191, 36, 0.35));
+}
+
+.games-win-card--boost .games-win-card__icon {
+  color: #93c5fd;
+  filter: drop-shadow(0 2px 8px rgba(147, 197, 253, 0.35));
+}
+
+.games-win-card__icon--muted {
+  color: rgba(255, 255, 255, 0.45);
+  filter: none;
+}
+
+.games-win-card__eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.games-win-card__value {
+  margin: var(--space-1) 0 0;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.games-win-card__unit {
+  font-size: 0.55em;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.games-win-card__hint {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.35;
+}
+
+@keyframes games-win-pop {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 /* Колесо фортуны (SVG) */
 .fortune-wheel-wrap {
   position: relative;

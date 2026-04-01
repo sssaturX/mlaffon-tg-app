@@ -35,6 +35,10 @@ import { routeTitle, ScreenHeader } from "./components/ScreenHeader";
 import { AppLoadingSpinner } from "./components/AppLoadingSpinner";
 import { hasLinkedStreamingAccount } from "./utils/streamingAccount";
 import { MeEconomySyncProvider } from "./context/MeEconomySyncContext";
+import {
+  isMeEconomyPatch,
+  mergeEconomyIntoMe,
+} from "./utils/mergeEconomyPatch";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
 import { useSyncedCountdownMs } from "./hooks/useSyncedCountdown";
@@ -76,6 +80,11 @@ export default function App() {
    * Ответ применяем только если это ещё актуальный запрос (`myId === refreshSeqRef`).
    */
   const refreshSeqRef = useRef(0);
+
+  /** Инвалидирует ответы уже ушедших GET /me — иначе устаревший /me перетирает свежий баланс из WS. */
+  const invalidateInflightRefresh = useCallback(() => {
+    refreshSeqRef.current++;
+  }, []);
 
   const refreshMe = useCallback(async (): Promise<MeResponse | null> => {
     if (!getToken()) {
@@ -274,6 +283,7 @@ export default function App() {
       onShowOnboarding={() => setOnboardingOpen(true)}
       refreshMe={refreshMe}
       patchMe={patchMe}
+      invalidateInflightRefresh={invalidateInflightRefresh}
     />
   );
 }
@@ -290,6 +300,7 @@ function AppShell({
   onShowOnboarding,
   refreshMe,
   patchMe,
+  invalidateInflightRefresh,
 }: {
   me: MeResponse;
   /** Полноэкранный экран привязки Kick/Twitch до первого OAuth. */
@@ -300,6 +311,7 @@ function AppShell({
   onShowOnboarding: () => void;
   refreshMe: () => Promise<MeResponse | null>;
   patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
+  invalidateInflightRefresh: () => void;
 }) {
   const location = useLocation();
   const { activePlatform, setActivePlatform } = useActivePlatform();
@@ -341,7 +353,12 @@ function AppShell({
   const realtimeConnected = useRealtimeWebSocket(
     {
       onMePatch: (patch) => {
-        patchMe((prev) => ({ ...prev, ...patch }));
+        invalidateInflightRefresh();
+        if (isMeEconomyPatch(patch)) {
+          patchMe(mergeEconomyIntoMe(patch));
+        } else {
+          void refreshMe();
+        }
       },
       onDropStarted: () => void loadDrop(),
       onDropFinished: (dropId) => {
