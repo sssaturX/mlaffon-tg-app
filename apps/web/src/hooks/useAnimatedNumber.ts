@@ -30,7 +30,11 @@ export function useAnimatedNumber(
       return;
     }
     const from = fromRef.current ?? value;
-    if (from === value) return;
+    /** Синхронизируем display, если ref отстаёт (быстрые WS-патчи подряд). */
+    if (from === value) {
+      setDisplay((d) => (d === value ? d : value));
+      return;
+    }
 
     const diff = Math.abs(value - from);
     const duration =

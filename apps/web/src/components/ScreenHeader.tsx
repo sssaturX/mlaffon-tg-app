@@ -3,11 +3,12 @@ import { useActivePlatform } from "../context/PlatformContext";
 import { useAnimatedNumber } from "../hooks/useAnimatedNumber";
 import { useLiveBroadcastStore } from "../store/liveBroadcastStore";
 
-/** key только по платформе — число анимируется внутри; при key=баланс при каждом тике ломалась анимация и WS-обновления. */
+/** Всегда показываем число: animated ?? value (иначе при null из хука шапка «пустая»). */
 function BalanceWithAnimation({ value }: { value: number }) {
   const animated = useAnimatedNumber(value);
-  if (animated == null) return null;
-  return <span>{animated.toLocaleString("ru-RU")}</span>;
+  return (
+    <span>{(animated ?? value).toLocaleString("ru-RU")}</span>
+  );
 }
 
 export function ScreenHeader({

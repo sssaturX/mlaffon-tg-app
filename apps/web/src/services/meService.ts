@@ -57,19 +57,6 @@ export function applyEconomyFromMutationResponse(patch: unknown): void {
   }
 }
 
-/** Слияние burst `me_update` в один кадр. */
-let wsBatch: Record<string, unknown> | null = null;
-let wsBatchRaf = 0;
-
-function flushWsBatchAndApply(): void {
-  wsBatchRaf = 0;
-  const batch = wsBatch;
-  wsBatch = null;
-  if (!batch) return;
-  invalidateInflightMeRefresh();
-  applyMeUpdatePayload(batch);
-}
-
 function applyMeUpdatePayload(data: unknown): void {
   if (isMeEconomyPatch(data)) {
     useMeStore.getState().patchEconomy(data);
@@ -88,20 +75,10 @@ function applyMeUpdatePayload(data: unknown): void {
   void refreshMe();
 }
 
+/** Сразу в store (без rAF-батча — он давал пропуски кадров и «тишину» в UI). */
 export function handleMeUpdateFromWs(data: unknown): void {
-  if (data && typeof data === "object" && !Array.isArray(data)) {
-    wsBatch = { ...(wsBatch ?? {}), ...(data as Record<string, unknown>) };
-  } else {
-    if (wsBatchRaf) cancelAnimationFrame(wsBatchRaf);
-    wsBatchRaf = 0;
-    wsBatch = null;
-    invalidateInflightMeRefresh();
-    applyMeUpdatePayload(data);
-    return;
-  }
-
-  if (wsBatchRaf) return;
-  wsBatchRaf = requestAnimationFrame(flushWsBatchAndApply);
+  invalidateInflightMeRefresh();
+  applyMeUpdatePayload(data);
 }
 
 /**
