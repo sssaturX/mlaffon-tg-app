@@ -667,6 +667,11 @@ select:focus-visible {
   color: var(--bg);
 }
 
+.platform-toggle button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .screen-header__title {
   font-size: var(--text-h1);
   font-weight: 700;

@@ -39,6 +39,40 @@ function canParticipateDrop(
   return u.twitch && u.kick;
 }
 
+/** Откат слота и состояния пользователя, если начисление не прошло. */
+async function compensateDropAfterCreditFailure(
+  dropId: string,
+  userId: string,
+  hadExistingRow: boolean,
+  existingStateId: string | undefined
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .update(drops)
+      .set({ winnersCount: sql`${drops.winnersCount} - 1` })
+      .where(eq(drops.id, dropId));
+
+    if (hadExistingRow && existingStateId) {
+      await tx
+        .update(dropUserStates)
+        .set({
+          won: false,
+          rewardCoins: null,
+        })
+        .where(eq(dropUserStates.id, existingStateId));
+    } else {
+      await tx
+        .delete(dropUserStates)
+        .where(
+          and(
+            eq(dropUserStates.dropId, dropId),
+            eq(dropUserStates.userId, userId)
+          )
+        );
+    }
+  });
+}
+
 export type ActiveDropPublic = {
   hasActiveDrop: true;
   dropId: string;
@@ -119,147 +153,193 @@ export async function attemptDropCode(
   rawCode: string
 ): Promise<AttemptResult> {
   const now = new Date();
-  const [d] = await db
-    .select()
-    .from(drops)
-    .where(and(eq(drops.active, true), sql`${drops.endsAt} > ${now}`))
-    .orderBy(desc(drops.startedAt))
-    .limit(1);
-
-  if (!d) return { ok: false, code: "drop_ended" };
-
-  const platforms = await userConnectedPlatforms(userId);
-  const dp = (d.platform ?? "both") as DropPlatformScope;
-  if (!canParticipateDrop(dp, platforms)) return { ok: false, code: "not_eligible" };
-
   const input = normalizeCode(rawCode);
-  const expected = normalizeCode(d.code);
-  if (expected.length < 4) {
-    return { ok: false, code: "not_found" };
+  const platforms = await userConnectedPlatforms(userId);
+
+  const reserved = await db.transaction(async (tx) => {
+    const [d] = await tx
+      .select()
+      .from(drops)
+      .where(and(eq(drops.active, true), sql`${drops.endsAt} > ${now}`))
+      .orderBy(desc(drops.startedAt))
+      .for("update")
+      .limit(1);
+
+    if (!d) return { kind: "err" as const, code: "drop_ended" as const };
+
+    const dp = (d.platform ?? "both") as DropPlatformScope;
+    if (!canParticipateDrop(dp, platforms)) {
+      return { kind: "err" as const, code: "not_eligible" as const };
+    }
+
+    const expected = normalizeCode(d.code);
+    if (expected.length < 4) {
+      return { kind: "err" as const, code: "not_found" as const };
+    }
+
+    const [existing] = await tx
+      .select()
+      .from(dropUserStates)
+      .where(
+        and(eq(dropUserStates.dropId, d.id), eq(dropUserStates.userId, userId))
+      )
+      .limit(1);
+
+    if (existing?.won) {
+      return { kind: "err" as const, code: "already_won" as const };
+    }
+
+    if (input !== expected) {
+      return { kind: "err" as const, code: "wrong_code" as const };
+    }
+
+    const [slot] = await tx
+      .update(drops)
+      .set({ winnersCount: sql`${drops.winnersCount} + 1` })
+      .where(and(eq(drops.id, d.id), lt(drops.winnersCount, drops.maxWinners)))
+      .returning({ id: drops.id });
+
+    if (!slot) {
+      return { kind: "err" as const, code: "pool_full" as const };
+    }
+
+    const reward = randomReward(d.rewardMin, d.rewardMax);
+    const hadExistingRow = Boolean(existing);
+    const existingStateId = existing?.id;
+
+    if (existing) {
+      await tx
+        .update(dropUserStates)
+        .set({
+          won: true,
+          rewardCoins: reward,
+          lastAttemptAt: now,
+          attemptsCount: sql`${dropUserStates.attemptsCount} + 1`,
+        })
+        .where(eq(dropUserStates.id, existing.id));
+    } else {
+      await tx.insert(dropUserStates).values({
+        dropId: d.id,
+        userId,
+        attemptsCount: 1,
+        lastAttemptAt: now,
+        won: true,
+        rewardCoins: reward,
+      });
+    }
+
+    return {
+      kind: "ok" as const,
+      d,
+      dp,
+      reward,
+      hadExistingRow,
+      existingStateId,
+    };
+  });
+
+  if (reserved.kind === "err") {
+    return { ok: false, code: reserved.code };
   }
 
-  const [existing] = await db
-    .select()
-    .from(dropUserStates)
-    .where(
-      and(eq(dropUserStates.dropId, d.id), eq(dropUserStates.userId, userId))
-    )
-    .limit(1);
-
-  if (existing?.won) {
-    return { ok: false, code: "already_won" };
-  }
-
-  if (input !== expected) {
-    return { ok: false, code: "wrong_code" };
-  }
-
-  const [slot] = await db
-    .update(drops)
-    .set({ winnersCount: sql`${drops.winnersCount} + 1` })
-    .where(and(eq(drops.id, d.id), lt(drops.winnersCount, drops.maxWinners)))
-    .returning({ id: drops.id });
-
-  if (!slot) {
-    return { ok: false, code: "pool_full" };
-  }
-
-  const reward = randomReward(d.rewardMin, d.rewardMax);
+  const { d, dp, reward, hadExistingRow, existingStateId } = reserved;
   const idem = `drop:${d.id}:${userId}`;
-
   let paid = 0;
 
-  if (reward > 0) {
-    if (dp === "both") {
-      const credit = await applyCreditSplit({
-        userId,
-        amount: reward,
-        idempotencyKey: idem,
-        kind: "drop_reward",
-        referenceType: "drop",
-        referenceId: String(d.id),
+  if (reward <= 0) {
+    void publishUserEvent(userId, {
+      type: "drop_claimed",
+      v: 1,
+      data: { dropId: d.id, reward: 0 },
+    });
+    const [dAfter] = await db
+      .select()
+      .from(drops)
+      .where(eq(drops.id, d.id))
+      .limit(1);
+    if (dAfter && dAfter.winnersCount >= dAfter.maxWinners) {
+      void publishBroadcastEvent({
+        type: "drop_finished",
+        v: 1,
+        data: { dropId: d.id },
       });
-
-      if (!credit.ok) {
-        await db
-          .update(drops)
-          .set({ winnersCount: sql`${drops.winnersCount} - 1` })
-          .where(eq(drops.id, d.id));
-        if (credit.reason === "duplicate") {
-          const [st] = await db
-            .select()
-            .from(dropUserStates)
-            .where(
-              and(
-                eq(dropUserStates.dropId, d.id),
-                eq(dropUserStates.userId, userId)
-              )
-            )
-            .limit(1);
-          if (st?.won && st.rewardCoins != null) {
-            return { ok: true, reward: st.rewardCoins };
-          }
-          return { ok: false, code: "duplicate" };
-        }
-        return { ok: false, code: "wrong_code" };
-      }
-      paid = credit.creditedAmount;
-    } else {
-      const credit = await applyCredit({
-        userId,
-        amount: reward,
-        idempotencyKey: idem,
-        kind: "drop_reward",
-        platform: dp,
-        referenceType: "drop",
-        referenceId: String(d.id),
-      });
-
-      if (!credit.ok) {
-        await db
-          .update(drops)
-          .set({ winnersCount: sql`${drops.winnersCount} - 1` })
-          .where(eq(drops.id, d.id));
-        if (credit.reason === "duplicate") {
-          const [st] = await db
-            .select()
-            .from(dropUserStates)
-            .where(
-              and(
-                eq(dropUserStates.dropId, d.id),
-                eq(dropUserStates.userId, userId)
-              )
-            )
-            .limit(1);
-          if (st?.won && st.rewardCoins != null) {
-            return { ok: true, reward: st.rewardCoins };
-          }
-          return { ok: false, code: "duplicate" };
-        }
-        return { ok: false, code: "wrong_code" };
-      }
-      paid = credit.creditedAmount;
     }
+    return { ok: true, reward: 0 };
   }
 
-  if (existing) {
-    await db
-      .update(dropUserStates)
-      .set({
-        won: true,
-        rewardCoins: paid,
-        lastAttemptAt: now,
-      })
-      .where(eq(dropUserStates.id, existing.id));
-  } else {
-    await db.insert(dropUserStates).values({
-      dropId: d.id,
+  if (dp === "both") {
+    const credit = await applyCreditSplit({
       userId,
-      attemptsCount: 1,
-      lastAttemptAt: now,
-      won: true,
-      rewardCoins: paid,
+      amount: reward,
+      idempotencyKey: idem,
+      kind: "drop_reward",
+      referenceType: "drop",
+      referenceId: String(d.id),
     });
+
+    if (!credit.ok) {
+      await compensateDropAfterCreditFailure(
+        d.id,
+        userId,
+        hadExistingRow,
+        existingStateId
+      );
+      if (credit.reason === "duplicate") {
+        const [st] = await db
+          .select()
+          .from(dropUserStates)
+          .where(
+            and(
+              eq(dropUserStates.dropId, d.id),
+              eq(dropUserStates.userId, userId)
+            )
+          )
+          .limit(1);
+        if (st?.won && st.rewardCoins != null) {
+          return { ok: true, reward: st.rewardCoins };
+        }
+        return { ok: false, code: "duplicate" };
+      }
+      return { ok: false, code: "wrong_code" };
+    }
+    paid = credit.creditedAmount;
+  } else {
+    const credit = await applyCredit({
+      userId,
+      amount: reward,
+      idempotencyKey: idem,
+      kind: "drop_reward",
+      platform: dp,
+      referenceType: "drop",
+      referenceId: String(d.id),
+    });
+
+    if (!credit.ok) {
+      await compensateDropAfterCreditFailure(
+        d.id,
+        userId,
+        hadExistingRow,
+        existingStateId
+      );
+      if (credit.reason === "duplicate") {
+        const [st] = await db
+          .select()
+          .from(dropUserStates)
+          .where(
+            and(
+              eq(dropUserStates.dropId, d.id),
+              eq(dropUserStates.userId, userId)
+            )
+          )
+          .limit(1);
+        if (st?.won && st.rewardCoins != null) {
+          return { ok: true, reward: st.rewardCoins };
+        }
+        return { ok: false, code: "duplicate" };
+      }
+      return { ok: false, code: "wrong_code" };
+    }
+    paid = credit.creditedAmount;
   }
 
   void publishUserEvent(userId, {

@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { tasks, userBalances, userTasks } from "../db/schema.js";
 import { applyCredit, applyCreditSplit } from "./economy.js";
+import { reverseTaskRewardCredit } from "./taskRewardCompensation.js";
 import { computeLevel, computeRewardMultiplier } from "../config.js";
 import { maybeQualifyReferral } from "./referrals.js";
 import type { TaskRow } from "./taskVerifyLogic.js";
@@ -85,22 +86,40 @@ export async function grantTaskReward(params: {
     )
     .limit(1);
 
-  if (existing) {
-    await db
-      .update(userTasks)
-      .set({
+  const refundPlatform: "twitch" | "kick" | "global" =
+    task.platform === "twitch"
+      ? "twitch"
+      : task.platform === "kick"
+        ? "kick"
+        : "global";
+
+  try {
+    if (existing) {
+      await db
+        .update(userTasks)
+        .set({
+          status: "completed",
+          lastError: null,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(userTasks.id, existing.id));
+    } else {
+      await db.insert(userTasks).values({
+        userId,
+        taskId: task.id,
         status: "completed",
-        lastError: null,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(userTasks.id, existing.id));
-  } else {
-    await db.insert(userTasks).values({
+        periodKey,
+      });
+    }
+  } catch {
+    await reverseTaskRewardCredit({
       userId,
       taskId: task.id,
-      status: "completed",
       periodKey,
+      platform: refundPlatform,
+      amount: credit.creditedAmount,
     });
+    throw new Error("task_persist_failed");
   }
 
   await maybeQualifyReferral(userId);

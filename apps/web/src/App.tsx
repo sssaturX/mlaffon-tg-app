@@ -307,7 +307,15 @@ function AppShell({
   patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
 }) {
   const location = useLocation();
-  const { activePlatform } = useActivePlatform();
+  const { activePlatform, setActivePlatform } = useActivePlatform();
+  const liveBroadcast = useLiveBroadcastStore((s) => s.broadcast);
+
+  /** Пока идёт эфир — шапка и баланс строго по платформе стрима; без эфира переключатель свободен. */
+  useEffect(() => {
+    if (liveBroadcast?.active === true) {
+      setActivePlatform(liveBroadcast.platform);
+    }
+  }, [liveBroadcast, setActivePlatform]);
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStep, setTourStep] = useState(0);
 
@@ -548,11 +556,17 @@ function AppShell({
               <Route path="/giveaways" element={<GiveawaysPage me={me} />} />
               <Route
                 path="/giveaway/:id"
-                element={<GiveawayPage me={me} />}
+                element={<GiveawayPage me={me} onRefresh={refreshMe} />}
               />
               <Route path="/tasks" element={<Tasks onRefresh={refreshMe} />} />
-              <Route path="/games" element={<Games />} />
-              <Route path="/shop" element={<Shop />} />
+              <Route
+                path="/games"
+                element={<Games onRefresh={refreshMe} />}
+              />
+              <Route
+                path="/shop"
+                element={<Shop onRefresh={refreshMe} />}
+              />
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route
                 path="/oauth/:platform"
@@ -647,6 +661,7 @@ function AppShell({
                 ? { ...prev, won: true, rewardCoins: reward }
                 : prev
             );
+            void refreshMe();
           }}
           onRefreshSnapshot={loadDrop}
         />

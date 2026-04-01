@@ -1,6 +1,7 @@
 import { Coins } from "lucide-react";
 import { useActivePlatform } from "../context/PlatformContext";
 import { useAnimatedNumber } from "../hooks/useAnimatedNumber";
+import { useLiveBroadcastStore } from "../store/liveBroadcastStore";
 
 export function ScreenHeader({
   title,
@@ -10,7 +11,17 @@ export function ScreenHeader({
   balance: number | null;
 }) {
   const { activePlatform, setActivePlatform } = useActivePlatform();
+  const broadcast = useLiveBroadcastStore((s) => s.broadcast);
+  const liveLocks =
+    broadcast?.active === true ? broadcast.platform : null;
   const animatedBalance = useAnimatedNumber(balance);
+
+  const lockHint =
+    liveLocks === "twitch"
+      ? "Сейчас эфир на Twitch — переключение недоступно"
+      : liveLocks === "kick"
+        ? "Сейчас эфир на Kick — переключение недоступно"
+        : undefined;
 
   return (
     <header className="screen-header">
@@ -21,10 +32,17 @@ export function ScreenHeader({
           data-tour-target="platform-toggle"
           role="group"
           aria-label="Платформа"
+          title={lockHint}
         >
           <button
             type="button"
             className={activePlatform === "twitch" ? "on" : ""}
+            disabled={liveLocks != null && liveLocks !== "twitch"}
+            title={
+              liveLocks != null && liveLocks !== "twitch"
+                ? lockHint
+                : undefined
+            }
             onClick={() => setActivePlatform("twitch")}
           >
             Twitch
@@ -32,6 +50,12 @@ export function ScreenHeader({
           <button
             type="button"
             className={activePlatform === "kick" ? "on" : ""}
+            disabled={liveLocks != null && liveLocks !== "kick"}
+            title={
+              liveLocks != null && liveLocks !== "kick"
+                ? lockHint
+                : undefined
+            }
             onClick={() => setActivePlatform("kick")}
           >
             Kick

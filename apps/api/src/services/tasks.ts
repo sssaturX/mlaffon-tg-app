@@ -6,6 +6,7 @@ import { canCompletePlatformTask } from "../platforms/registry.js";
 import { computeLevel, computeRewardMultiplier } from "../config.js";
 import { maybeQualifyReferral } from "./referrals.js";
 import { applyCredit, applyCreditSplit } from "./economy.js";
+import { reverseTaskRewardCredit } from "./taskRewardCompensation.js";
 import { getTaskVerifyQueue } from "../queue/bullmq.js";
 import type { TaskDto, UserTaskStatus } from "shared";
 import { extractTaskUiFields } from "./taskUiMeta.js";
@@ -243,18 +244,36 @@ export async function claimTask(
 
   if (!credit.ok) return { ok: false, error: "already_completed" };
 
-  if (existing) {
-    await db
-      .update(userTasks)
-      .set({ status: "completed", lastError: null, updatedAt: sql`now()` })
-      .where(eq(userTasks.id, existing.id));
-  } else {
-    await db.insert(userTasks).values({
+  const refundPlatform: "twitch" | "kick" | "global" =
+    t.platform === "twitch"
+      ? "twitch"
+      : t.platform === "kick"
+        ? "kick"
+        : "global";
+
+  try {
+    if (existing) {
+      await db
+        .update(userTasks)
+        .set({ status: "completed", lastError: null, updatedAt: sql`now()` })
+        .where(eq(userTasks.id, existing.id));
+    } else {
+      await db.insert(userTasks).values({
+        userId,
+        taskId,
+        status: "completed",
+        periodKey: pk,
+      });
+    }
+  } catch {
+    await reverseTaskRewardCredit({
       userId,
       taskId,
-      status: "completed",
       periodKey: pk,
+      platform: refundPlatform,
+      amount: credit.creditedAmount,
     });
+    throw new Error("task_persist_failed");
   }
 
   await maybeQualifyReferral(userId);

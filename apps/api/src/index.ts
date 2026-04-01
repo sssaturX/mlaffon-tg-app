@@ -102,6 +102,7 @@ app.post(
       already_used: 409,
       empty_code: 400,
       duplicate: 409,
+      credit_failed: 503,
     };
     return reply.status(status[r.error] ?? 400).send({
       error: { code: r.error, message: r.error },
@@ -153,7 +154,12 @@ app.post("/api/v1/auth/telegram", async (req, reply) => {
   return { token, userId };
 });
 
-if (process.env.ALLOW_DEV_AUTH === "1") {
+/** В production маршрут не регистрируется — иначе обход Telegram-подписи. */
+const allowDevAuthRoute =
+  process.env.NODE_ENV !== "production" &&
+  process.env.ALLOW_DEV_AUTH === "1";
+
+if (allowDevAuthRoute) {
   const devBody = z.object({
     telegramId: z.coerce.number().int().positive(),
     username: z.string().optional(),
@@ -418,7 +424,7 @@ app.get("/api/v1/referrals", async (req, reply) => {
   };
 });
 
-if (process.env.ALLOW_DEV_AUTH === "1") {
+if (allowDevAuthRoute) {
   app.post("/api/v1/platforms/:platform/connect", async (req, reply) => {
     const userId = authUser(req, reply);
     if (!userId) return;

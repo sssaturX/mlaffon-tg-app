@@ -19,7 +19,11 @@ function shopEmoji(title: string, kind: string): string {
   return "🛒";
 }
 
-export default function Shop() {
+export default function Shop({
+  onRefresh,
+}: {
+  onRefresh: () => void | Promise<unknown>;
+}) {
   const { activePlatform } = useActivePlatform();
   const [items, setItems] = useState<Item[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
@@ -58,6 +62,7 @@ export default function Shop() {
     });
     if (r.ok) {
       setMsg(`Куплено. Баланс: ${r.data.coins.toLocaleString("ru-RU")}`);
+      void onRefresh();
     } else {
       setMsg(formatApiError(r));
     }

@@ -27,7 +27,11 @@ function formatSpinResult(data: {
   return "Выпало: без приза — удачи в следующий раз";
 }
 
-export default function Games() {
+export default function Games({
+  onRefresh,
+}: {
+  onRefresh: () => void | Promise<unknown>;
+}) {
   const { activePlatform } = useActivePlatform();
   const [status, setStatus] = useState<FortuneStatus | null>(null);
   const [rotation, setRotation] = useState(0);
@@ -91,6 +95,7 @@ export default function Games() {
         pendingMsgRef.current = null;
       }
       void load();
+      void onRefresh();
     }, SPIN_MS);
   }
 

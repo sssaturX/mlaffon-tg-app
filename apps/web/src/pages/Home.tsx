@@ -262,9 +262,7 @@ export default function Home({
           });
         });
       }
-      if (!realtimeWsConnected) {
-        await onRefresh();
-      }
+      await onRefresh();
       if (!r.data.alreadyWatchedThisBroadcast) {
         const st = r.data.streak;
         const p = live.platform;
@@ -311,6 +309,7 @@ export default function Home({
     }
     showToast(`+${r.data.reward} монет`, "success");
     setPromo("");
+    void onRefresh();
   }
 
   return (
