@@ -1,4 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { eq } from "drizzle-orm";
+import { db } from "../db/index.js";
+import { users } from "../db/schema.js";
 import { verifySession } from "../lib/jwt.js";
 import { isUserBanned } from "../services/userBan.js";
 
@@ -37,6 +40,24 @@ export async function registerAuth(app: FastifyInstance) {
     }
 
     if (req.userId) {
+      try {
+        const [u] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, req.userId))
+          .limit(1);
+        if (!u) {
+          void reply.status(401).send({
+            error: {
+              code: "session_invalid",
+              message: "Сессия устарела. Войдите снова.",
+            },
+          });
+          return;
+        }
+      } catch {
+        /* не блокируем при сбое БД — ниже проверка banned */
+      }
       try {
         if (await isUserBanned(req.userId)) {
           const allowedWhenBanned =

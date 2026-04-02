@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { userStreamStreaks } from "../db/schema.js";
+import { userStreamStreaks, users } from "../db/schema.js";
 import { gameConfig } from "../config.js";
 import { applyCredit } from "./economy.js";
 import { utcDateString } from "./streak.js";
@@ -20,6 +20,15 @@ export async function ensureStreamStreakRow(
   twitchLast: string | null;
   kickLast: string | null;
 }> {
+  const [exists] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!exists) {
+    return { twitch: 0, kick: 0, twitchLast: null, kickLast: null };
+  }
+
   const [row] = await db
     .select()
     .from(userStreamStreaks)

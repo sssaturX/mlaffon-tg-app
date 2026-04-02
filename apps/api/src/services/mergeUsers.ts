@@ -136,6 +136,11 @@ export async function mergeUserIntoSurvivorTx(
         kickLifetimeEarned: sql`${userBalances.kickLifetimeEarned} + ${lBal.kickLifetimeEarned}`,
       })
       .where(eq(userBalances.userId, survivorId));
+  } else if (!sBal && lBal) {
+    await tx
+      .update(userBalances)
+      .set({ userId: survivorId })
+      .where(eq(userBalances.userId, loserId));
   }
 
   const [sSt] = await tx
@@ -160,6 +165,11 @@ export async function mergeUserIntoSurvivorTx(
         lastActivityUtcDate: lastDate,
       })
       .where(eq(userStreaks.userId, survivorId));
+  } else if (!sSt && lSt) {
+    await tx
+      .update(userStreaks)
+      .set({ userId: survivorId })
+      .where(eq(userStreaks.userId, loserId));
   }
 
   const [sSs] = await tx
@@ -190,6 +200,11 @@ export async function mergeUserIntoSurvivorTx(
         kickLastUtcDate: kiD,
       })
       .where(eq(userStreamStreaks.userId, survivorId));
+  } else if (!sSs && lSs) {
+    await tx
+      .update(userStreamStreaks)
+      .set({ userId: survivorId })
+      .where(eq(userStreamStreaks.userId, loserId));
   }
 
   const survTaskKeys = new Set<string>();
