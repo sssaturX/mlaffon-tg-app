@@ -1,7 +1,10 @@
-import { Gift, Trophy, Zap } from "lucide-react";
+import { ChevronLeft, Gift, Trophy, Zap } from "lucide-react";
 import WebApp from "@twa-dev/sdk";
 import type { MeResponse } from "shared";
+import { setToken } from "../api";
 import { useOAuthLink } from "../hooks/useOAuthLink";
+import { useMeStore } from "../store/meStore";
+import { looksLikeTelegramMiniApp } from "../utils/waitForTelegramInitData";
 
 const creatorName =
   import.meta.env.VITE_CREATOR_DISPLAY_NAME?.trim() || "Стример";
@@ -29,6 +32,16 @@ function openExternal(url: string) {
 export default function WelcomeGate({ me }: { me: MeResponse }) {
   const { startOAuth, connectStub, stub } = useOAuthLink();
 
+  /** В браузере — выйти на экран входа другим аккаунтом; в Telegram Mini App не показываем. */
+  const showBackToLogin =
+    import.meta.env.VITE_ALLOW_WEB_AUTH !== "0" && !looksLikeTelegramMiniApp();
+
+  function exitToLogin() {
+    setToken(null);
+    useMeStore.getState().clearMe();
+    window.location.reload();
+  }
+
   const helloName =
     me.firstName?.trim() ||
     (me.username ? `@${me.username}` : "друг");
@@ -45,6 +58,18 @@ export default function WelcomeGate({ me }: { me: MeResponse }) {
 
   return (
     <div className="welcome-gate">
+      {showBackToLogin ? (
+        <div className="welcome-gate__topbar">
+          <button
+            type="button"
+            className="welcome-gate__back"
+            onClick={exitToLogin}
+            aria-label="Выйти и войти другим аккаунтом"
+          >
+            <ChevronLeft size={24} strokeWidth={2.2} aria-hidden />
+          </button>
+        </div>
+      ) : null}
       <div className="welcome-gate__scroll">
         <div className="card welcome-gate__creator">
           <div className="welcome-gate__creator-row">

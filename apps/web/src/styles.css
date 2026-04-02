@@ -2307,6 +2307,32 @@ h3 {
   padding-bottom: calc(32px + env(safe-area-inset-bottom, 0));
 }
 
+.welcome-gate__topbar {
+  max-width: 440px;
+  margin: 0 auto calc(-4px);
+  padding-top: env(safe-area-inset-top, 0);
+  padding-left: 2px;
+}
+
+.welcome-gate__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -8px 0 0 -10px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.welcome-gate__back:hover {
+  background: var(--surface-hover);
+}
+
 .welcome-gate__scroll {
   max-width: 440px;
   margin: 0 auto;
