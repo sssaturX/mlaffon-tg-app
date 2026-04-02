@@ -1,4 +1,5 @@
 import type { MeResponse } from "shared";
+import type { ApiErr } from "../api";
 import { api, formatApiError, getToken, setToken } from "../api";
 import {
   isMeEconomyPatch,
@@ -22,6 +23,15 @@ let lastSyncAt = 0;
 let refreshMeInflight: Promise<MeResponse | null> | null = null;
 
 const ME_REQUEST_TIMEOUT_MS = 5000;
+
+function isTransientMeFailure(r: ApiErr): boolean {
+  if (r.networkError) return true;
+  return r.status >= 500 && r.status < 600;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 /** Если давно не было успешного sync, разрешаем принудительно принять /me даже при рассинхроне version. */
 const STALE_SYNC_ALLOW_FORCE_MS = 5000;
 
@@ -99,15 +109,30 @@ export async function refreshMe(showToast?: ShowToast): Promise<MeResponse | nul
     try {
       const versionSnapshot = useMeStore.getState().version;
       const myId = ++meRefreshSeq;
-      const ctrl = new AbortController();
-      const timeoutId = window.setTimeout(() => ctrl.abort(), ME_REQUEST_TIMEOUT_MS);
-      let r;
-      try {
-        r = await api<MeResponse>(`/api/v1/me?_=${Date.now()}`, {
-          signal: ctrl.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
+
+      async function fetchMeOnce() {
+        const ctrl = new AbortController();
+        const timeoutId = window.setTimeout(() => ctrl.abort(), ME_REQUEST_TIMEOUT_MS);
+        try {
+          return await api<MeResponse>(`/api/v1/me?_=${Date.now()}`, {
+            signal: ctrl.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      }
+
+      let r = await fetchMeOnce();
+      for (let attempt = 0; attempt < 2 && !r.ok; attempt++) {
+        if (!isTransientMeFailure(r)) break;
+        if (myId !== meRefreshSeq) {
+          return useMeStore.getState().me;
+        }
+        await sleep(400 * (attempt + 1));
+        if (myId !== meRefreshSeq) {
+          return useMeStore.getState().me;
+        }
+        r = await fetchMeOnce();
       }
       if (myId !== meRefreshSeq) {
         return useMeStore.getState().me;

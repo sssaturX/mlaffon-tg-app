@@ -21,7 +21,7 @@ import {
 import {
   api,
   authDev,
-  authTelegram,
+  authTelegramWithRetry,
   formatApiError,
   getToken,
   setToken,
@@ -42,6 +42,10 @@ import { useSyncedCountdownMs } from "./hooks/useSyncedCountdown";
 import { useRealtimeWebSocket } from "./hooks/useRealtimeWebSocket";
 import { useDocumentVisible } from "./hooks/useDocumentVisible";
 import { useLiveBroadcastStore } from "./store/liveBroadcastStore";
+import {
+  looksLikeTelegramMiniApp,
+  waitForTelegramInitData,
+} from "./utils/waitForTelegramInitData";
 
 const HomePage = lazy(() => import("./pages/Home"));
 const Tasks = lazy(() => import("./pages/Tasks"));
@@ -114,9 +118,12 @@ export default function App() {
         return;
       }
 
-      const initData = WebApp.initData;
+      let initData = WebApp.initData?.trim() ?? "";
+      if (!initData && looksLikeTelegramMiniApp()) {
+        initData = (await waitForTelegramInitData(2000)) ?? "";
+      }
       if (initData) {
-        const r = await authTelegram(initData);
+        const r = await authTelegramWithRetry(initData);
         if (cancelled) return;
         if (r.ok) {
           setToken(r.data.token);

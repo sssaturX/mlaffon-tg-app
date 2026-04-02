@@ -91,6 +91,26 @@ export async function authTelegram(initData: string) {
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Повтор при обрыве сети / 5xx (холодный старт API, флап WebView). */
+export async function authTelegramWithRetry(initData: string) {
+  let last = await authTelegram(initData);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (last.ok) return last;
+    const transient =
+      last.networkError === true ||
+      last.status === 0 ||
+      (last.status >= 500 && last.status < 600);
+    if (!transient) return last;
+    await sleep(350 * (attempt + 1));
+    last = await authTelegram(initData);
+  }
+  return last;
+}
+
 export async function authDev(telegramId: number, username?: string) {
   return api<{ token: string; userId: string }>("/api/v1/auth/dev", {
     method: "POST",
