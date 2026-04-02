@@ -530,6 +530,14 @@ export async function mergeUserIntoSurvivorTx(
   const mergedBanned = sRow.banned || lRow.banned;
   const mergedBanReason = sRow.banReason ?? lRow.banReason;
 
+  /**
+   * Иначе unique users_email_uidx: survivor получает email с loser, пока loser ещё в БД — конфликт.
+   */
+  await tx
+    .update(users)
+    .set({ email: null, passwordHash: null, updatedAt: sql`now()` })
+    .where(eq(users.id, loserId));
+
   await tx
     .update(users)
     .set({
