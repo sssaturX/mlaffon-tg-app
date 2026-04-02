@@ -85,10 +85,13 @@ export async function api<T>(
 }
 
 export async function authTelegram(initData: string) {
-  return api<{ token: string; userId: string }>("/api/v1/auth/telegram", {
-    method: "POST",
-    body: JSON.stringify({ initData }),
-  });
+  return api<{ token: string; userId: string; accountsMerged?: boolean }>(
+    "/api/v1/auth/telegram",
+    {
+      method: "POST",
+      body: JSON.stringify({ initData }),
+    }
+  );
 }
 
 function sleep(ms: number): Promise<void> {

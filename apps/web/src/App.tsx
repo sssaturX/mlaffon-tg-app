@@ -43,6 +43,7 @@ import { useRealtimeWebSocket } from "./hooks/useRealtimeWebSocket";
 import { useDocumentVisible } from "./hooks/useDocumentVisible";
 import { useLiveBroadcastStore } from "./store/liveBroadcastStore";
 import {
+  getStartParamFromInitData,
   looksLikeTelegramMiniApp,
   waitForTelegramInitData,
 } from "./utils/waitForTelegramInitData";
@@ -112,24 +113,37 @@ export default function App() {
     let cancelled = false;
     (async () => {
       setError(null);
+
+      let initData = WebApp.initData?.trim() ?? "";
+      if (!initData && looksLikeTelegramMiniApp()) {
+        initData = (await waitForTelegramInitData(2000)) ?? "";
+      }
+
+      const startParam = initData ? getStartParamFromInitData(initData) : null;
+      /** Иначе старый JWT из localStorage перехватывает запуск и startapp=link_* не доходит до API. */
+      const isTelegramAccountLink = startParam?.startsWith("link_") === true;
+
       const existing = getToken();
-      if (existing) {
+      if (existing && !isTelegramAccountLink) {
         await refreshMe();
         if (cancelled) return;
         setReady(true);
         return;
       }
 
-      let initData = WebApp.initData?.trim() ?? "";
-      if (!initData && looksLikeTelegramMiniApp()) {
-        initData = (await waitForTelegramInitData(2000)) ?? "";
-      }
       if (initData) {
         const r = await authTelegramWithRetry(initData);
         if (cancelled) return;
         if (r.ok) {
           setToken(r.data.token);
           await refreshMe();
+          if (r.data.accountsMerged === true) {
+            showToast(
+              "Аккаунты объединены. Оставлен профиль с большим прогрессом.",
+              "success",
+              { durationMs: 5200 }
+            );
+          }
         } else {
           setError(formatApiError(r));
         }

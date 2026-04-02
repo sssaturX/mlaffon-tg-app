@@ -26,7 +26,7 @@ export async function findByReferralCode(code: string) {
 export async function ensureUserFromTelegram(
   tg: TelegramUserPayload,
   startParam: string | null
-): Promise<{ userId: string; created: boolean }> {
+): Promise<{ userId: string; created: boolean; accountsMerged?: boolean }> {
   const telegramId = BigInt(tg.id);
 
   if (startParam?.startsWith("link_")) {

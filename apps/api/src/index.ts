@@ -157,10 +157,17 @@ app.post("/api/v1/auth/telegram", async (req, reply) => {
   }
 
   try {
-    const { userId } = await ensureUserFromTelegram(user, startParam);
+    const { userId, accountsMerged } = await ensureUserFromTelegram(
+      user,
+      startParam
+    );
     await applyReferralFromStartParam(userId, BigInt(user.id), startParam);
     const token = signSession(userId, BigInt(user.id));
-    return { token, userId };
+    return {
+      token,
+      userId,
+      ...(accountsMerged ? { accountsMerged: true as const } : {}),
+    };
   } catch (e) {
     if (e instanceof LinkTokenError) {
       const status =

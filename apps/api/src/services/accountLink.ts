@@ -1,8 +1,13 @@
 import crypto from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { accountLinkTokens, users } from "../db/schema.js";
+import { accountLinkTokens, userBalances, users } from "../db/schema.js";
 import type { TelegramUserPayload } from "../lib/telegram.js";
+import {
+  mergeUserIntoSurvivorTx,
+  pickSurvivorByProgress,
+  zeroBalance,
+} from "./mergeUsers.js";
 
 const LINK_TTL_MS = 20 * 60 * 1000;
 
@@ -44,7 +49,7 @@ export async function linkTelegramFromToken(
   secret: string,
   telegramId: bigint,
   tg: TelegramUserPayload
-): Promise<{ userId: string; created: boolean }> {
+): Promise<{ userId: string; created: boolean; accountsMerged?: boolean }> {
   const now = new Date();
   const [row] = await db
     .select()
@@ -75,23 +80,65 @@ export async function linkTelegramFromToken(
   }
 
   const [other] = await db
-    .select({ id: users.id })
+    .select()
     .from(users)
     .where(eq(users.telegramId, telegramId))
     .limit(1);
-
-  if (other && other.id !== target.id) {
-    throw new LinkTokenError(
-      "telegram_already_linked",
-      "Этот Telegram уже привязан к другому аккаунту."
-    );
-  }
 
   if (target.telegramId != null && target.telegramId !== telegramId) {
     throw new LinkTokenError(
       "account_already_linked",
       "К этому профилю уже привязан другой Telegram."
     );
+  }
+
+  if (other && other.id !== target.id) {
+    const [balTarget] = await db
+      .select()
+      .from(userBalances)
+      .where(eq(userBalances.userId, target.id))
+      .limit(1);
+    const [balOther] = await db
+      .select()
+      .from(userBalances)
+      .where(eq(userBalances.userId, other.id))
+      .limit(1);
+    const { survivorId, loserId } = pickSurvivorByProgress(
+      target,
+      other,
+      balTarget ?? zeroBalance(target.id),
+      balOther ?? zeroBalance(other.id)
+    );
+
+    const profileBase = survivorId === target.id ? target : other;
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(accountLinkTokens)
+        .set({ userId: survivorId })
+        .where(eq(accountLinkTokens.id, row.id));
+
+      await mergeUserIntoSurvivorTx(tx, survivorId, loserId);
+
+      await tx
+        .update(users)
+        .set({
+          telegramId,
+          username: tg.username ?? profileBase.username,
+          firstName: tg.first_name ?? profileBase.firstName,
+          lastName: tg.last_name ?? profileBase.lastName,
+          photoUrl: tg.photo_url ?? profileBase.photoUrl,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(users.id, survivorId));
+
+      await tx
+        .update(accountLinkTokens)
+        .set({ usedAt: now })
+        .where(eq(accountLinkTokens.id, row.id));
+    });
+
+    return { userId: survivorId, created: false, accountsMerged: true };
   }
 
   await db.transaction(async (tx) => {

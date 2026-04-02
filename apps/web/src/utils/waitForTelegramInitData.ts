@@ -1,5 +1,14 @@
 import WebApp from "@twa-dev/sdk";
 
+/** `start_param` из строки initData (startapp=… / привязка link_*). */
+export function getStartParamFromInitData(initData: string): string | null {
+  try {
+    return new URLSearchParams(initData).get("start_param");
+  } catch {
+    return null;
+  }
+}
+
 /** Есть ли признаки запуска внутри Telegram (initData может прийти на тик позже). */
 export function looksLikeTelegramMiniApp(): boolean {
   try {
