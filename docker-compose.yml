@@ -10,6 +10,12 @@ services:
       - "5432:5432"
     volumes:
       - mlaffon_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlaffon -d mlaffon"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
 
   redis:
     image: redis:7-alpine
@@ -19,6 +25,12 @@ services:
     volumes:
       - mlaffon_redis:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
 
 volumes:
   mlaffon_pg:

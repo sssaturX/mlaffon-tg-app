@@ -43,7 +43,10 @@ export type UserTaskStatus =
 
 export interface MeResponse {
   id: string;
-  telegramId: string;
+  /** null — только веб, до привязки Telegram */
+  telegramId: string | null;
+  /** Email для входа с сайта */
+  email: string | null;
   username: string | null;
   firstName: string | null;
   photoUrl: string | null;

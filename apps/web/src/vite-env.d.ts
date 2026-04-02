@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  /** "0" — отключить вход email/пароль в браузере (только Telegram / dev) */
+  readonly VITE_ALLOW_WEB_AUTH?: string;
   readonly VITE_ALLOW_DEV?: string;
   readonly VITE_ALLOW_DEV_STUB?: string;
   /** URL политики конфиденциальности (онбординг) */

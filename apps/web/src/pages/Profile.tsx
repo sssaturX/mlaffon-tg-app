@@ -10,7 +10,13 @@ import {
 } from "lucide-react";
 import type { MeResponse, ReferralsResponse } from "shared";
 import WebApp from "@twa-dev/sdk";
-import { api, formatApiError, setToken } from "../api";
+import {
+  api,
+  attachWebCredentials,
+  createTelegramLink,
+  formatApiError,
+  setToken,
+} from "../api";
 import { useToast } from "../context/ToastContext";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -27,6 +33,12 @@ export default function Profile({
   const { refreshMe } = useMeEconomySync();
   const { startOAuth, connectStub, stub } = useOAuthLink();
   const [refs, setRefs] = useState<ReferralsResponse | null>(null);
+  const [tgLinkBusy, setTgLinkBusy] = useState(false);
+  const [tgLinkUrl, setTgLinkUrl] = useState<string | null>(null);
+  const [webEmail, setWebEmail] = useState("");
+  const [webPassword, setWebPassword] = useState("");
+  const [webPassword2, setWebPassword2] = useState("");
+  const [webCredBusy, setWebCredBusy] = useState(false);
 
   const loadRefs = useCallback(async () => {
     const r = await api<ReferralsResponse>("/api/v1/referrals");
@@ -111,7 +123,60 @@ export default function Profile({
   }
 
   const displayName = me.firstName ?? "Игрок";
-  const handle = me.username ? `@${me.username}` : me.telegramId;
+  const handle = me.username
+    ? `@${me.username}`
+    : me.telegramId != null
+      ? me.telegramId
+      : me.email ?? "Игрок";
+
+  async function requestTelegramLink() {
+    setTgLinkBusy(true);
+    setTgLinkUrl(null);
+    try {
+      const r = await createTelegramLink();
+      if (r.ok) {
+        setTgLinkUrl(r.data.botStartUrl);
+        showToast("Откройте ссылку в Telegram", "success");
+      } else {
+        showToast(formatApiError(r), "error");
+      }
+    } finally {
+      setTgLinkBusy(false);
+    }
+  }
+
+  async function copyTgLink() {
+    if (!tgLinkUrl) return;
+    try {
+      await navigator.clipboard.writeText(tgLinkUrl);
+      showToast("Ссылка скопирована — откройте её в Telegram", "success");
+    } catch {
+      showToast("Не удалось скопировать", "error");
+    }
+  }
+
+  async function submitWebCredentials(e: React.FormEvent) {
+    e.preventDefault();
+    if (webPassword !== webPassword2) {
+      showToast("Пароли не совпадают", "error");
+      return;
+    }
+    setWebCredBusy(true);
+    try {
+      const r = await attachWebCredentials(webEmail, webPassword);
+      if (r.ok) {
+        showToast("Можно входить на сайте по этому email и паролю", "success");
+        setWebEmail("");
+        setWebPassword("");
+        setWebPassword2("");
+        void refreshMe();
+      } else {
+        showToast(formatApiError(r), "error");
+      }
+    } finally {
+      setWebCredBusy(false);
+    }
+  }
 
   return (
     <div>
@@ -140,6 +205,81 @@ export default function Profile({
           </div>
         </div>
       </div>
+
+      {me.telegramId != null && !me.email && (
+        <div className="card stack card--pad-sm">
+          <h3 className="profile-section-title">Вход на сайте</h3>
+          <p className="muted">
+            Задайте email и пароль — тот же прогресс будет в браузере без Telegram.
+          </p>
+          <form className="stack" onSubmit={submitWebCredentials}>
+            <label className="stack gap-0">
+              <span className="muted text-caption">Email</span>
+              <input
+                type="email"
+                autoComplete="email"
+                value={webEmail}
+                onChange={(e) => setWebEmail(e.target.value)}
+                required
+                disabled={webCredBusy}
+              />
+            </label>
+            <label className="stack gap-0">
+              <span className="muted text-caption">Пароль (мин. 8 символов)</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={webPassword}
+                onChange={(e) => setWebPassword(e.target.value)}
+                required
+                minLength={8}
+                disabled={webCredBusy}
+              />
+            </label>
+            <label className="stack gap-0">
+              <span className="muted text-caption">Пароль ещё раз</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={webPassword2}
+                onChange={(e) => setWebPassword2(e.target.value)}
+                required
+                minLength={8}
+                disabled={webCredBusy}
+              />
+            </label>
+            <button type="submit" className="btn primary" disabled={webCredBusy}>
+              {webCredBusy ? "…" : "Сохранить"}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {me.telegramId == null && me.email && (
+        <div className="card stack card--pad-sm">
+          <h3 className="profile-section-title">Привязать Telegram</h3>
+          <p className="muted">
+            Один прогресс на сайте и в мини-приложении: получите ссылку и откройте
+            её в Telegram (внутри откроется бот с подтверждением).
+          </p>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={tgLinkBusy}
+            onClick={() => void requestTelegramLink()}
+          >
+            {tgLinkBusy ? "…" : "Получить ссылку"}
+          </button>
+          {tgLinkUrl && (
+            <div className="stack gap-2">
+              <input readOnly className="mono" value={tgLinkUrl} />
+              <button type="button" className="btn" onClick={() => void copyTgLink()}>
+                <Copy size={16} aria-hidden /> Скопировать
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card stack card--pad-sm profile-stats-row">
         <div className="profile-stat-cell">

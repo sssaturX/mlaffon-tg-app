@@ -73,7 +73,7 @@ export async function listBanAppealsAdmin(): Promise<BanAppealAdminRow[]> {
   return rows.map((r) => ({
     id: r.id,
     userId: r.userId,
-    telegramId: String(r.telegramId),
+    telegramId: r.telegramId != null ? String(r.telegramId) : "",
     username: r.username,
     firstName: r.firstName,
     message: r.message,

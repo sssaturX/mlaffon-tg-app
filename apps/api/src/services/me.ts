@@ -13,7 +13,8 @@ import { getCoinRankAll } from "./leaderboard.js";
 
 export async function buildMeResponse(userId: string): Promise<{
   id: string;
-  telegramId: string;
+  telegramId: string | null;
+  email: string | null;
   username: string | null;
   firstName: string | null;
   photoUrl: string | null;
@@ -116,7 +117,8 @@ export async function buildMeResponse(userId: string): Promise<{
 
   return {
     id: u.id,
-    telegramId: u.telegramId.toString(),
+    telegramId: u.telegramId != null ? u.telegramId.toString() : null,
+    email: u.email ?? null,
     username: u.username,
     firstName: u.firstName,
     photoUrl: u.photoUrl,

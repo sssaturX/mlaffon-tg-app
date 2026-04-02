@@ -30,6 +30,7 @@ async function userConnectedPlatforms(
   return { twitch: s.has("twitch"), kick: s.has("kick") };
 }
 
+/** both = split-награда — нужны оба OAuth; иначе снапшот дропа пользователю не показываем. */
 function canParticipateDrop(
   dropPlatform: string,
   u: { twitch: boolean; kick: boolean }

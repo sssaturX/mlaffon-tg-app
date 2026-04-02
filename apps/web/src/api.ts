@@ -117,3 +117,33 @@ export async function authDev(telegramId: number, username?: string) {
     body: JSON.stringify({ telegramId, username }),
   });
 }
+
+export async function authRegister(email: string, password: string) {
+  return api<{ token: string; userId: string }>("/api/v1/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function authLogin(email: string, password: string) {
+  return api<{ token: string; userId: string }>("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function createTelegramLink() {
+  return api<{
+    linkToken: string;
+    expiresAt: string;
+    botStartUrl: string;
+  }>("/api/v1/auth/link/telegram", { method: "POST" });
+}
+
+/** Задать email/пароль для входа с сайта (уже вошли через Telegram). */
+export async function attachWebCredentials(email: string, password: string) {
+  return api<{ ok: true }>("/api/v1/me/web-credentials", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}

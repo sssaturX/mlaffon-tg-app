@@ -46,6 +46,7 @@ import {
   looksLikeTelegramMiniApp,
   waitForTelegramInitData,
 } from "./utils/waitForTelegramInitData";
+import { WebLogin } from "./pages/WebLogin";
 
 const HomePage = lazy(() => import("./pages/Home"));
 const Tasks = lazy(() => import("./pages/Tasks"));
@@ -68,6 +69,7 @@ export default function App() {
   const [searchParams] = useSearchParams();
   const { showToast } = useToast();
   const [ready, setReady] = useState(false);
+  const [webLogin, setWebLogin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const me = useMeStore((s) => s.me);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -148,6 +150,19 @@ export default function App() {
         return;
       }
 
+      if (looksLikeTelegramMiniApp()) {
+        setError(
+          "Не удалось получить данные Telegram. Откройте мини-приложение из бота."
+        );
+        setReady(true);
+        return;
+      }
+
+      if (import.meta.env.VITE_ALLOW_WEB_AUTH !== "0") {
+        setWebLogin(true);
+        return;
+      }
+
       setError("Откройте приложение внутри Telegram");
       setReady(true);
     })();
@@ -161,6 +176,18 @@ export default function App() {
     if (!hasLinkedStreamingAccount(me)) return;
     if (!hasSeenOnboarding()) setOnboardingOpen(true);
   }, [ready, me]);
+
+  if (webLogin) {
+    return (
+      <WebLogin
+        onLoggedIn={async () => {
+          await refreshMe();
+          setWebLogin(false);
+          setReady(true);
+        }}
+      />
+    );
+  }
 
   if (!ready) {
     return <AppLoadingSpinner />;
@@ -189,9 +216,10 @@ export default function App() {
             <h1>Вход</h1>
             {error && <p className="err">{error}</p>}
             <p className="muted">
-              Для продакшена откройте мини-приложение из бота. Для локальной
-              разработки: <code>ALLOW_DEV_AUTH=1</code> в API и{" "}
-              <code>npm run dev</code> — тогда подставится тестовый пользователь.
+              Для продакшена откройте мини-приложение из бота или войдите на сайте
+              (если включён веб-вход). Для локальной разработки:{" "}
+              <code>ALLOW_DEV_AUTH=1</code> в API и <code>npm run dev</code> — тогда
+              подставится тестовый пользователь.
             </p>
           </div>
         </div>
@@ -377,15 +405,21 @@ function AppShell({
     };
   }, [activePlatform]);
 
-  /** Без WS — периодический fallback; с WS дроп = события + один GET при старте/reconnect. */
+  /**
+   * Пуллим /drops/active: без WS — чаще; с WS — редко, но всё равно (если пропустили
+   * drop_started через Redis/WS, пользователь не обязан быть в аппке в момент старта).
+   */
   useEffect(() => {
     if (!me || needsPlatformLink) return;
     if (!docVisible) return;
     void loadDrop();
-    if (realtimeConnected) return;
     const activeDrop =
       dropSnap?.hasActiveDrop === true && dropSnap.won !== true;
-    const ms = activeDrop ? 8000 : 30_000;
+    const ms = realtimeConnected
+      ? 45_000
+      : activeDrop
+        ? 8000
+        : 30_000;
     const t = window.setInterval(() => void loadDrop(), ms);
     return () => clearInterval(t);
   }, [

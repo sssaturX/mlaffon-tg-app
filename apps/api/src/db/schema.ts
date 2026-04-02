@@ -17,7 +17,11 @@ export const users = pgTable(
   "users",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    telegramId: bigint("telegram_id", { mode: "bigint" }).notNull().unique(),
+    /** null — только веб-аккаунт до привязки Telegram */
+    telegramId: bigint("telegram_id", { mode: "bigint" }),
+    /** Вход с сайта; уникален среди непустых */
+    email: text("email"),
+    passwordHash: text("password_hash"),
     username: text("username"),
     firstName: text("first_name"),
     lastName: text("last_name"),
@@ -35,7 +39,30 @@ export const users = pgTable(
     banned: boolean("banned").notNull().default(false),
     banReason: text("ban_reason"),
   },
-  (t) => [index("users_referred_by_idx").on(t.referredById)]
+  (t) => [
+    index("users_referred_by_idx").on(t.referredById),
+    uniqueIndex("users_telegram_id_uidx")
+      .on(t.telegramId)
+      .where(sql`${t.telegramId} IS NOT NULL`),
+    uniqueIndex("users_email_uidx")
+      .on(t.email)
+      .where(sql`${t.email} IS NOT NULL`),
+  ]
+);
+
+/** Одноразовая привязка Telegram к веб-аккаунту (start_param link_*) */
+export const accountLinkTokens = pgTable(
+  "account_link_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => [index("account_link_tokens_user_idx").on(t.userId)]
 );
 
 export const userBalances = pgTable("user_balances", {

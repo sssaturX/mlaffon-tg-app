@@ -15,6 +15,8 @@ export async function registerAuth(app: FastifyInstance) {
     /** WS: JWT в query `token`, не в Authorization. */
     if (path === "/api/v1/ws") return;
     if (path === "/api/v1/auth/telegram") return;
+    if (path === "/api/v1/auth/register") return;
+    if (path === "/api/v1/auth/login") return;
     if (path === "/api/v1/auth/dev") return;
     if (path === "/api/v1/oauth/twitch/callback") return;
     if (path === "/api/v1/oauth/kick/callback") return;

@@ -36,7 +36,12 @@ export default function WelcomeGate({ me }: { me: MeResponse }) {
   const userLabel =
     me.firstName?.trim() ||
     (me.username ? `@${me.username}` : "Игрок");
-  const userHandle = me.username ? `@${me.username}` : `id ${me.telegramId.slice(0, 8)}…`;
+  const userHandle =
+    me.username
+      ? `@${me.username}`
+      : me.telegramId != null
+        ? `id ${me.telegramId.slice(0, 8)}…`
+        : me.email ?? "—";
 
   return (
     <div className="welcome-gate">

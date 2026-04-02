@@ -10,6 +10,7 @@ import {
 } from "../db/schema.js";
 import { referralCode as genReferralCode } from "../lib/nanoid.js";
 import type { TelegramUserPayload } from "../lib/telegram.js";
+import { linkTelegramFromToken } from "./accountLink.js";
 import { applyCreditSplit } from "./economy.js";
 import { gameConfig } from "../config.js";
 
@@ -27,6 +28,14 @@ export async function ensureUserFromTelegram(
   startParam: string | null
 ): Promise<{ userId: string; created: boolean }> {
   const telegramId = BigInt(tg.id);
+
+  if (startParam?.startsWith("link_")) {
+    const secret = startParam.slice(5);
+    if (secret.length > 0) {
+      return linkTelegramFromToken(secret, telegramId, tg);
+    }
+  }
+
   const [existing] = await db
     .select()
     .from(users)

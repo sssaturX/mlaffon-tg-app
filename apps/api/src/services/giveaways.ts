@@ -15,11 +15,12 @@ import { checkTelegramChannelMembership } from "./telegramChannel.js";
 export function displayUsername(u: {
   username: string | null;
   firstName: string | null;
-  telegramId: bigint;
+  telegramId: bigint | null;
 }): string {
   if (u.username) return `@${u.username}`;
   if (u.firstName) return u.firstName;
-  return `tg:${u.telegramId}`;
+  if (u.telegramId != null) return `tg:${u.telegramId}`;
+  return "—";
 }
 
 export async function getGiveawayParticipantCount(giveawayId: string): Promise<number> {
@@ -145,11 +146,13 @@ export async function getGiveawayPublicDetail(
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
-      if (u) {
+      if (u?.telegramId != null) {
         channelSubscriptionOk = await checkTelegramChannelMembership(
           u.telegramId,
           g.telegramChannelId
         );
+      } else if (u) {
+        channelSubscriptionOk = false;
       }
     }
   }
@@ -258,6 +261,8 @@ export async function joinGiveaway(params: {
       .where(eq(users.id, userId))
       .limit(1);
     if (!u) return { ok: false, code: "not_found" };
+    if (u.telegramId == null)
+      return { ok: false, code: "channel_not_subscribed" };
     const okMember = await checkTelegramChannelMembership(u.telegramId, ch);
     if (!okMember) return { ok: false, code: "channel_not_subscribed" };
   }

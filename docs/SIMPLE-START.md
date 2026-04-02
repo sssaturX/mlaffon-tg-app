@@ -85,6 +85,15 @@ docker compose ps
 
 Строка `DATABASE_URL` в `.env` должна совпадать с пользователем/паролем/БД из compose.
 
+**После `docker compose down -v`** тома БД и Redis удаляются: Postgres создаётся заново (первый старт 10–60 с), пока он не готов, API на хосте мог раньше отдавать 500 / «сервер недоступен», пока не перезагрузишь страницу. Сейчас API **ждёт коннект к Postgres** перед `listen` (см. `waitForDatabaseReady` в `apps/api`). Всё равно после обнуления тома нужно заново применить схему:
+
+```bash
+cd $REPO/apps/api && npx drizzle-kit push
+# или из корня монорепо, как у вас принято
+```
+
+Затем `sudo systemctl restart mlaffon-api` (или как назван сервис). Проверка готовности контейнеров: `docker compose ps` — у `postgres`/`redis` статус **healthy**, если используется compose с `healthcheck` из репозитория.
+
 ---
 
 ## 4. Сборка (как `npm run build` локально, но один раз на сервере)

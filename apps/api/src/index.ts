@@ -5,7 +5,7 @@ import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
 import { z } from "zod";
 import { eq, and, sql } from "drizzle-orm";
-import { db } from "./db/index.js";
+import { db, waitForDatabaseReady } from "./db/index.js";
 import { platformAccounts } from "./db/schema.js";
 import {
   assertFreshAuth,
@@ -13,6 +13,15 @@ import {
   verifyTelegramInitData,
 } from "./lib/telegram.js";
 import { signSession } from "./lib/jwt.js";
+import {
+  LinkTokenError,
+  createTelegramLinkToken,
+} from "./services/accountLink.js";
+import {
+  attachEmailPasswordToUser,
+  loginWithEmail,
+  registerWithEmail,
+} from "./services/webAuth.js";
 import {
   applyReferralFromStartParam,
   ensureUserFromTelegram,
@@ -147,11 +156,85 @@ app.post("/api/v1/auth/telegram", async (req, reply) => {
     });
   }
 
-  const { userId } = await ensureUserFromTelegram(user, startParam);
-  await applyReferralFromStartParam(userId, BigInt(user.id), startParam);
-  const token = signSession(userId, BigInt(user.id));
+  try {
+    const { userId } = await ensureUserFromTelegram(user, startParam);
+    await applyReferralFromStartParam(userId, BigInt(user.id), startParam);
+    const token = signSession(userId, BigInt(user.id));
+    return { token, userId };
+  } catch (e) {
+    if (e instanceof LinkTokenError) {
+      const status =
+        e.code === "telegram_already_linked" || e.code === "account_already_linked"
+          ? 409
+          : 400;
+      return reply.status(status).send({
+        error: { code: e.code, message: e.message },
+      });
+    }
+    throw e;
+  }
+});
 
-  return { token, userId };
+const webAuthBody = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+});
+
+app.post("/api/v1/auth/register", async (req, reply) => {
+  const parsed = webAuthBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return reply.status(400).send({
+      error: { code: "bad_request", message: parsed.error.message },
+    });
+  }
+  const r = await registerWithEmail(parsed.data.email, parsed.data.password);
+  if (!r.ok) {
+    if (r.code === "email_taken") {
+      return reply.status(409).send({
+        error: {
+          code: r.code,
+          message: "Этот email уже зарегистрирован",
+        },
+      });
+    }
+    return reply.status(400).send({
+      error: {
+        code: r.code,
+        message: "Пароль не менее 8 символов",
+      },
+    });
+  }
+  return { token: r.token, userId: r.userId };
+});
+
+app.post("/api/v1/auth/login", async (req, reply) => {
+  const parsed = webAuthBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return reply.status(400).send({
+      error: { code: "bad_request", message: parsed.error.message },
+    });
+  }
+  const r = await loginWithEmail(parsed.data.email, parsed.data.password);
+  if (!r.ok) {
+    return reply.status(401).send({
+      error: {
+        code: r.code,
+        message: "Неверный email или пароль",
+      },
+    });
+  }
+  return { token: r.token, userId: r.userId };
+});
+
+app.post("/api/v1/auth/link/telegram", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  const out = await createTelegramLinkToken(userId);
+  return {
+    linkToken: out.token,
+    expiresAt: out.expiresAt,
+    botStartUrl: out.botStartUrl,
+  };
 });
 
 /** В production маршрут не регистрируется — иначе обход Telegram-подписи. */
@@ -193,6 +276,46 @@ app.get("/api/v1/me", async (req, reply) => {
     "private, no-store, no-cache, must-revalidate"
   );
   return buildMeResponse(userId);
+});
+
+const meWebCredentialsBody = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+});
+
+app.post("/api/v1/me/web-credentials", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  const parsed = meWebCredentialsBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return reply.status(400).send({
+      error: { code: "bad_request", message: parsed.error.message },
+    });
+  }
+  const r = await attachEmailPasswordToUser(
+    userId,
+    parsed.data.email,
+    parsed.data.password
+  );
+  if (!r.ok) {
+    const messages: Record<string, string> = {
+      email_taken: "Этот email уже используется в другом аккаунте",
+      weak_password: "Пароль не менее 8 символов",
+      already_has_credentials:
+        "Вход по email уже настроен — используйте его на сайте",
+    };
+    const status =
+      r.code === "email_taken" || r.code === "already_has_credentials"
+        ? 409
+        : 400;
+    return reply.status(status).send({
+      error: {
+        code: r.code,
+        message: messages[r.code] ?? r.code,
+      },
+    });
+  }
+  return { ok: true };
 });
 
 const banAppealBody = z.object({
@@ -378,7 +501,9 @@ app.get("/api/v1/leaderboard", async (req, reply) => {
           rank: meRank.rank,
           userId,
           displayName:
-            u.username ?? u.firstName ?? `tg:${u.telegramId}`,
+            u.username ??
+            u.firstName ??
+            (u.telegramId != null ? `tg:${u.telegramId}` : (u.email ?? "—")),
           value: meRank.value,
           photoUrl: u.photoUrl,
         }
@@ -410,7 +535,13 @@ app.get("/api/v1/referrals", async (req, reply) => {
     invited.push({
       refereeId: r.refereeId,
       displayName:
-        u?.username ?? u?.firstName ?? (u ? String(u.telegramId) : "?"),
+        u?.username ??
+        u?.firstName ??
+        (u
+          ? u.telegramId != null
+            ? String(u.telegramId)
+            : (u.email ?? "?")
+          : "?"),
       createdAt: r.createdAt?.toISOString() ?? "",
       qualified: !!r.qualifiedAt,
     });
@@ -559,6 +690,7 @@ const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
 try {
+  await waitForDatabaseReady();
   await startRealtimeSubscriber(app.log);
   await app.listen({ port, host });
   app.log.info(`API http://${host}:${port}`);

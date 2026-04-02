@@ -10,13 +10,16 @@ const secret = () => {
 
 export interface SessionPayload {
   sub: string;
+  /** "0" — только веб, без Telegram */
   tg: string;
 }
 
-export function signSession(userId: string, telegramId: bigint): string {
-  return jwt.sign({ sub: userId, tg: telegramId.toString() }, secret(), {
-    expiresIn: "7d",
-  });
+export function signSession(userId: string, telegramId: bigint | null): string {
+  return jwt.sign(
+    { sub: userId, tg: telegramId != null ? telegramId.toString() : "0" },
+    secret(),
+    { expiresIn: "7d" }
+  );
 }
 
 export function verifySession(token: string): SessionPayload {
