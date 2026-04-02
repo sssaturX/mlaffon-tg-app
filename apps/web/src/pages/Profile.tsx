@@ -260,7 +260,7 @@ export default function Profile({
           <h3 className="profile-section-title">Привязать Telegram</h3>
           <p className="muted">
             Один прогресс на сайте и в мини-приложении: получите ссылку и откройте
-            её в Telegram (внутри откроется бот с подтверждением).
+            её в Telegram — запустится мини-приложение (startapp), без чата с ботом.
           </p>
           <button
             type="button"

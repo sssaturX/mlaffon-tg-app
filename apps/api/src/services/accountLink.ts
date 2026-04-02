@@ -29,10 +29,11 @@ export async function createTelegramLinkToken(userId: string): Promise<{
     expiresAt,
   });
   const bot = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "") ?? "YOUR_BOT";
+  /** `startapp` открывает Mini App с `start_param` в initData; `start` ведёт в чат с ботом. */
   return {
     token,
     expiresAt: expiresAt.toISOString(),
-    botStartUrl: `https://t.me/${bot}?start=link_${token}`,
+    botStartUrl: `https://t.me/${bot}?startapp=link_${token}`,
   };
 }
 
