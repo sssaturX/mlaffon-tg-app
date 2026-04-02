@@ -25,15 +25,29 @@ export function formatApiError(r: ApiErr): string {
   if (r.networkError) {
     return "Нет соединения. Проверьте интернет и попробуйте снова.";
   }
-  if (r.status >= 500) {
-    return "Сервер временно недоступен. Попробуйте позже.";
-  }
+  const e = r.err as {
+    error?: { code?: string; message?: string };
+    message?: string;
+  } | null;
+  const rawMsg =
+    e?.error?.message ??
+    (typeof e?.message === "string" && e.message.trim() !== ""
+      ? e.message
+      : undefined);
+  const serverMsg =
+    rawMsg && !/^internal server error$/i.test(rawMsg) ? rawMsg : undefined;
+
   if (r.status === 429) {
-    return "Слишком много запросов. Подождите минуту.";
+    return serverMsg ?? "Слишком много запросов. Подождите минуту.";
   }
-  const e = r.err as { error?: { code?: string; message?: string } } | null;
   if (r.status === 403 && e?.error?.code === "banned") {
     return e.error.message ?? "Доступ ограничен.";
+  }
+  if (serverMsg && r.status >= 400) {
+    return serverMsg;
+  }
+  if (r.status >= 500) {
+    return "Сервер временно недоступен. Попробуйте позже.";
   }
   return (
     e?.error?.message ??

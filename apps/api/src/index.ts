@@ -173,12 +173,20 @@ app.post("/api/v1/auth/telegram", async (req, reply) => {
       const status =
         e.code === "telegram_already_linked" || e.code === "account_already_linked"
           ? 409
-          : 400;
+          : e.code === "merge_failed"
+            ? 503
+            : 400;
       return reply.status(status).send({
         error: { code: e.code, message: e.message },
       });
     }
-    throw e;
+    req.log.error(e);
+    return reply.status(500).send({
+      error: {
+        code: "internal_error",
+        message: "Не удалось войти. Попробуйте позже.",
+      },
+    });
   }
 });
 

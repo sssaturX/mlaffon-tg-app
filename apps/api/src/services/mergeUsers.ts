@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   banAppeals,
@@ -79,6 +79,15 @@ export function pickSurvivorByProgress(
 
 function taskKey(taskId: string, periodKey: string | null): string {
   return `${taskId}\0${periodKey ?? ""}`;
+}
+
+function laterTimestamp(
+  a: Date | null | undefined,
+  b: Date | null | undefined
+): Date | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return a > b ? a : b;
 }
 
 /**
@@ -406,18 +415,23 @@ export async function mergeUserIntoSurvivorTx(
         )
         .limit(1);
       if (ex) {
+        const attemptsCount = Math.max(ex.attemptsCount, row.attemptsCount);
+        const won = ex.won || row.won;
+        const rewardCoins =
+          ex.rewardCoins != null && row.rewardCoins != null
+            ? Math.max(ex.rewardCoins, row.rewardCoins)
+            : (ex.rewardCoins ?? row.rewardCoins ?? null);
+        const lastAttemptAt = laterTimestamp(
+          ex.lastAttemptAt,
+          row.lastAttemptAt
+        );
         await tx
           .update(dropUserStates)
           .set({
-            attemptsCount: sql`GREATEST(${dropUserStates.attemptsCount}, ${row.attemptsCount})`,
-            won: sql`${dropUserStates.won} OR ${row.won}`,
-            rewardCoins: sql`COALESCE(${dropUserStates.rewardCoins}, ${row.rewardCoins})`,
-            lastAttemptAt: sql`CASE
-              WHEN ${dropUserStates.lastAttemptAt} IS NULL THEN ${row.lastAttemptAt}
-              WHEN ${row.lastAttemptAt} IS NULL THEN ${dropUserStates.lastAttemptAt}
-              WHEN ${dropUserStates.lastAttemptAt} > ${row.lastAttemptAt} THEN ${dropUserStates.lastAttemptAt}
-              ELSE ${row.lastAttemptAt}
-            END`,
+            attemptsCount,
+            won,
+            rewardCoins,
+            lastAttemptAt,
           })
           .where(eq(dropUserStates.id, ex.id));
       }
@@ -481,8 +495,8 @@ export async function mergeUserIntoSurvivorTx(
       await tx
         .update(fortuneSpins)
         .set({
-          freeUsed: sql`${fortuneSpins.freeUsed} OR ${row.freeUsed}`,
-          paidCount: sql`${fortuneSpins.paidCount} + ${row.paidCount}`,
+          freeUsed: ex.freeUsed || row.freeUsed,
+          paidCount: ex.paidCount + row.paidCount,
           updatedAt: sql`now()`,
         })
         .where(eq(fortuneSpins.id, ex.id));
@@ -503,9 +517,7 @@ export async function mergeUserIntoSurvivorTx(
   await tx
     .update(users)
     .set({ referredById: survivorId, updatedAt: sql`now()` })
-    .where(
-      and(eq(users.referredById, loserId), sql`${users.id} <> ${survivorId}`)
-    );
+    .where(and(eq(users.referredById, loserId), ne(users.id, survivorId)));
 
   const mergedEmail = sRow.email ?? lRow.email;
   const mergedPassword = sRow.passwordHash ?? lRow.passwordHash;

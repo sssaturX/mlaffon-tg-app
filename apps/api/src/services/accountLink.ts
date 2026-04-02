@@ -112,31 +112,40 @@ export async function linkTelegramFromToken(
 
     const profileBase = survivorId === target.id ? target : other;
 
-    await db.transaction(async (tx) => {
-      await tx
-        .update(accountLinkTokens)
-        .set({ userId: survivorId })
-        .where(eq(accountLinkTokens.id, row.id));
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(accountLinkTokens)
+          .set({ userId: survivorId })
+          .where(eq(accountLinkTokens.id, row.id));
 
-      await mergeUserIntoSurvivorTx(tx, survivorId, loserId);
+        await mergeUserIntoSurvivorTx(tx, survivorId, loserId);
 
-      await tx
-        .update(users)
-        .set({
-          telegramId,
-          username: tg.username ?? profileBase.username,
-          firstName: tg.first_name ?? profileBase.firstName,
-          lastName: tg.last_name ?? profileBase.lastName,
-          photoUrl: tg.photo_url ?? profileBase.photoUrl,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(users.id, survivorId));
+        await tx
+          .update(users)
+          .set({
+            telegramId,
+            username: tg.username ?? profileBase.username,
+            firstName: tg.first_name ?? profileBase.firstName,
+            lastName: tg.last_name ?? profileBase.lastName,
+            photoUrl: tg.photo_url ?? profileBase.photoUrl,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(users.id, survivorId));
 
-      await tx
-        .update(accountLinkTokens)
-        .set({ usedAt: now })
-        .where(eq(accountLinkTokens.id, row.id));
-    });
+        await tx
+          .update(accountLinkTokens)
+          .set({ usedAt: now })
+          .where(eq(accountLinkTokens.id, row.id));
+      });
+    } catch (cause: unknown) {
+      console.error("[linkTelegramFromToken] merge transaction failed", cause);
+      if (cause instanceof LinkTokenError) throw cause;
+      throw new LinkTokenError(
+        "merge_failed",
+        "Не удалось объединить аккаунты. Попробуйте позже или напишите в поддержку."
+      );
+    }
 
     return { userId: survivorId, created: false, accountsMerged: true };
   }
