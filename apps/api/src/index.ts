@@ -40,6 +40,7 @@ import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerGiveawayRoutes } from "./routes/giveaways.js";
 import { registerDropRoutes } from "./routes/drops.js";
+import { registerPushRoutes } from "./routes/push.js";
 import { buildHomePublicResponse } from "./services/homePublic.js";
 import { applyPromoForUser } from "./services/promo.js";
 import { assertClaimRateLimits } from "./lib/abuse.js";
@@ -75,6 +76,7 @@ await registerOAuthRoutes(app);
 await registerAdminRoutes(app);
 await registerGiveawayRoutes(app);
 await registerDropRoutes(app);
+await registerPushRoutes(app);
 
 app.get("/health", async () => ({ ok: true }));
 
@@ -100,7 +102,7 @@ app.post(
   const parsed = promoBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return reply.status(400).send({
-      error: { code: "bad_request", message: parsed.error.message },
+      error: { code: "bad_request", message: "Введите промокод." },
     });
   }
   const r = await applyPromoForUser(userId, parsed.data.code);
@@ -113,8 +115,19 @@ app.post(
       duplicate: 409,
       credit_failed: 503,
     };
+    const promoMsg: Record<string, string> = {
+      not_found: "Промокод не найден",
+      exhausted: "Этот промокод больше не действует",
+      already_used: "Вы уже использовали этот промокод",
+      empty_code: "Введите промокод",
+      duplicate: "Промокод уже применён",
+      credit_failed: "Не удалось начислить награду. Попробуйте позже.",
+    };
     return reply.status(status[r.error] ?? 400).send({
-      error: { code: r.error, message: r.error },
+      error: {
+        code: r.error,
+        message: promoMsg[r.error] ?? "Не удалось применить промокод",
+      },
     });
   }
   return { ok: true, reward: r.reward, economy: r.economy };
@@ -129,21 +142,31 @@ app.post("/api/v1/auth/telegram", async (req, reply) => {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) {
     return reply.status(500).send({
-      error: { code: "server_misconfigured", message: "BOT_TOKEN missing" },
+      error: {
+        code: "server_misconfigured",
+        message: "Сервис временно недоступен. Попробуйте позже.",
+      },
     });
   }
 
   const parsed = authBody.safeParse(req.body);
   if (!parsed.success) {
     return reply.status(400).send({
-      error: { code: "bad_request", message: parsed.error.message },
+      error: {
+        code: "bad_request",
+        message: "Некорректный запрос. Откройте приложение из бота.",
+      },
     });
   }
 
   const { initData } = parsed.data;
   if (!verifyTelegramInitData(initData, botToken)) {
     return reply.status(401).send({
-      error: { code: "invalid_init_data", message: "Bad Telegram signature" },
+      error: {
+        code: "invalid_init_data",
+        message:
+          "Не удалось подтвердить вход из Telegram. Откройте приложение из бота.",
+      },
     });
   }
 
@@ -152,7 +175,10 @@ app.post("/api/v1/auth/telegram", async (req, reply) => {
 
   if (!user?.id) {
     return reply.status(400).send({
-      error: { code: "no_user", message: "User missing in initData" },
+      error: {
+        code: "no_user",
+        message: "Не удалось получить профиль Telegram. Откройте приложение из бота.",
+      },
     });
   }
 
@@ -199,7 +225,11 @@ app.post("/api/v1/auth/register", async (req, reply) => {
   const parsed = webAuthBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return reply.status(400).send({
-      error: { code: "bad_request", message: parsed.error.message },
+      error: {
+        code: "bad_request",
+        message:
+          "Укажите корректный email и пароль не короче 8 символов.",
+      },
     });
   }
   const r = await registerWithEmail(parsed.data.email, parsed.data.password);
@@ -226,7 +256,11 @@ app.post("/api/v1/auth/login", async (req, reply) => {
   const parsed = webAuthBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return reply.status(400).send({
-      error: { code: "bad_request", message: parsed.error.message },
+      error: {
+        code: "bad_request",
+        message:
+          "Укажите корректный email и пароль не короче 8 символов.",
+      },
     });
   }
   const r = await loginWithEmail(parsed.data.email, parsed.data.password);
@@ -266,7 +300,7 @@ if (allowDevAuthRoute) {
     const parsed = devBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.status(400).send({
-        error: { code: "bad_request", message: parsed.error.message },
+        error: { code: "bad_request", message: "Некорректные данные." },
       });
     }
     const { telegramId, username } = parsed.data;
@@ -304,7 +338,11 @@ app.post("/api/v1/me/web-credentials", async (req, reply) => {
   const parsed = meWebCredentialsBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return reply.status(400).send({
-      error: { code: "bad_request", message: parsed.error.message },
+      error: {
+        code: "bad_request",
+        message:
+          "Укажите корректный email и пароль не короче 8 символов.",
+      },
     });
   }
   const r = await attachEmailPasswordToUser(
@@ -326,7 +364,8 @@ app.post("/api/v1/me/web-credentials", async (req, reply) => {
     return reply.status(status).send({
       error: {
         code: r.code,
-        message: messages[r.code] ?? r.code,
+        message:
+          messages[r.code] ?? "Не удалось сохранить email и пароль",
       },
     });
   }
@@ -343,7 +382,10 @@ app.post("/api/v1/ban-appeal", async (req, reply) => {
   const parsed = banAppealBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return reply.status(400).send({
-      error: { code: "bad_request", message: parsed.error.message },
+      error: {
+        code: "bad_request",
+        message: "Напишите сообщение от 10 до 4000 символов.",
+      },
     });
   }
   const r = await createBanAppeal(userId, parsed.data.message);
@@ -359,7 +401,10 @@ app.post("/api/v1/ban-appeal", async (req, reply) => {
       too_short: "Текст слишком короткий",
     };
     return reply.status(status[r.code]).send({
-      error: { code: r.code, message: messages[r.code] },
+      error: {
+        code: r.code,
+        message: messages[r.code] ?? "Не удалось отправить обращение",
+      },
     });
   }
   return { ok: true };
@@ -394,7 +439,7 @@ app.post("/api/v1/live-broadcast/watch", async (req, reply) => {
   const parsed = liveWatchBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return reply.status(400).send({
-      error: { code: "bad_request", message: parsed.error.message },
+      error: { code: "bad_request", message: "Некорректные данные эфира." },
     });
   }
   const lim = await assertClaimRateLimits(userId, req.ip);
@@ -402,8 +447,7 @@ app.post("/api/v1/live-broadcast/watch", async (req, reply) => {
     return reply.status(429).send({
       error: {
         code: "rate_limited",
-        message:
-          lim.reason === "ip" ? "Too many requests (IP)" : "Too many requests",
+        message: "Слишком много действий подряд. Подождите немного.",
       },
     });
   }
@@ -457,7 +501,7 @@ app.post("/api/v1/tasks/:id/claim", async (req, reply) => {
     return reply.status(429).send({
       error: {
         code: "rate_limited",
-        message: lim.reason === "ip" ? "Too many requests (IP)" : "Too many requests",
+        message: "Слишком много действий подряд. Подождите немного.",
       },
     });
   }
@@ -470,8 +514,18 @@ app.post("/api/v1/tasks/:id/claim", async (req, reply) => {
       platform_required: 403,
       queue_unavailable: 503,
     };
+    const claimMsg: Record<string, string> = {
+      task_not_found: "Задание не найдено",
+      already_completed: "Уже выполнено",
+      platform_required: "Подключите Twitch или Kick в профиле",
+      queue_unavailable:
+        "Проверка задания временно недоступна. Попробуйте позже.",
+    };
     return reply.status(map[res.error] ?? 400).send({
-      error: { code: res.error, message: res.error },
+      error: {
+        code: res.error,
+        message: claimMsg[res.error] ?? "Не удалось выполнить действие",
+      },
     });
   }
   if (res.mode === "async") {
@@ -579,7 +633,7 @@ if (allowDevAuthRoute) {
     const platform = (req.params as { platform: string }).platform;
     if (platform !== "twitch" && platform !== "kick") {
       return reply.status(400).send({
-        error: { code: "bad_platform", message: "twitch or kick" },
+        error: { code: "bad_platform", message: "Выберите Twitch или Kick" },
       });
     }
     const body = (req.body as { displayName?: string }) ?? {};
@@ -649,14 +703,22 @@ app.post(
   const parsed = fortuneSpinBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return reply.status(400).send({
-      error: { code: "bad_request", message: parsed.error.message },
+      error: { code: "bad_request", message: "Выберите платформу и режим." },
     });
   }
   const mode = parsed.data.mode === "paid" ? "paid" : "free";
   const res = await spinFortuneWheel(userId, mode, parsed.data.platform);
   if (!res.ok) {
+    const fortuneMsg: Record<string, string> = {
+      free_spin_used: "Бесплатное вращение на сегодня уже использовано",
+      insufficient_coins: "Недостаточно монет на этом счёте",
+      duplicate_spin: "Повторное вращение",
+    };
     return reply.status(400).send({
-      error: { code: res.error, message: res.error },
+      error: {
+        code: res.error,
+        message: fortuneMsg[res.error] ?? "Не удалось выполнить вращение",
+      },
     });
   }
   return res;
@@ -681,14 +743,22 @@ app.post("/api/v1/shop/purchase", async (req, reply) => {
   const parsed = shopPurchaseBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return reply.status(400).send({
-      error: { code: "bad_request", message: parsed.error.message },
+      error: { code: "bad_request", message: "Выберите товар и платформу." },
     });
   }
   const { itemId, platform } = parsed.data;
   const res = await purchaseItem(userId, itemId, platform);
   if (!res.ok) {
+    const shopMsg: Record<string, string> = {
+      item_not_found: "Товар недоступен",
+      insufficient_coins: "Недостаточно монет на этом счёте",
+      duplicate: "Покупка уже была выполнена",
+    };
     return reply.status(400).send({
-      error: { code: res.error, message: res.error },
+      error: {
+        code: res.error,
+        message: shopMsg[res.error] ?? "Не удалось выполнить покупку",
+      },
     });
   }
   return res;

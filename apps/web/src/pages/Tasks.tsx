@@ -156,7 +156,7 @@ export default function Tasks() {
                     {t.type === "daily" ? "Ежедневно" : "Разово"}
                   </span>
                   {t.validationType === "api" ? (
-                    <span className="pill pill--accent">API</span>
+                    <span className="pill pill--accent">С проверкой</span>
                   ) : null}
                   {done ? (
                     <span className="pill pill--accent">Выполнено</span>

@@ -45,7 +45,10 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
     const parsed = joinBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({
-        error: { code: "bad_request", message: parsed.error.message },
+        error: {
+          code: "bad_request",
+          message: "Выберите платформу: Twitch или Kick.",
+        },
       });
     }
     const r = await joinGiveaway({
@@ -80,7 +83,7 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
         channel_not_configured:
           "Проверка подписки недоступна (канал или бот не настроены). Обратитесь к администратору.",
         platform_not_connected:
-          "Подключите выбранную платформу в профиле (OAuth)",
+          "Подключите Twitch или Kick в профиле",
         platform_not_allowed:
           "Этот розыгрыш только для другой платформы — переключите платформу в шапке или выберите другой розыгрыш",
       };

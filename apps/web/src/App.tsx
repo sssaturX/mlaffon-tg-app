@@ -230,10 +230,18 @@ export default function App() {
             <h1>Вход</h1>
             {error && <p className="err">{error}</p>}
             <p className="muted">
-              Для продакшена откройте мини-приложение из бота или войдите на сайте
-              (если включён веб-вход). Для локальной разработки:{" "}
-              <code>ALLOW_DEV_AUTH=1</code> в API и <code>npm run dev</code> — тогда
-              подставится тестовый пользователь.
+              {import.meta.env.DEV ? (
+                <>
+                  Откройте приложение из бота Telegram или войдите на сайте. Для
+                  теста без Telegram в API можно включить режим разработчика и
+                  снова открыть эту страницу.
+                </>
+              ) : (
+                <>
+                  Откройте мини-приложение из чата с ботом в Telegram или войдите
+                  на сайте — если вход с сайта для вас включён.
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -574,11 +582,11 @@ function AppShell({
                 element={
                   <Profile
                     me={me}
-                    onRefresh={refreshMe}
                     onShowOnboarding={onShowOnboarding}
                   />
                 }
               />
+              <Route path="/stream" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>

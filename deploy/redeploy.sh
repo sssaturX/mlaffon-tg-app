@@ -20,6 +20,10 @@
 #   DEPLOY_SKIP_DB=1  — не вызывать drizzle-kit push
 #   DEPLOY_CADDY=1    — скопировать deploy/Caddyfile в /etc/caddy и reload caddy
 #
+# Web Push: после npm ci скрипт дописывает в apps/api/.env:
+#   VAPID_SUBJECT (по умолчанию mailto:itoly569@gmail.com)
+#   VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY — из deploy/deploy.env, либо уже в .env, либо генерируются (web-push).
+#
 
 set -euo pipefail
 
@@ -40,6 +44,55 @@ if [[ ! -f "$REPO/package.json" ]]; then
   exit 1
 fi
 
+# Дописать VAPID в apps/api/.env (нужен npm ci для web-push в node_modules).
+ensure_vapid_in_api_env() {
+  local envf="$REPO/apps/api/.env"
+  local subject="${VAPID_SUBJECT:-mailto:itoly569@gmail.com}"
+  local pub="${VAPID_PUBLIC_KEY:-}"
+  local priv="${VAPID_PRIVATE_KEY:-}"
+
+  if [[ ! -f "$envf" ]]; then
+    echo "==> предупреждение: нет $envf — VAPID не добавлены" >&2
+    return 0
+  fi
+
+  if [[ -z "$pub" || -z "$priv" ]]; then
+    if grep -qE '^VAPID_PUBLIC_KEY=' "$envf" && grep -qE '^VAPID_PRIVATE_KEY=' "$envf"; then
+      echo "==> VAPID ключи уже есть в $envf — обновляю только subject при необходимости"
+      pub=$(grep -E '^VAPID_PUBLIC_KEY=' "$envf" | tail -1 | sed 's/^VAPID_PUBLIC_KEY=//')
+      priv=$(grep -E '^VAPID_PRIVATE_KEY=' "$envf" | tail -1 | sed 's/^VAPID_PRIVATE_KEY=//')
+    else
+      echo "==> генерация VAPID ключей (web-push) → $envf"
+      local keys
+      keys=$(
+        cd "$REPO/apps/api" && node -e "
+          const w = require('web-push');
+          const k = w.generateVAPIDKeys();
+          console.log(k.publicKey);
+          console.log(k.privateKey);
+        "
+      )
+      pub=$(printf '%s\n' "$keys" | head -n1)
+      priv=$(printf '%s\n' "$keys" | tail -n1)
+    fi
+  else
+    echo "==> VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY из окружения (deploy.env) → $envf"
+  fi
+
+  local tmp
+  tmp=$(mktemp)
+  grep -vE '^VAPID_(PUBLIC_KEY|PRIVATE_KEY|SUBJECT)=' "$envf" >"$tmp" || true
+  {
+    cat "$tmp"
+    echo "VAPID_SUBJECT=${subject}"
+    echo "VAPID_PUBLIC_KEY=${pub}"
+    echo "VAPID_PRIVATE_KEY=${priv}"
+  } >"${envf}.new"
+  mv "${envf}.new" "$envf"
+  rm -f "$tmp"
+  echo "==> обновлены VAPID_* в $envf (SUBJECT=${subject})"
+}
+
 cd "$REPO"
 
 if [[ -f "$REPO/deploy/deploy.env" ]]; then
@@ -55,6 +108,8 @@ git pull --ff-only
 
 echo "==> npm ci"
 npm ci
+
+ensure_vapid_in_api_env
 
 echo "==> npm run build (api + web + admin)"
 npm run build

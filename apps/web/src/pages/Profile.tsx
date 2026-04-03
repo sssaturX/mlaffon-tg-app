@@ -15,12 +15,14 @@ import {
   attachWebCredentials,
   createTelegramLink,
   formatApiError,
+  formatOAuthRedirectError,
   setToken,
 } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { useOAuthLink } from "../hooks/useOAuthLink";
+import { PushNotificationsRow } from "../components/PushNotificationsRow";
 
 export default function Profile({
   me,
@@ -76,11 +78,7 @@ export default function Profile({
         }
       } else if (err) {
         const decoded = decodeURIComponent(err);
-        const hint =
-          /redirect_uri|registered\s+URI/i.test(decoded)
-            ? " В консоли Twitch/Kick в OAuth Redirect добавьте URL API: http://localhost:3001/api/v1/oauth/…/callback (порт 3001, не 5173)."
-            : "";
-        showToast(`Не удалось подключить: ${decoded}${hint}`, "error");
+        showToast(formatOAuthRedirectError(decoded), "error");
         try {
           WebApp.HapticFeedback.notificationOccurred("error");
         } catch {
@@ -333,7 +331,7 @@ export default function Profile({
               className="primary"
               onClick={() => void startOAuth("twitch")}
             >
-              OAuth
+              Подключить
             </button>
           ) : (
             <button type="button" onClick={() => void disconnect("twitch")}>
@@ -374,7 +372,7 @@ export default function Profile({
               className="primary"
               onClick={() => void startOAuth("kick")}
             >
-              OAuth
+              Подключить
             </button>
           ) : (
             <button type="button" onClick={() => void disconnect("kick")}>
@@ -429,27 +427,22 @@ export default function Profile({
           </div>
         </div>
 
-        {stub && (
+        {import.meta.env.DEV && stub ? (
           <p className="muted">
-            Dev stub:{" "}
+            Тест:{" "}
             <button type="button" onClick={() => void connectStub("twitch")}>
-              Twitch stub
+              Twitch
             </button>{" "}
             <button type="button" onClick={() => void connectStub("kick")}>
-              Kick stub
+              Kick
             </button>
           </p>
-        )}
-        <p className="muted profile-hint">
-          <strong>Redirect в консоли Twitch/Kick</strong> — это всегда{" "}
-          <code>…/api/v1/oauth/…/callback</code> на <strong>сервере API</strong> (локально порт{" "}
-          <strong>3001</strong>), не страница на 5173. Примеры:{" "}
-          <code>http://localhost:3001/api/v1/oauth/twitch/callback</code>,{" "}
-          <code>http://localhost:3001/api/v1/oauth/kick/callback</code>. На проде —{" "}
-          <code>https://ваш-домен/api/v1/oauth/twitch/callback</code>.{" "}
-          <code>PUBLIC_WEB_URL</code> в API — URL фронта (куда вернуть пользователя после успеха:{" "}
-          <code>/oauth/…</code>).
-        </p>
+        ) : null}
+      </div>
+
+      <div className="card stack card--pad-sm">
+        <h3 className="profile-section-title">Уведомления о старте эфира</h3>
+        <PushNotificationsRow />
       </div>
 
       <div className="card stack">

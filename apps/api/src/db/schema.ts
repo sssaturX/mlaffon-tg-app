@@ -459,6 +459,27 @@ export const fortuneSpins = pgTable(
   (t) => [uniqueIndex("fortune_spins_user_day").on(t.userId, t.utcDate)]
 );
 
+/** Web Push (VAPID): одна строка на устройство/браузер. */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull().unique(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("push_subscriptions_user_idx").on(t.userId)]
+);
+
 /** Апелляции на блокировку — текст для админа. */
 export const banAppeals = pgTable(
   "ban_appeals",

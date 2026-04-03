@@ -2,6 +2,7 @@ import { CheckCircle2, ExternalLink, MessageCircle, XCircle } from "lucide-react
 import { useMemo } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { getBotUsername } from "../botUsername";
+import { formatOAuthRedirectError } from "../utils/userFacingMessages";
 
 /**
  * Показ во внешнем браузере после OAuth: токена нет (открыли Twitch/Kick не из WebView мини-аппа).
@@ -23,9 +24,9 @@ export default function OAuthBrowserDone() {
   const errText = useMemo(() => {
     if (!errRaw) return null;
     try {
-      return decodeURIComponent(errRaw);
+      return formatOAuthRedirectError(decodeURIComponent(errRaw));
     } catch {
-      return errRaw;
+      return formatOAuthRedirectError(errRaw);
     }
   }, [errRaw]);
 

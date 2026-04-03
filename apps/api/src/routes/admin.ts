@@ -34,6 +34,7 @@ import {
   getActiveLiveBroadcast,
 } from "../services/liveBroadcast.js";
 import { notifyTelegramLiveStarted } from "../services/telegramLiveNotify.js";
+import { notifyWebPushLiveStarted } from "../services/webPush.js";
 
 function parseBearer(req: { headers: { authorization?: string } }): string | null {
   const h = req.headers.authorization;
@@ -723,6 +724,9 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       streamUrl: parsed.data.streamUrl.trim(),
     }).catch((err) => {
       req.log.warn({ err }, "telegram_live_notify_failed");
+    });
+    void notifyWebPushLiveStarted(req.log).catch((err) => {
+      req.log.warn({ err }, "web_push_live_notify_failed");
     });
     return { ok: true, id: r.id };
   });

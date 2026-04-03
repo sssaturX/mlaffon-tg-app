@@ -23,17 +23,16 @@ export function OnboardingModal({ open, onClose }: Props) {
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="onb-title">
       <div className="modal-card card stack">
         <h2 id="onb-title" className="modal-title">
-          Платформы Twitch и Kick
+          Twitch и Kick
         </h2>
         <p className="muted modal-text">
-          Подключение делается через безопасный вход OAuth: откройте{" "}
-          <strong>Профиль</strong> и нажмите кнопку у нужной платформы. После
-          авторизации на Twitch или Kick вы вернётесь в приложение, а токены
-          хранятся на сервере в зашифрованном виде.
+          Откройте <strong>Профиль</strong> и нажмите «Подключить» у нужной
+          платформы. После входа на Twitch или Kick вы вернётесь в приложение —
+          данные для заданий и наград сохраняются безопасно.
         </p>
         <ul className="onb-list muted">
-          <li>Для заданий с проверкой API нужна реальная привязка аккаунта.</li>
-          <li>Redirect URI в консоли разработчика должен совпадать с настройками API.</li>
+          <li>Часть заданий проверяется автоматически — для них нужна реальная привязка аккаунта.</li>
+          <li>Если вход не проходит, попробуйте снова позже или напишите в поддержку.</li>
         </ul>
         {privacyUrl ? (
           <p className="m-0">
@@ -41,11 +40,7 @@ export function OnboardingModal({ open, onClose }: Props) {
               Политика конфиденциальности
             </a>
           </p>
-        ) : (
-          <p className="muted modal-text--sm">
-            Добавьте <code>VITE_PRIVACY_POLICY_URL</code> в сборку, чтобы показать ссылку на политику.
-          </p>
-        )}
+        ) : null}
         <button
           type="button"
           className="primary modal-actions"

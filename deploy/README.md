@@ -6,7 +6,7 @@
 | [Caddyfile.manual-certs](Caddyfile.manual-certs) | Тот же сайт, но **свои** `fullchain.pem` / `privkey.pem` (уже выданные сертификаты) |
 | [mlaffon-api.service](mlaffon-api.service) | systemd: API |
 | [mlaffon-worker.service](mlaffon-worker.service) | systemd: BullMQ worker |
-| [redeploy.sh](redeploy.sh) | **Быстрый деплой на сервере**: `git pull`, сборка, `drizzle-kit push`, `chmod`, restart API/worker (см. комментарии в скрипте) |
+| [redeploy.sh](redeploy.sh) | **Быстрый деплой на сервере**: `git pull`, `npm ci`, **дописывает `VAPID_*` в `apps/api/.env`** (subject по умолчанию `mailto:itoly569@gmail.com`, ключи из `deploy.env` или уже в `.env`, иначе генерация), сборка, `drizzle-kit push`, `chmod`, restart API/worker |
 | [deploy.env.example](deploy.env.example) | Пример `deploy/deploy.env` для `VITE_*` при сборке |
 
 **Админка не логинится:** в `apps/api/.env` должны быть заданы `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PASSPHRASE` (без них API отвечает 503). После правки `.env`: `sudo systemctl restart mlaffon-api`. Сборка админки шлёт запросы на `/api` **того же хоста** `admin.…` (Caddy проксирует на API) — отдельный `VITE_API_ORIGIN` на проде для поддомена не обязателен.

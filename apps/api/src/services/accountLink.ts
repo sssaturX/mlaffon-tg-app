@@ -76,7 +76,10 @@ export async function linkTelegramFromToken(
     .where(eq(users.id, row.userId))
     .limit(1);
   if (!target) {
-    throw new LinkTokenError("invalid_or_expired_link", "Пользователь не найден.");
+    throw new LinkTokenError(
+      "invalid_or_expired_link",
+      "Ссылка недействительна или устарела. Создайте новую в профиле на сайте."
+    );
   }
 
   const [other] = await db

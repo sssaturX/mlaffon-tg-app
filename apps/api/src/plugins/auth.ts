@@ -86,7 +86,7 @@ export function authUser(
 ): string | undefined {
   if (!req.userId) {
     void reply.status(401).send({
-      error: { code: "unauthorized", message: "Bearer token required" },
+      error: { code: "unauthorized", message: "Войдите снова." },
     });
     return undefined;
   }

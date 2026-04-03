@@ -1,3 +1,5 @@
+import { formatApiErrorForUser } from "./utils/userFacingMessages.js";
+
 const TOKEN_KEY = "mlaffon_token";
 
 export function getToken(): string | null {
@@ -21,40 +23,12 @@ export type ApiErr = {
 
 export type ApiResult<T> = ApiOk<T> | ApiErr;
 
+/** Сообщение для пользователя: без технических кодов и сырого текста сервера. */
 export function formatApiError(r: ApiErr): string {
-  if (r.networkError) {
-    return "Нет соединения. Проверьте интернет и попробуйте снова.";
-  }
-  const e = r.err as {
-    error?: { code?: string; message?: string };
-    message?: string;
-  } | null;
-  const rawMsg =
-    e?.error?.message ??
-    (typeof e?.message === "string" && e.message.trim() !== ""
-      ? e.message
-      : undefined);
-  const serverMsg =
-    rawMsg && !/^internal server error$/i.test(rawMsg) ? rawMsg : undefined;
-
-  if (r.status === 429) {
-    return serverMsg ?? "Слишком много запросов. Подождите минуту.";
-  }
-  if (r.status === 403 && e?.error?.code === "banned") {
-    return e.error.message ?? "Доступ ограничен.";
-  }
-  if (serverMsg && r.status >= 400) {
-    return serverMsg;
-  }
-  if (r.status >= 500) {
-    return "Сервер временно недоступен. Попробуйте позже.";
-  }
-  return (
-    e?.error?.message ??
-    e?.error?.code ??
-    (r.status ? `Ошибка (${r.status})` : "Ошибка запроса")
-  );
+  return formatApiErrorForUser(r);
 }
+
+export { formatOAuthRedirectError } from "./utils/userFacingMessages.js";
 
 export async function api<T>(
   path: string,
@@ -112,7 +86,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Повтор при обрыве сети / 5xx (холодный старт API, флап WebView). */
+/** Повтор запроса при кратковременных сбоях сети. */
 export async function authTelegramWithRetry(initData: string) {
   let last = await authTelegram(initData);
   for (let attempt = 0; attempt < 2; attempt++) {

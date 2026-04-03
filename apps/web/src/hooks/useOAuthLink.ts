@@ -31,7 +31,10 @@ export function useOAuthLink() {
       body: JSON.stringify({}),
     });
     if (r.ok) {
-      showToast("Stub-подключение", "success");
+      showToast(
+        import.meta.env.DEV ? "Тестовое подключение выполнено" : "Подключено",
+        "success"
+      );
       void refreshMe();
     } else showToast(formatApiError(r), "error");
   }

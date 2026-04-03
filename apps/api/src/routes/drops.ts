@@ -32,7 +32,7 @@ export async function registerDropRoutes(app: FastifyInstance) {
     const parsed = attemptBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({
-        error: { code: "bad_request", message: parsed.error.message },
+        error: { code: "bad_request", message: "Введите код." },
       });
     }
     const r = await attemptDropCode(userId, parsed.data.code);
@@ -56,12 +56,12 @@ export async function registerDropRoutes(app: FastifyInstance) {
       already_won: "Награда уже получена",
       pool_full: "Лимит победителей исчерпан",
       duplicate: "Повторный запрос",
-      not_eligible: "Подключите нужную платформу (Twitch/Kick) в профиле",
+      not_eligible: "Подключите Twitch или Kick в профиле",
     };
     return reply.status(status[r.code] ?? 400).send({
       ok: false,
       error: r.code,
-      message: messages[r.code] ?? r.code,
+      message: messages[r.code] ?? "Не удалось применить код",
     });
   }
   );
