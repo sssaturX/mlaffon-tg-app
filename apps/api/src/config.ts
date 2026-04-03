@@ -90,7 +90,7 @@ const defaultConfig: GameConfig = {
     kickEnabled: true,
   },
   rateLimit: {
-    maxPerWindow: 120,
+    maxPerWindow: 200,
     timeWindowMs: 60_000,
   },
   routeRateLimits: {

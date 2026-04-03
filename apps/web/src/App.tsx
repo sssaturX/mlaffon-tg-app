@@ -39,7 +39,7 @@ import { handleMeUpdateFromWs, refreshMe as refreshMeFromService } from "./servi
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
 import { useSyncedCountdownMs } from "./hooks/useSyncedCountdown";
-import { useRealtimeWebSocket } from "./hooks/useRealtimeWebSocket";
+import { useRealtimeWebSocket, type DropStartedPayload } from "./hooks/useRealtimeWebSocket";
 import { useDocumentVisible } from "./hooks/useDocumentVisible";
 import { useLiveBroadcastStore } from "./store/liveBroadcastStore";
 import {
@@ -319,13 +319,19 @@ function AppShell({
   /** Была скрыта вкладка — при возврате делаем один sync без ожидания таймера. */
   const tabWasHiddenRef = useRef(false);
 
+  const loadDropInflight = useRef<Promise<void> | null>(null);
   const loadDrop = useCallback(async () => {
     if (!getToken()) {
       setDropSnap(null);
       return;
     }
-    const r = await api<DropSnapshot>("/api/v1/drops/active");
-    if (r.ok) setDropSnap(r.data);
+    if (loadDropInflight.current) return loadDropInflight.current;
+    const p = (async () => {
+      const r = await api<DropSnapshot>("/api/v1/drops/active");
+      if (r.ok) setDropSnap(r.data);
+    })();
+    loadDropInflight.current = p;
+    try { await p; } finally { loadDropInflight.current = null; }
   }, []);
 
   useEffect(() => {
@@ -342,7 +348,23 @@ function AppShell({
       onMePatch: (patch) => {
         handleMeUpdateFromWs(patch);
       },
-      onDropStarted: () => void loadDrop(),
+      onDropStarted: (data: DropStartedPayload) => {
+        const snap: DropSnapshot = {
+          hasActiveDrop: true,
+          dropId: data.dropId,
+          endsAt: data.endsAt,
+          serverNow: data.serverNow,
+          remainingSeconds: data.remainingSeconds,
+          platform: (data.platform === "twitch" || data.platform === "kick" || data.platform === "both")
+            ? data.platform
+            : undefined,
+          maxWinners: data.maxWinners,
+          winnersCount: data.winnersCount,
+          won: false,
+          rewardCoins: null,
+        };
+        setDropSnap(snap);
+      },
       onDropFinished: (dropId) => {
         setDropSnap((prev) =>
           prev?.hasActiveDrop && prev.dropId === dropId
@@ -397,10 +419,18 @@ function AppShell({
     }
   }, [docVisible, needsPlatformLink, refreshMe, loadDrop]);
 
+  /** Без WS — fallback-проверка каждые 2 мин чтобы не пропустить дроп. */
+  useEffect(() => {
+    if (!me || realtimeConnected) return;
+    if (!docVisible) return;
+    const t = window.setInterval(() => void loadDrop(), 120_000);
+    return () => clearInterval(t);
+  }, [me, realtimeConnected, docVisible, loadDrop]);
+
   useEffect(() => {
     if (needsPlatformLink) return;
     if (!docVisible) return;
-    const ms = realtimeConnected ? 120_000 : 30_000;
+    const ms = realtimeConnected ? 120_000 : 60_000;
     const id = window.setInterval(() => {
       void refreshMe();
     }, ms);
@@ -427,33 +457,19 @@ function AppShell({
     };
   }, [activePlatform]);
 
-  /**
-   * Пуллим /drops/active: без WS — чаще; с WS — редко, но всё равно (если пропустили
-   * drop_started через Redis/WS, пользователь не обязан быть в аппке в момент старта).
-   */
+  /** Initial fetch: один раз при появлении me (catch-up если дроп уже идёт). */
+  const dropInitialFetched = useRef(false);
   useEffect(() => {
-    if (!me) return;
-    if (!docVisible) return;
+    if (!me || dropInitialFetched.current) return;
+    dropInitialFetched.current = true;
     void loadDrop();
-    const dropActive = dropSnap?.hasActiveDrop === true ? dropSnap : null;
-    const activeDrop = dropActive && !dropActive.won;
-    const ms = realtimeConnected
-      ? 45_000
-      : activeDrop
-        ? 8000
-        : 30_000;
-    const t = window.setInterval(() => void loadDrop(), ms);
-    return () => clearInterval(t);
-  }, [
-    me,
-    loadDrop,
-    docVisible,
-    dropSnap,
-    realtimeConnected,
-  ]);
+  }, [me, loadDrop]);
 
+  const autoOpenedDropRef = useRef<string | null>(null);
   useEffect(() => {
     if (!dropSnap?.hasActiveDrop || dropSnap.won) return;
+    if (autoOpenedDropRef.current === dropSnap.dropId) return;
+    autoOpenedDropRef.current = dropSnap.dropId;
     try {
       const k = `mlaffon_drop_auto_${dropSnap.dropId}`;
       if (!sessionStorage.getItem(k)) {
@@ -465,14 +481,9 @@ function AppShell({
     }
   }, [dropSnap]);
 
-  useEffect(() => {
-    if (dropOpen && me) void loadDrop();
-  }, [dropOpen, me, loadDrop]);
-
   const openDrop = useCallback(() => {
-    void loadDrop();
     setDropOpen(true);
-  }, [loadDrop]);
+  }, []);
 
   const dropTickerActive =
     Boolean(me) &&

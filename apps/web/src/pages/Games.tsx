@@ -73,6 +73,13 @@ export default function Games() {
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [spinErr, setSpinErr] = useState<string | null>(null);
   const pendingRevealRef = useRef<SpinReveal | null>(null);
+  const spinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
+    };
+  }, []);
 
   const load = useCallback(async () => {
     const r = await api<FortuneStatus>("/api/v1/games/fortune");
@@ -148,7 +155,8 @@ export default function Games() {
       });
     });
 
-    window.setTimeout(() => {
+    spinTimerRef.current = setTimeout(() => {
+      spinTimerRef.current = null;
       setSpinning(false);
       if (pendingRevealRef.current) {
         setLastReveal(pendingRevealRef.current);

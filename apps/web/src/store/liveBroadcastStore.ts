@@ -27,6 +27,8 @@ export type LiveBroadcastStore = {
   applyLiveEndedFromWs: () => void;
 };
 
+let hydrateInflight: Promise<void> | null = null;
+
 export const useLiveBroadcastStore = create<LiveBroadcastStore>((set) => ({
   broadcast: null,
   wsConnected: false,
@@ -34,8 +36,13 @@ export const useLiveBroadcastStore = create<LiveBroadcastStore>((set) => ({
   setWsConnected: (v) => set({ wsConnected: v }),
 
   hydrateFromApi: async () => {
-    const r = await api<LiveBroadcastPublic>("/api/v1/live-broadcast");
-    if (r.ok) set({ broadcast: r.data });
+    if (hydrateInflight) return hydrateInflight;
+    const p = (async () => {
+      const r = await api<LiveBroadcastPublic>("/api/v1/live-broadcast");
+      if (r.ok) set({ broadcast: r.data });
+    })();
+    hydrateInflight = p;
+    try { await p; } finally { hydrateInflight = null; }
   },
 
   applyLiveStartedFromWs: (data) => {

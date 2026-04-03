@@ -94,10 +94,17 @@ export function DropOverlay({
   const [digits, setDigits] = useState<string[]>(() => Array(DIGITS).fill(""));
   const [err, setErr] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [displayReward, setDisplayReward] = useState(0);
   const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
   const submitRef = useRef<() => Promise<void>>(async () => {});
+
+  useEffect(() => {
+    return () => {
+      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    };
+  }, []);
 
   const snapshotActive = snapshot?.hasActiveDrop === true ? snapshot : null;
 
@@ -163,7 +170,11 @@ export function DropOverlay({
     const codeErr = body?.error;
     haptic("error");
     setShake(true);
-    setTimeout(() => setShake(false), 500);
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    shakeTimerRef.current = setTimeout(() => {
+      shakeTimerRef.current = null;
+      setShake(false);
+    }, 500);
     setDigits(Array(DIGITS).fill(""));
     if (codeErr === "wrong_code") {
       setErr("Неверный код");

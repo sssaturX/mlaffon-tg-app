@@ -145,33 +145,12 @@ export default function Home({
     }
   }, [docVisible, hydrateLive]);
 
-  /**
-   * Эфир: при стабильном WS — редкий safety GET; без WS — чаще (fallback).
-   */
   useEffect(() => {
     if (!docVisible) return;
-    const ms = realtimeWsConnected
-      ? 45_000
-      : live?.active
-        ? 5000
-        : 20_000;
+    if (realtimeWsConnected) return;
+    const ms = live?.active ? 30_000 : 60_000;
     const id = window.setInterval(() => void hydrateLive(), ms);
-    const onForeground = () => {
-      if (!realtimeWsConnected) void hydrateLive();
-    };
-    document.addEventListener("visibilitychange", onForeground);
-    window.addEventListener("focus", onForeground);
-    window.addEventListener("pageshow", onForeground);
-    const tg = WebApp as unknown as {
-      onEvent?: (ev: string, cb: () => void) => void;
-    };
-    tg.onEvent?.("viewport_changed", onForeground);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onForeground);
-      window.removeEventListener("focus", onForeground);
-      window.removeEventListener("pageshow", onForeground);
-    };
+    return () => clearInterval(id);
   }, [hydrateLive, docVisible, live?.active, realtimeWsConnected]);
 
   useEffect(() => {

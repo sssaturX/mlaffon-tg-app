@@ -9,6 +9,16 @@ type LiveStartedPayload = {
   vpnNote?: string | null;
 };
 
+export type DropStartedPayload = {
+  dropId: string;
+  endsAt: string;
+  serverNow: string;
+  remainingSeconds: number;
+  platform: string;
+  maxWinners: number;
+  winnersCount: number;
+};
+
 /**
  * WebSocket `/api/v1/ws?token=…`
  * События: `me_update`, `drop_*`, `live_*`.
@@ -16,17 +26,13 @@ type LiveStartedPayload = {
  */
 export function useRealtimeWebSocket(
   handlers: {
-    /** `me_update` — полный economy или частичный объект. */
     onMePatch: (data: unknown) => void;
-    /** Новый дроп (broadcast) — один раз подтянуть снапшот с сервера. */
-    onDropStarted: () => void;
+    onDropStarted: (data: DropStartedPayload) => void;
     onDropFinished: (dropId: string) => void;
     onDropClaimed: (data: { dropId: string; reward: number }) => void;
     onLiveStarted: (data: LiveStartedPayload) => void;
     onLiveEnded: () => void;
-    /** После reconnect — синхронизация дропа. */
     onOpen: () => void;
-    /** Legacy: без тела — подтянуть баланс через GET /me. */
     onLegacyBalancePing?: () => void;
   },
   enabled: boolean
@@ -110,8 +116,11 @@ export function useRealtimeWebSocket(
             h.onMePatch(d.data);
             return;
           }
-          if (d.type === "drop_started") {
-            h.onDropStarted();
+          if (d.type === "drop_started" && d.data && typeof d.data === "object") {
+            const p = d.data as DropStartedPayload;
+            if (p.dropId && p.endsAt) {
+              h.onDropStarted(p);
+            }
             return;
           }
           if (d.type === "drop_finished" && d.data && typeof d.data === "object") {

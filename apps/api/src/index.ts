@@ -62,7 +62,29 @@ await app.register(cors, {
 await app.register(rateLimit, {
   max: gameConfig.rateLimit.maxPerWindow,
   timeWindow: gameConfig.rateLimit.timeWindowMs,
-  allowList: (req) => (req.url.split("?")[0] ?? "") === "/api/v1/ws",
+  allowList: (req) => {
+    const p = req.url.split("?")[0] ?? "";
+    if (p === "/api/v1/ws" || p === "/health") return true;
+    if (p.startsWith("/api/admin")) return true;
+    return false;
+  },
+  keyGenerator: (req) => {
+    const auth = req.headers.authorization;
+    if (auth?.startsWith("Bearer ")) {
+      try {
+        const payload = auth.slice(7).split(".")[1];
+        if (payload) {
+          const decoded = JSON.parse(
+            Buffer.from(payload, "base64url").toString()
+          ) as { sub?: string };
+          if (decoded.sub) return `user:${decoded.sub}`;
+        }
+      } catch {
+        /* fall through to IP */
+      }
+    }
+    return req.ip;
+  },
 });
 
 await app.register(websocket);
