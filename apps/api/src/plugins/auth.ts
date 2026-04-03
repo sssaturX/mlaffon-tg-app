@@ -47,6 +47,7 @@ export async function registerAuth(app: FastifyInstance) {
           .where(eq(users.id, req.userId))
           .limit(1);
         if (!u) {
+          req.userId = undefined;
           void reply.status(401).send({
             error: {
               code: "session_invalid",
@@ -56,7 +57,14 @@ export async function registerAuth(app: FastifyInstance) {
           return;
         }
       } catch {
-        /* не блокируем при сбое БД — ниже проверка banned */
+        req.userId = undefined;
+        void reply.status(503).send({
+          error: {
+            code: "service_unavailable",
+            message: "Сервис временно недоступен. Попробуйте позже.",
+          },
+        });
+        return;
       }
       try {
         if (await isUserBanned(req.userId)) {
@@ -74,7 +82,14 @@ export async function registerAuth(app: FastifyInstance) {
           }
         }
       } catch {
-        /* не блокируем запрос при сбое проверки БД */
+        req.userId = undefined;
+        void reply.status(503).send({
+          error: {
+            code: "service_unavailable",
+            message: "Сервис временно недоступен. Попробуйте позже.",
+          },
+        });
+        return;
       }
     }
   });

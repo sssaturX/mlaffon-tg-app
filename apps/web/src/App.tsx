@@ -432,11 +432,11 @@ function AppShell({
    * drop_started через Redis/WS, пользователь не обязан быть в аппке в момент старта).
    */
   useEffect(() => {
-    if (!me || needsPlatformLink) return;
+    if (!me) return;
     if (!docVisible) return;
     void loadDrop();
-    const activeDrop =
-      dropSnap?.hasActiveDrop === true && dropSnap.won !== true;
+    const dropActive = dropSnap?.hasActiveDrop === true ? dropSnap : null;
+    const activeDrop = dropActive && !dropActive.won;
     const ms = realtimeConnected
       ? 45_000
       : activeDrop
@@ -447,16 +447,12 @@ function AppShell({
   }, [
     me,
     loadDrop,
-    needsPlatformLink,
     docVisible,
-    dropSnap?.hasActiveDrop,
-    dropSnap?.won,
-    dropSnap?.dropId,
+    dropSnap,
     realtimeConnected,
   ]);
 
   useEffect(() => {
-    if (needsPlatformLink) return;
     if (!dropSnap?.hasActiveDrop || dropSnap.won) return;
     try {
       const k = `mlaffon_drop_auto_${dropSnap.dropId}`;
@@ -467,12 +463,11 @@ function AppShell({
     } catch {
       setDropOpen(true);
     }
-  }, [dropSnap, needsPlatformLink]);
+  }, [dropSnap]);
 
   useEffect(() => {
-    if (needsPlatformLink) return;
     if (dropOpen && me) void loadDrop();
-  }, [dropOpen, me, loadDrop, needsPlatformLink]);
+  }, [dropOpen, me, loadDrop]);
 
   const openDrop = useCallback(() => {
     void loadDrop();
@@ -481,7 +476,6 @@ function AppShell({
 
   const dropTickerActive =
     Boolean(me) &&
-    !needsPlatformLink &&
     dropSnap?.hasActiveDrop === true &&
     !dropSnap.won;
 
@@ -503,7 +497,6 @@ function AppShell({
   const dropSecondsLeft = Math.max(0, Math.ceil(dropRemainingMs / 1000));
 
   const showDropTicker =
-    !needsPlatformLink &&
     Boolean(me) &&
     dropSnap?.hasActiveDrop === true &&
     !dropSnap.won;
@@ -647,7 +640,7 @@ function AppShell({
         ) : null}
       </div>
 
-      {showWelcomeOverlay ? (
+      {showWelcomeOverlay && me ? (
         <div className="welcome-gate-overlay">
           <Suspense fallback={<AppLoadingSpinner />}>
             <WelcomeGate me={me} />
@@ -655,7 +648,7 @@ function AppShell({
         </div>
       ) : null}
 
-      {!needsPlatformLink && me ? (
+      {me ? (
         <DropOverlay
           open={dropOpen}
           onClose={() => setDropOpen(false)}

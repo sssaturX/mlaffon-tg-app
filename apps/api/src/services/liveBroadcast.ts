@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { liveBroadcasts, liveBroadcastViews } from "../db/schema.js";
 import {
@@ -33,36 +33,49 @@ export async function startLiveBroadcast(input: {
     return { ok: false, code: "bad_url" };
   }
 
-  const active = await getActiveLiveBroadcast();
-  if (active) {
+  const inserted = await db.transaction(async (tx) => {
+    await tx.execute(sql`LOCK TABLE ${liveBroadcasts} IN SHARE ROW EXCLUSIVE MODE`);
+
+    const [active] = await tx
+      .select({ id: liveBroadcasts.id })
+      .from(liveBroadcasts)
+      .where(isNull(liveBroadcasts.endedAt))
+      .limit(1);
+
+    if (active) return null;
+
+    const [row] = await tx
+      .insert(liveBroadcasts)
+      .values({
+        platform: input.platform,
+        streamUrl: url,
+        vpnNote: input.vpnNote?.trim() || null,
+      })
+      .returning({
+        id: liveBroadcasts.id,
+        startedAt: liveBroadcasts.startedAt,
+      });
+
+    return row ?? null;
+  });
+
+  if (!inserted) {
     return { ok: false, code: "already_live" };
   }
-
-  const [inserted] = await db
-    .insert(liveBroadcasts)
-    .values({
-      platform: input.platform,
-      streamUrl: url,
-      vpnNote: input.vpnNote?.trim() || null,
-    })
-    .returning({
-      id: liveBroadcasts.id,
-      startedAt: liveBroadcasts.startedAt,
-    });
 
   void publishBroadcastEvent({
     type: "live_started",
     v: 1,
     data: {
-      id: inserted!.id,
+      id: inserted.id,
       platform: input.platform,
       streamUrl: url,
-      startedAt: inserted!.startedAt.toISOString(),
+      startedAt: inserted.startedAt.toISOString(),
       vpnNote: input.vpnNote?.trim() || null,
     },
   });
 
-  return { ok: true, id: inserted!.id };
+  return { ok: true, id: inserted.id };
 }
 
 export async function endLiveBroadcast(): Promise<
@@ -134,12 +147,29 @@ export async function watchLiveBroadcast(
     };
   }
 
-  const res = await applyStreamStreakBroadcastWatch(userId, platform);
+  try {
+    await db.insert(liveBroadcastViews).values({
+      broadcastId,
+      userId,
+    });
+  } catch (e: unknown) {
+    const isUniqueViolation =
+      e instanceof Error && e.message.includes("duplicate key");
+    if (isUniqueViolation) {
+      const r = await ensureStreamStreakRow(userId);
+      return {
+        ok: true,
+        platform,
+        streak: platform === "twitch" ? r.twitch : r.kick,
+        streakIncremented: false,
+        alreadyWatchedThisBroadcast: true,
+        bonusCoinsAwarded: 0,
+      };
+    }
+    throw e;
+  }
 
-  await db.insert(liveBroadcastViews).values({
-    broadcastId,
-    userId,
-  });
+  const res = await applyStreamStreakBroadcastWatch(userId, platform);
 
   return {
     ok: true,

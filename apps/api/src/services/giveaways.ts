@@ -298,10 +298,20 @@ export async function joinGiveaway(params: {
     }
   }
 
-  const [ins] = await db
-    .insert(giveawayParticipants)
-    .values({ giveawayId, userId })
-    .returning({ createdAt: giveawayParticipants.createdAt });
+  let ins: { createdAt: Date } | undefined;
+  try {
+    [ins] = await db
+      .insert(giveawayParticipants)
+      .values({ giveawayId, userId })
+      .returning({ createdAt: giveawayParticipants.createdAt });
+  } catch (e: unknown) {
+    const isUniqueViolation =
+      e instanceof Error && e.message.includes("duplicate key");
+    if (isUniqueViolation) {
+      return { ok: false, code: "already_joined" as const };
+    }
+    throw e;
+  }
 
   const economy = await buildMeEconomyPatch(userId);
   return { ok: true, joinedAt: ins!.createdAt.toISOString(), economy };
@@ -353,11 +363,14 @@ export async function drawGiveawayWinners(giveawayId: string): Promise<
   const picked = shuffleUserIds(parts.map((p) => p.userId)).slice(0, pickCount);
 
   const drawnAt = new Date();
-  await db.transaction(async (tx) => {
-    await tx
+  const committed = await db.transaction(async (tx) => {
+    const [locked] = await tx
       .update(giveaways)
       .set({ drawnAt })
-      .where(eq(giveaways.id, giveawayId));
+      .where(and(eq(giveaways.id, giveawayId), isNull(giveaways.drawnAt)))
+      .returning({ id: giveaways.id });
+
+    if (!locked) return false;
 
     for (let i = 0; i < picked.length; i++) {
       await tx.insert(giveawayWinners).values({
@@ -366,7 +379,10 @@ export async function drawGiveawayWinners(giveawayId: string): Promise<
         rank: i + 1,
       });
     }
+    return true;
   });
+
+  if (!committed) return { ok: false, code: "already_drawn" };
 
   const userRows = await db
     .select({

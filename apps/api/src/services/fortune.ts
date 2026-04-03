@@ -107,6 +107,19 @@ export async function spinFortuneWheel(
 
   if (mode === "free") {
     if (row?.freeUsed) return { ok: false, error: "free_spin_used" };
+    if (row) {
+      const [locked] = await db
+        .update(fortuneSpins)
+        .set({ freeUsed: true, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(fortuneSpins.id, row.id),
+            eq(fortuneSpins.freeUsed, false)
+          )
+        )
+        .returning({ id: fortuneSpins.id });
+      if (!locked) return { ok: false, error: "free_spin_used" };
+    }
   } else {
     const cost = gameConfig.fortune.paidSpinCost;
     const debit = await applyDebit({
@@ -164,22 +177,27 @@ export async function spinFortuneWheel(
       });
   }
 
-  if (row) {
-    await db
-      .update(fortuneSpins)
-      .set({
-        freeUsed: mode === "free" ? true : row.freeUsed,
-        paidCount: mode === "paid" ? row.paidCount + 1 : row.paidCount,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(fortuneSpins.id, row.id));
+  if (mode === "free" && row) {
+    /* row already atomically set freeUsed=true above; only bump paid if needed (no-op here). */
   } else {
-    await db.insert(fortuneSpins).values({
-      userId,
-      utcDate: day,
-      freeUsed: mode === "free",
-      paidCount: mode === "paid" ? 1 : 0,
-    });
+    await db
+      .insert(fortuneSpins)
+      .values({
+        userId,
+        utcDate: day,
+        freeUsed: mode === "free",
+        paidCount: mode === "paid" ? 1 : 0,
+      })
+      .onConflictDoUpdate({
+        target: [fortuneSpins.userId, fortuneSpins.utcDate],
+        set: {
+          paidCount:
+            mode === "paid"
+              ? sql`${fortuneSpins.paidCount} + 1`
+              : sql`${fortuneSpins.paidCount}`,
+          updatedAt: sql`now()`,
+        },
+      });
   }
 
   const [b] = await db

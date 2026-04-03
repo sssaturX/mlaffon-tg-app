@@ -105,20 +105,52 @@ const defaultConfig: GameConfig = {
   },
 };
 
+function deepMerge(
+  base: Record<string, unknown>,
+  override: Record<string, unknown>
+): Record<string, unknown> {
+  const result = { ...base };
+  for (const key of Object.keys(override)) {
+    const ov = override[key];
+    const bv = base[key];
+    if (
+      ov != null &&
+      typeof ov === "object" &&
+      !Array.isArray(ov) &&
+      bv != null &&
+      typeof bv === "object" &&
+      !Array.isArray(bv)
+    ) {
+      result[key] = deepMerge(
+        bv as Record<string, unknown>,
+        ov as Record<string, unknown>
+      );
+    } else if (ov !== undefined) {
+      result[key] = ov;
+    }
+  }
+  return result;
+}
+
 function loadConfig(): GameConfig {
   try {
     const path = join(__dir, "game.config.json");
     const raw = readFileSync(path, "utf-8");
     const parsed = JSON.parse(raw) as Partial<GameConfig>;
-    return {
-      ...defaultConfig,
-      ...parsed,
-      routeRateLimits: {
-        ...defaultConfig.routeRateLimits,
-        ...parsed.routeRateLimits,
-      },
-    };
-  } catch {
+    return deepMerge(
+      defaultConfig as unknown as Record<string, unknown>,
+      parsed as unknown as Record<string, unknown>
+    ) as unknown as GameConfig;
+  } catch (e) {
+    if (
+      e &&
+      typeof e === "object" &&
+      "code" in e &&
+      (e as { code?: string }).code === "ENOENT"
+    ) {
+      return defaultConfig;
+    }
+    console.warn("config: failed to load game.config.json, using defaults", e);
     return defaultConfig;
   }
 }

@@ -99,24 +99,20 @@ export function DropOverlay({
   const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
   const submitRef = useRef<() => Promise<void>>(async () => {});
 
-  const active =
-    open &&
-    Boolean(snapshot?.hasActiveDrop) &&
-    !snapshot.won;
+  const snapshotActive = snapshot?.hasActiveDrop === true ? snapshot : null;
 
-  const endsAt = snapshot?.hasActiveDrop ? snapshot.endsAt : null;
-  const serverNowIso = snapshot?.hasActiveDrop
-    ? snapshot.serverNow ??
+  const active = open && !!snapshotActive && !snapshotActive.won;
+
+  const endsAt = snapshotActive?.endsAt ?? null;
+  const serverNowIso = snapshotActive
+    ? snapshotActive.serverNow ??
       new Date(
-        Date.now() - snapshot.remainingSeconds * 1000
+        Date.now() - snapshotActive.remainingSeconds * 1000
       ).toISOString()
     : null;
 
   const remainingMs = useSyncedCountdownMs(endsAt, serverNowIso, active);
-  const timeUp =
-    Boolean(snapshot?.hasActiveDrop) &&
-    !snapshot.won &&
-    remainingMs <= 0;
+  const timeUp = !!snapshotActive && !snapshotActive.won && remainingMs <= 0;
 
   const resetInput = useCallback(() => {
     setDigits(Array(DIGITS).fill(""));
@@ -185,7 +181,7 @@ export function DropOverlay({
   submitRef.current = submit;
 
   useEffect(() => {
-    if (!open || !snapshot?.hasActiveDrop || snapshot.won) return;
+    if (!open || !snapshotActive || snapshotActive.won) return;
     const code = digits.join("");
     if (code.length !== DIGITS || submitting) return;
     const t = window.setTimeout(() => void submitRef.current(), 100);
@@ -194,17 +190,15 @@ export function DropOverlay({
     digits,
     submitting,
     open,
-    snapshot?.hasActiveDrop,
-    snapshot?.won,
-    snapshot?.dropId,
+    snapshotActive,
   ]);
 
   useEffect(() => {
-    if (!open || !snapshot?.hasActiveDrop || !snapshot.won || snapshot.rewardCoins == null) {
+    if (!open || !snapshotActive || !snapshotActive.won || snapshotActive.rewardCoins == null) {
       return;
     }
     let frame = 0;
-    const target = snapshot.rewardCoins;
+    const target = snapshotActive.rewardCoins;
     const dur = 900;
     const start = performance.now();
     const stepAnim = (now: number) => {
@@ -220,13 +214,13 @@ export function DropOverlay({
     };
     frame = requestAnimationFrame(stepAnim);
     return () => cancelAnimationFrame(frame);
-  }, [open, snapshot]);
+  }, [open, snapshotActive]);
 
   useEffect(() => {
-    if (!open || !snapshot?.hasActiveDrop || !snapshot.won) return;
+    if (!open || !snapshotActive?.won) return;
     const closeT = window.setTimeout(() => onClose(), 900);
     return () => clearTimeout(closeT);
-  }, [open, onClose, snapshot?.hasActiveDrop, snapshot?.won, snapshot?.dropId]);
+  }, [open, onClose, snapshotActive]);
 
   useEffect(() => {
     if (!open || !timeUp) return;

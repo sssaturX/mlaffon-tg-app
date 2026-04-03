@@ -1,4 +1,4 @@
-import { eq, gt, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   platformAccounts,
@@ -11,101 +11,149 @@ import {
 export type LeaderSort = "coins" | "streak" | "referrals";
 export type PlatformFilter = "all" | "twitch" | "kick";
 
-async function userIdsForPlatformFilter(
-  platform: PlatformFilter
-): Promise<string[] | null> {
-  if (platform === "all") return null;
-  const rows = await db
-    .select({ userId: platformAccounts.userId })
-    .from(platformAccounts)
-    .where(eq(platformAccounts.platform, platform));
-  return rows.map((r) => r.userId);
-}
+type LeaderRow = {
+  userId: string;
+  displayName: string;
+  photoUrl: string | null;
+  value: number;
+};
 
 export async function getLeaderboard(params: {
   sort: LeaderSort;
   platform: PlatformFilter;
   limit?: number;
-}): Promise<
-  {
-    userId: string;
-    displayName: string;
-    photoUrl: string | null;
-    value: number;
-  }[]
-> {
+}): Promise<LeaderRow[]> {
   const limit = params.limit ?? 50;
-  const ids = await userIdsForPlatformFilter(params.platform);
+  const { sort, platform } = params;
 
-  if (ids && ids.length === 0) return [];
-
-  const baseUsers = await db.select().from(users);
-  let filtered = baseUsers;
-  if (ids) {
-    const set = new Set(ids);
-    filtered = baseUsers.filter((u) => set.has(u.id));
+  if (sort === "coins") {
+    return getLeaderboardByCoins(platform, limit);
   }
+  if (sort === "streak") {
+    return getLeaderboardByStreak(platform, limit);
+  }
+  return getLeaderboardByReferrals(platform, limit);
+}
 
-  const userIds = filtered.map((u) => u.id);
-  if (userIds.length === 0) return [];
+async function getLeaderboardByCoins(
+  platform: PlatformFilter,
+  limit: number
+): Promise<LeaderRow[]> {
+  const valueExpr =
+    platform === "twitch"
+      ? userBalances.twitchCoins
+      : platform === "kick"
+        ? userBalances.kickCoins
+        : userBalances.coins;
 
-  const [balances, streaks, refCounts] = await Promise.all([
-    db.select().from(userBalances).where(inArray(userBalances.userId, userIds)),
-    db
-      .select()
-      .from(userStreamStreaks)
-      .where(inArray(userStreamStreaks.userId, userIds)),
-    db
-      .select({
-        referrerId: referrals.referrerId,
-        c: sql<number>`count(*)::int`,
-      })
-      .from(referrals)
-      .where(inArray(referrals.referrerId, userIds))
-      .groupBy(referrals.referrerId),
-  ]);
+  const platformJoinCondition =
+    platform !== "all"
+      ? sql`AND EXISTS (SELECT 1 FROM platform_accounts pa WHERE pa.user_id = ${users.id} AND pa.platform = ${platform})`
+      : sql``;
 
-  const balMap = new Map(
-    balances.map((b) => {
-      let v = b.coins;
-      if (params.sort === "coins") {
-        if (params.platform === "twitch") v = b.twitchCoins;
-        else if (params.platform === "kick") v = b.kickCoins;
-      }
-      return [b.userId, v] as const;
-    })
-  );
-  const strMap = new Map(
-    streaks.map((s) => {
-      let v = Math.max(s.twitchCurrent, s.kickCurrent);
-      if (params.sort === "streak") {
-        if (params.platform === "twitch") v = s.twitchCurrent;
-        else if (params.platform === "kick") v = s.kickCurrent;
-      }
-      return [s.userId, v] as const;
-    })
-  );
-  const refMap = new Map(refCounts.map((r) => [r.referrerId, r.c]));
+  const rows = await db.execute<{
+    user_id: string;
+    display_name: string;
+    photo_url: string | null;
+    value: number;
+  }>(sql`
+    SELECT
+      u.id                                                   AS user_id,
+      COALESCE(u.username, u.first_name, 'user')             AS display_name,
+      u.photo_url,
+      COALESCE(b.${sql.raw(valueExpr.name)}, 0)::int        AS value
+    FROM users u
+    LEFT JOIN user_balances b ON b.user_id = u.id
+    WHERE TRUE ${platformJoinCondition}
+    ORDER BY value DESC
+    LIMIT ${limit}
+  `);
 
-  const rows = filtered.map((u) => {
-    const displayName =
-      u.username ??
-      u.firstName ??
-      (u.telegramId ? `tg:${u.telegramId}` : "user");
-    let value = 0;
-    if (params.sort === "coins") value = balMap.get(u.id) ?? 0;
-    else if (params.sort === "streak") value = strMap.get(u.id) ?? 0;
-    else value = refMap.get(u.id) ?? 0;
-    return {
-      userId: u.id,
-      displayName,
-      photoUrl: u.photoUrl,
-      value,
-    };
-  });
+  return rows.rows.map((r) => ({
+    userId: r.user_id,
+    displayName: r.display_name,
+    photoUrl: r.photo_url,
+    value: r.value,
+  }));
+}
 
-  rows.sort((a, b) => b.value - a.value);
-  return rows.slice(0, limit);
+async function getLeaderboardByStreak(
+  platform: PlatformFilter,
+  limit: number
+): Promise<LeaderRow[]> {
+  const valueExpr =
+    platform === "twitch"
+      ? sql`s.twitch_current`
+      : platform === "kick"
+        ? sql`s.kick_current`
+        : sql`GREATEST(s.twitch_current, s.kick_current)`;
+
+  const platformJoinCondition =
+    platform !== "all"
+      ? sql`AND EXISTS (SELECT 1 FROM platform_accounts pa WHERE pa.user_id = u.id AND pa.platform = ${platform})`
+      : sql``;
+
+  const rows = await db.execute<{
+    user_id: string;
+    display_name: string;
+    photo_url: string | null;
+    value: number;
+  }>(sql`
+    SELECT
+      u.id                                                   AS user_id,
+      COALESCE(u.username, u.first_name, 'user')             AS display_name,
+      u.photo_url,
+      COALESCE(${valueExpr}, 0)::int                         AS value
+    FROM users u
+    LEFT JOIN user_stream_streaks s ON s.user_id = u.id
+    WHERE TRUE ${platformJoinCondition}
+    ORDER BY value DESC
+    LIMIT ${limit}
+  `);
+
+  return rows.rows.map((r) => ({
+    userId: r.user_id,
+    displayName: r.display_name,
+    photoUrl: r.photo_url,
+    value: r.value,
+  }));
+}
+
+async function getLeaderboardByReferrals(
+  platform: PlatformFilter,
+  limit: number
+): Promise<LeaderRow[]> {
+  const platformJoinCondition =
+    platform !== "all"
+      ? sql`AND EXISTS (SELECT 1 FROM platform_accounts pa WHERE pa.user_id = u.id AND pa.platform = ${platform})`
+      : sql``;
+
+  const rows = await db.execute<{
+    user_id: string;
+    display_name: string;
+    photo_url: string | null;
+    value: number;
+  }>(sql`
+    SELECT
+      u.id                                                   AS user_id,
+      COALESCE(u.username, u.first_name, 'user')             AS display_name,
+      u.photo_url,
+      COALESCE(rc.c, 0)::int                                 AS value
+    FROM users u
+    LEFT JOIN (
+      SELECT referrer_id, count(*)::int AS c FROM referrals GROUP BY referrer_id
+    ) rc ON rc.referrer_id = u.id
+    WHERE TRUE ${platformJoinCondition}
+    ORDER BY value DESC
+    LIMIT ${limit}
+  `);
+
+  return rows.rows.map((r) => ({
+    userId: r.user_id,
+    displayName: r.display_name,
+    photoUrl: r.photo_url,
+    value: r.value,
+  }));
 }
 
 export async function rankOfUser(
@@ -113,10 +161,109 @@ export async function rankOfUser(
   platform: PlatformFilter,
   userId: string
 ): Promise<{ rank: number; value: number } | null> {
-  const board = await getLeaderboard({ sort, platform, limit: 5000 });
-  const idx = board.findIndex((e) => e.userId === userId);
-  if (idx === -1) return null;
-  return { rank: idx + 1, value: board[idx]!.value };
+  if (sort === "coins") {
+    return rankOfUserByCoins(platform, userId);
+  }
+  if (sort === "streak") {
+    return rankOfUserByStreak(platform, userId);
+  }
+  return rankOfUserByReferrals(platform, userId);
+}
+
+async function rankOfUserByCoins(
+  platform: PlatformFilter,
+  userId: string
+): Promise<{ rank: number; value: number } | null> {
+  const col =
+    platform === "twitch"
+      ? "twitch_coins"
+      : platform === "kick"
+        ? "kick_coins"
+        : "coins";
+
+  const [me] = await db
+    .select({ val: sql<number>`${sql.raw(col)}` })
+    .from(userBalances)
+    .where(eq(userBalances.userId, userId))
+    .limit(1);
+  if (!me) return null;
+
+  const myVal = me.val ?? 0;
+
+  const platformCond =
+    platform !== "all"
+      ? sql`AND EXISTS (SELECT 1 FROM platform_accounts pa WHERE pa.user_id = user_balances.user_id AND pa.platform = ${platform})`
+      : sql``;
+
+  const [{ c }] = (
+    await db.execute<{ c: number }>(
+      sql`SELECT count(*)::int AS c FROM user_balances WHERE ${sql.raw(col)} > ${myVal} ${platformCond}`
+    )
+  ).rows;
+  return { rank: Number(c) + 1, value: myVal };
+}
+
+async function rankOfUserByStreak(
+  platform: PlatformFilter,
+  userId: string
+): Promise<{ rank: number; value: number } | null> {
+  const [me] = await db
+    .select()
+    .from(userStreamStreaks)
+    .where(eq(userStreamStreaks.userId, userId))
+    .limit(1);
+  if (!me) return null;
+
+  const myVal =
+    platform === "twitch"
+      ? me.twitchCurrent
+      : platform === "kick"
+        ? me.kickCurrent
+        : Math.max(me.twitchCurrent, me.kickCurrent);
+
+  const valExpr =
+    platform === "twitch"
+      ? sql`twitch_current`
+      : platform === "kick"
+        ? sql`kick_current`
+        : sql`GREATEST(twitch_current, kick_current)`;
+
+  const platformCond =
+    platform !== "all"
+      ? sql`AND EXISTS (SELECT 1 FROM platform_accounts pa WHERE pa.user_id = user_stream_streaks.user_id AND pa.platform = ${platform})`
+      : sql``;
+
+  const [{ c }] = (
+    await db.execute<{ c: number }>(
+      sql`SELECT count(*)::int AS c FROM user_stream_streaks WHERE ${valExpr} > ${myVal} ${platformCond}`
+    )
+  ).rows;
+  return { rank: Number(c) + 1, value: myVal };
+}
+
+async function rankOfUserByReferrals(
+  platform: PlatformFilter,
+  userId: string
+): Promise<{ rank: number; value: number } | null> {
+  const [me] = (
+    await db.execute<{ c: number }>(
+      sql`SELECT count(*)::int AS c FROM referrals WHERE referrer_id = ${userId}`
+    )
+  ).rows;
+  if (!me) return null;
+  const myVal = me.c;
+
+  const platformCond =
+    platform !== "all"
+      ? sql`AND EXISTS (SELECT 1 FROM platform_accounts pa WHERE pa.user_id = r.referrer_id AND pa.platform = ${platform})`
+      : sql``;
+
+  const [{ c }] = (
+    await db.execute<{ c: number }>(
+      sql`SELECT count(*)::int AS c FROM (SELECT referrer_id, count(*) AS cnt FROM referrals GROUP BY referrer_id) r WHERE r.cnt > ${myVal} ${platformCond}`
+    )
+  ).rows;
+  return { rank: Number(c) + 1, value: myVal };
 }
 
 /**

@@ -30,14 +30,32 @@ async function userConnectedPlatforms(
   return { twitch: s.has("twitch"), kick: s.has("kick") };
 }
 
-/** both = split-награда — нужны оба OAuth; иначе снапшот дропа пользователю не показываем. */
+/**
+ * Дропы доступны ВСЕМ авторизованным пользователям вне зависимости от привязки платформы.
+ * Начисление монет определяется `creditPlatformForDrop`.
+ */
 function canParticipateDrop(
-  dropPlatform: string,
-  u: { twitch: boolean; kick: boolean }
+  _dropPlatform: string,
+  _u: { twitch: boolean; kick: boolean }
 ): boolean {
-  if (dropPlatform === "twitch") return u.twitch;
-  if (dropPlatform === "kick") return u.kick;
-  return u.twitch && u.kick;
+  return true;
+}
+
+/**
+ * Определяет, как начислить монеты за дроп:
+ * - если дроп «twitch» и есть twitch → "twitch"
+ * - если дроп «kick» и есть kick → "kick"
+ * - в остальных случаях (нет нужной платформы, или обе, или дроп «both») → "split"
+ */
+function creditPlatformForDrop(
+  dropPlatform: DropPlatformScope,
+  u: { twitch: boolean; kick: boolean }
+): "twitch" | "kick" | "split" {
+  if (dropPlatform === "twitch" && u.twitch) return "twitch";
+  if (dropPlatform === "kick" && u.kick) return "kick";
+  if (dropPlatform === "twitch" && !u.twitch && u.kick) return "kick";
+  if (dropPlatform === "kick" && !u.kick && u.twitch) return "twitch";
+  return "split";
 }
 
 /** Откат слота и состояния пользователя, если начисление не прошло. */
@@ -268,7 +286,35 @@ export async function attemptDropCode(
     return { ok: true, reward: 0 };
   }
 
-  if (dp === "both") {
+  const creditTarget = creditPlatformForDrop(dp, platforms);
+
+  async function handleCreditFailure(reason: string) {
+    await compensateDropAfterCreditFailure(
+      d.id,
+      userId,
+      hadExistingRow,
+      existingStateId
+    );
+    if (reason === "duplicate") {
+      const [st] = await db
+        .select()
+        .from(dropUserStates)
+        .where(
+          and(
+            eq(dropUserStates.dropId, d.id),
+            eq(dropUserStates.userId, userId)
+          )
+        )
+        .limit(1);
+      if (st?.won && st.rewardCoins != null) {
+        return { ok: true as const, reward: st.rewardCoins };
+      }
+      return { ok: false as const, code: "duplicate" as const };
+    }
+    return { ok: false as const, code: "wrong_code" as const };
+  }
+
+  if (creditTarget === "split") {
     const credit = await applyCreditSplit({
       userId,
       amount: reward,
@@ -277,32 +323,7 @@ export async function attemptDropCode(
       referenceType: "drop",
       referenceId: String(d.id),
     });
-
-    if (!credit.ok) {
-      await compensateDropAfterCreditFailure(
-        d.id,
-        userId,
-        hadExistingRow,
-        existingStateId
-      );
-      if (credit.reason === "duplicate") {
-        const [st] = await db
-          .select()
-          .from(dropUserStates)
-          .where(
-            and(
-              eq(dropUserStates.dropId, d.id),
-              eq(dropUserStates.userId, userId)
-            )
-          )
-          .limit(1);
-        if (st?.won && st.rewardCoins != null) {
-          return { ok: true, reward: st.rewardCoins };
-        }
-        return { ok: false, code: "duplicate" };
-      }
-      return { ok: false, code: "wrong_code" };
-    }
+    if (!credit.ok) return handleCreditFailure(credit.reason);
     paid = credit.creditedAmount;
   } else {
     const credit = await applyCredit({
@@ -310,36 +331,11 @@ export async function attemptDropCode(
       amount: reward,
       idempotencyKey: idem,
       kind: "drop_reward",
-      platform: dp,
+      platform: creditTarget,
       referenceType: "drop",
       referenceId: String(d.id),
     });
-
-    if (!credit.ok) {
-      await compensateDropAfterCreditFailure(
-        d.id,
-        userId,
-        hadExistingRow,
-        existingStateId
-      );
-      if (credit.reason === "duplicate") {
-        const [st] = await db
-          .select()
-          .from(dropUserStates)
-          .where(
-            and(
-              eq(dropUserStates.dropId, d.id),
-              eq(dropUserStates.userId, userId)
-            )
-          )
-          .limit(1);
-        if (st?.won && st.rewardCoins != null) {
-          return { ok: true, reward: st.rewardCoins };
-        }
-        return { ok: false, code: "duplicate" };
-      }
-      return { ok: false, code: "wrong_code" };
-    }
+    if (!credit.ok) return handleCreditFailure(credit.reason);
     paid = credit.creditedAmount;
   }
 
@@ -406,29 +402,36 @@ export async function startDrop(params: {
   let max = params.rewardMax;
   if (max < min) [min, max] = [max, min];
 
-  await db.update(drops).set({ active: false }).where(eq(drops.active, true));
+  const ins = await db.transaction(async (tx) => {
+    await tx
+      .update(drops)
+      .set({ active: false })
+      .where(eq(drops.active, true));
 
-  const [ins] = await db
-    .insert(drops)
-    .values({
-      platform: params.platform,
-      code,
-      rewardMin: min,
-      rewardMax: max,
-      maxWinners: params.maxWinners,
-      winnersCount: 0,
-      startedAt,
-      endsAt,
-      active: true,
-    })
-    .returning({ id: drops.id });
+    const [row] = await tx
+      .insert(drops)
+      .values({
+        platform: params.platform,
+        code,
+        rewardMin: min,
+        rewardMax: max,
+        maxWinners: params.maxWinners,
+        winnersCount: 0,
+        startedAt,
+        endsAt,
+        active: true,
+      })
+      .returning({ id: drops.id });
+
+    return row!;
+  });
 
   const now = new Date();
   void publishBroadcastEvent({
     type: "drop_started",
     v: 1,
     data: {
-      dropId: ins!.id,
+      dropId: ins.id,
       endsAt: endsAt.toISOString(),
       serverNow: now.toISOString(),
       remainingSeconds: Math.floor((endsAt.getTime() - now.getTime()) / 1000),
@@ -445,12 +448,12 @@ export async function startDrop(params: {
       void publishBroadcastEvent({
         type: "drop_finished",
         v: 1,
-        data: { dropId: ins!.id },
+        data: { dropId: ins.id },
       });
     }, delay);
   }
 
-  return { id: ins!.id };
+  return { id: ins.id };
 }
 
 export async function getAdminDropStatus(): Promise<{

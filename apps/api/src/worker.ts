@@ -56,6 +56,27 @@ registerRepeatableJobs().catch((e) => {
   console.error("registerRepeatableJobs", e);
 });
 
+async function shutdown() {
+  console.log("Shutting down workers…");
+  try {
+    await Promise.allSettled([
+      taskWorker.close(),
+      cronWorker.close(),
+    ]);
+    await Promise.allSettled([
+      taskConn.quit(),
+      cronConn.quit(),
+    ]);
+  } catch (e) {
+    console.error("shutdown error", e);
+  }
+  console.log("Workers stopped.");
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void shutdown());
+process.on("SIGINT", () => void shutdown());
+
 console.log(
   "Workers: task-verify + cron (Redis:",
   process.env.REDIS_URL ?? "redis://127.0.0.1:6379",

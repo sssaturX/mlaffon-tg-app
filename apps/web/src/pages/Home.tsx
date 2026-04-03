@@ -6,7 +6,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom/client";
+import { flushSync } from "react-dom";
 import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
 import type { MeEconomyPatch, MeResponse } from "shared";
