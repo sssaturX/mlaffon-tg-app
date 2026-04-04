@@ -143,8 +143,22 @@ export default function Home({
   const [predictionSuccess, setPredictionSuccess] = useState(false);
   const predictionCooldownTimerRef = useRef<number | null>(null);
   const predictionSuccessTimerRef = useRef<number | null>(null);
+  const predictionResultTimerRef = useRef<number | null>(null);
+  const lastPredictionStatusRef = useRef<string | null>(null);
+  const lastPredictionBetRef = useRef<{
+    predictionId: string;
+    option: "A" | "B";
+    amount: number;
+  } | null>(null);
   const [predictionToastCompact, setPredictionToastCompact] = useState(false);
   const [predictionNowMs, setPredictionNowMs] = useState(() => Date.now());
+  const [predictionResultNotice, setPredictionResultNotice] = useState<{
+    title: string;
+    winnerOption: "A" | "B";
+    winnerLabel: string;
+    myOption: "A" | "B" | null;
+    won: boolean | null;
+  } | null>(null);
 
   const loadPublic = useCallback(async () => {
     const r = await api<HomePublic>("/api/v1/home/public");
@@ -167,6 +181,9 @@ export default function Home({
       if (predictionSuccessTimerRef.current != null) {
         window.clearTimeout(predictionSuccessTimerRef.current);
       }
+      if (predictionResultTimerRef.current != null) {
+        window.clearTimeout(predictionResultTimerRef.current);
+      }
     };
   }, []);
 
@@ -187,6 +204,53 @@ export default function Home({
     if (!prediction?.myBet) return;
     setPredictionOption(prediction.myBet.option);
   }, [prediction?.id, prediction?.myBet?.option]);
+
+  useEffect(() => {
+    if (!prediction?.myBet) return;
+    lastPredictionBetRef.current = {
+      predictionId: prediction.id,
+      option: prediction.myBet.option,
+      amount: prediction.myBet.amount,
+    };
+  }, [prediction?.id, prediction?.myBet?.option, prediction?.myBet?.amount]);
+
+  useEffect(() => {
+    const prev = lastPredictionStatusRef.current;
+    const current = prediction?.status ?? null;
+    if (prediction && current === "resolved" && prev !== "resolved" && prediction.winnerOption) {
+      const rememberedBet =
+        lastPredictionBetRef.current?.predictionId === prediction.id
+          ? lastPredictionBetRef.current
+          : null;
+      const myOption = rememberedBet?.option ?? null;
+      const won = myOption ? myOption === prediction.winnerOption : null;
+      setPredictionResultNotice({
+        title: prediction.title,
+        winnerOption: prediction.winnerOption,
+        winnerLabel:
+          prediction.winnerOption === "A" ? prediction.optionA : prediction.optionB,
+        myOption,
+        won,
+      });
+      if (predictionResultTimerRef.current != null) {
+        window.clearTimeout(predictionResultTimerRef.current);
+      }
+      predictionResultTimerRef.current = window.setTimeout(() => {
+        setPredictionResultNotice(null);
+        predictionResultTimerRef.current = null;
+      }, 20_000);
+      if (won === true) {
+        showToast("Предикт завершён: вы выиграли!", "success");
+      } else if (won === false) {
+        showToast("Предикт завершён: ставка не зашла", "info");
+      } else {
+        showToast("Предикт завершён: исход выбран", "info");
+      }
+      setPredictionOpen(false);
+      void hydratePrediction();
+    }
+    lastPredictionStatusRef.current = current;
+  }, [prediction, hydratePrediction, showToast]);
 
   useEffect(() => {
     let k: string | null = null;
@@ -430,14 +494,32 @@ export default function Home({
       setPredictionSuccess(false);
       predictionSuccessTimerRef.current = null;
     }, 1200);
-    setPredictionOpen(false);
     setPredictionAmount("");
     await hydratePrediction();
   }
 
   return (
     <div>
-      {prediction ? (
+      {predictionResultNotice ? (
+        <div className="card stack" style={{ marginBottom: 12 }}>
+          <strong>
+            {predictionResultNotice.won === true
+              ? "You won this prediction"
+              : predictionResultNotice.won === false
+              ? "You lost this prediction"
+              : "Prediction finished"}
+          </strong>
+          <p className="muted">
+            {predictionResultNotice.title} · победил{" "}
+            {predictionResultNotice.winnerOption} ({predictionResultNotice.winnerLabel})
+            {predictionResultNotice.myOption
+              ? ` · ваша ставка: ${predictionResultNotice.myOption}`
+              : ""}
+          </p>
+        </div>
+      ) : null}
+
+      {prediction && prediction.status !== "resolved" ? (
         <button
           type="button"
           className={
@@ -473,7 +555,7 @@ export default function Home({
         </button>
       ) : null}
 
-      {predictionOpen && prediction ? (
+      {predictionOpen && prediction && prediction.status !== "resolved" ? (
         <div className="prediction-modal__backdrop" onClick={() => setPredictionOpen(false)}>
           <div
             className="prediction-modal__card"
@@ -585,6 +667,9 @@ export default function Home({
                   Ваша ставка: {prediction.myBet.option} ·{" "}
                   <AnimatedInt value={prediction.myBet.amount} /> очков
                 </p>
+              ) : null}
+              {predictionSuccess ? (
+                <p className="muted">Ставка принята. Можете добавить ещё на этот же исход.</p>
               ) : null}
               <button
                 type="button"

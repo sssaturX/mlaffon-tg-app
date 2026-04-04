@@ -32,7 +32,8 @@ export const usePredictionStore = create<PredictionStore>((set) => ({
       prediction:
         prediction.status === "active" ||
         prediction.status === "paused" ||
-        prediction.status === "closed"
+        prediction.status === "closed" ||
+        prediction.status === "resolved"
           ? prediction
           : null,
     });

@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const TOKEN_KEY = "mlaffon_admin_token";
+const ADMIN_AUTO_REFRESH_MS = {
+  fast: 3000,
+  normal: 8000,
+  slow: 15000,
+} as const;
 
 /**
  * База URL для запросов к API.
@@ -302,6 +307,17 @@ export function App() {
   const [appealsLoading, setAppealsLoading] = useState(false);
   const [predictionPlatformsLoading, setPredictionPlatformsLoading] = useState(false);
   const [predictionsLoading, setPredictionsLoading] = useState(false);
+  const autoRefreshRunningRef = useRef(false);
+
+  const getAutoRefreshMs = useCallback(() => {
+    if (tab === "predictions" || tab === "live" || tab === "drops") {
+      return ADMIN_AUTO_REFRESH_MS.fast;
+    }
+    if (tab === "promos" || tab === "tasks") {
+      return ADMIN_AUTO_REFRESH_MS.slow;
+    }
+    return ADMIN_AUTO_REFRESH_MS.normal;
+  }, [tab]);
 
   /**
    * Только с `includeJsonContentType: true` для запросов с JSON-телом.
@@ -564,6 +580,82 @@ export function App() {
   useEffect(() => {
     if (token && tab === "appeals") void loadBanAppeals();
   }, [token, tab, loadBanAppeals]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+
+    const refreshActiveTab = async () => {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+      if (autoRefreshRunningRef.current) return;
+      autoRefreshRunningRef.current = true;
+      try {
+        await loadStats();
+        if (tab === "giveaways") {
+          await loadGiveaways();
+          if (expandedId) await loadGiveawayDetail(expandedId);
+          return;
+        }
+        if (tab === "promos") {
+          await loadPromos();
+          return;
+        }
+        if (tab === "users") {
+          await loadAdminUsers(usersOffset);
+          return;
+        }
+        if (tab === "drops") {
+          await loadDropStatus();
+          return;
+        }
+        if (tab === "live") {
+          await loadLiveBroadcast();
+          return;
+        }
+        if (tab === "tasks") {
+          await loadAdminTasks();
+          return;
+        }
+        if (tab === "appeals") {
+          await loadBanAppeals();
+          return;
+        }
+        if (tab === "predictions") {
+          await Promise.all([loadPredictionPlatforms(), loadPredictions()]);
+        }
+      } finally {
+        autoRefreshRunningRef.current = false;
+      }
+    };
+
+    const id = window.setInterval(() => {
+      void refreshActiveTab();
+    }, getAutoRefreshMs());
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [
+    token,
+    tab,
+    usersOffset,
+    expandedId,
+    loadStats,
+    loadGiveaways,
+    loadGiveawayDetail,
+    loadPromos,
+    loadAdminUsers,
+    loadDropStatus,
+    loadLiveBroadcast,
+    loadAdminTasks,
+    loadBanAppeals,
+    loadPredictionPlatforms,
+    loadPredictions,
+    getAutoRefreshMs,
+  ]);
 
   useEffect(() => {
     if (taskFormPlatform !== "telegram") return;
