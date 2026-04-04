@@ -19,6 +19,29 @@ export type DropStartedPayload = {
   winnersCount: number;
 };
 
+export type PredictionStatePayload = {
+  id: string;
+  title: string;
+  status: "draft" | "active" | "paused" | "closed" | "resolved";
+  optionA: string;
+  optionB: string;
+  platform: { id: string; type: string; name: string };
+  totalPool: number;
+  optionAPool: number;
+  optionBPool: number;
+  participantsA: number;
+  participantsB: number;
+  coefficientA: number | null;
+  coefficientB: number | null;
+  startAt: string | null;
+  autoCloseAt: string | null;
+  closedAt: string | null;
+  resolvedAt: string | null;
+  winnerOption: "A" | "B" | null;
+  myBet: { option: "A" | "B"; amount: number } | null;
+  myPlatformBalance: number | null;
+};
+
 /**
  * WebSocket `/api/v1/ws?token=…`
  * События: `me_update`, `drop_*`, `live_*`.
@@ -32,6 +55,7 @@ export function useRealtimeWebSocket(
     onDropClaimed: (data: { dropId: string; reward: number }) => void;
     onLiveStarted: (data: LiveStartedPayload) => void;
     onLiveEnded: () => void;
+    onPredictionState: (data: PredictionStatePayload) => void;
     onOpen: () => void;
     onLegacyBalancePing?: () => void;
   },
@@ -147,6 +171,10 @@ export function useRealtimeWebSocket(
           }
           if (d.type === "live_ended") {
             h.onLiveEnded();
+            return;
+          }
+          if (d.type === "prediction_state" && d.data && typeof d.data === "object") {
+            h.onPredictionState(d.data as PredictionStatePayload);
             return;
           }
           if (d.type === "balance_updated") {

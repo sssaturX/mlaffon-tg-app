@@ -39,6 +39,7 @@ import { listShopItems, purchaseItem } from "./services/shop.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerGiveawayRoutes } from "./routes/giveaways.js";
+import { registerPredictionRoutes } from "./routes/predictions.js";
 import { registerDropRoutes } from "./routes/drops.js";
 import { registerPushRoutes } from "./routes/push.js";
 import { buildHomePublicResponse } from "./services/homePublic.js";
@@ -51,6 +52,7 @@ import {
 import { markReferralPercentEligible } from "./services/referralEligibility.js";
 import { handleRealtimeWsConnection } from "./services/realtimeWs.js";
 import { startRealtimeSubscriber } from "./services/realtimePublish.js";
+import { seedDefaultPointPlatforms } from "./services/platformBalances.js";
 
 const app = Fastify({ logger: true });
 
@@ -65,7 +67,6 @@ await app.register(rateLimit, {
   allowList: (req) => {
     const p = req.url.split("?")[0] ?? "";
     if (p === "/api/v1/ws" || p === "/health") return true;
-    if (p.startsWith("/api/admin")) return true;
     return false;
   },
   keyGenerator: (req) => {
@@ -97,6 +98,7 @@ app.get("/api/v1/ws", { websocket: true }, (socket, req) => {
 await registerOAuthRoutes(app);
 await registerAdminRoutes(app);
 await registerGiveawayRoutes(app);
+await registerPredictionRoutes(app);
 await registerDropRoutes(app);
 await registerPushRoutes(app);
 
@@ -798,6 +800,7 @@ const host = process.env.HOST ?? "0.0.0.0";
 
 try {
   await waitForDatabaseReady();
+  await seedDefaultPointPlatforms();
   await startRealtimeSubscriber(app.log);
   await app.listen({ port, host });
   app.log.info(`API http://${host}:${port}`);

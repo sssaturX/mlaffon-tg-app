@@ -6,7 +6,7 @@ import {
   Trophy,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import WebApp from "@twa-dev/sdk";
 import type { MeEconomyPatch, MeResponse } from "shared";
@@ -55,6 +55,12 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
   const [data, setData] = useState<GiveawayDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const [joinCooldown, setJoinCooldown] = useState(false);
+  const joinCooldownTimerRef = useRef<number | null>(null);
+  const [boostPoints, setBoostPoints] = useState("");
+  const [boosting, setBoosting] = useState(false);
+  const [boostCooldown, setBoostCooldown] = useState(false);
+  const boostCooldownTimerRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -69,8 +75,27 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    return () => {
+      if (joinCooldownTimerRef.current != null) {
+        window.clearTimeout(joinCooldownTimerRef.current);
+      }
+      if (boostCooldownTimerRef.current != null) {
+        window.clearTimeout(boostCooldownTimerRef.current);
+      }
+    };
+  }, []);
+
   async function join() {
-    if (!id || !data) return;
+    if (!id || !data || joinCooldown) return;
+    setJoinCooldown(true);
+    if (joinCooldownTimerRef.current != null) {
+      window.clearTimeout(joinCooldownTimerRef.current);
+    }
+    joinCooldownTimerRef.current = window.setTimeout(() => {
+      setJoinCooldown(false);
+      joinCooldownTimerRef.current = null;
+    }, 1500);
     setJoining(true);
     const r = await api<{
       ok: boolean;
@@ -119,6 +144,39 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     } catch {
       /* ignore */
     }
+  }
+
+  async function boost() {
+    if (!id || !data || boostCooldown) return;
+    const points = Math.floor(Number(boostPoints));
+    if (!Number.isFinite(points) || points <= 0) {
+      showToast("Введите сумму буста больше нуля", "error");
+      return;
+    }
+    setBoostCooldown(true);
+    if (boostCooldownTimerRef.current != null) {
+      window.clearTimeout(boostCooldownTimerRef.current);
+    }
+    boostCooldownTimerRef.current = window.setTimeout(() => {
+      setBoostCooldown(false);
+      boostCooldownTimerRef.current = null;
+    }, 1500);
+    setBoosting(true);
+    const r = await api<{ ok: boolean; economy: MeEconomyPatch }>(
+      `/api/v1/giveaways/${id}/boost`,
+      {
+        method: "POST",
+        body: JSON.stringify({ platform: activePlatform, points }),
+      }
+    );
+    setBoosting(false);
+    if (!r.ok) {
+      showToast(formatApiError(r), "error");
+      return;
+    }
+    patchEconomy(r.data.economy);
+    showToast("Буст применён. Вес в розыгрыше увеличен.", "success");
+    setBoostPoints("");
   }
 
   if (!me) {
@@ -318,7 +376,7 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
         <button
           type="button"
           className="primary giveaway-detail__cta"
-          disabled={joinDisabled}
+          disabled={joinDisabled || joinCooldown}
           onClick={() => void join()}
         >
           <Ticket size={20} aria-hidden />
@@ -336,6 +394,34 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
           {balance.toLocaleString("ru-RU")} · переключите платформу в шапке.
         </p>
       )}
+
+      {g.isParticipant && !g.drawnAt ? (
+        <div className="card stack">
+          <p className="m-0">
+            <strong>Буст шансов</strong>
+          </p>
+          <p className="muted m-0">
+            Потратьте монеты текущей платформы, чтобы увеличить вес при выборе победителей.
+          </p>
+          <div className="row">
+            <input
+              type="number"
+              min={1}
+              value={boostPoints}
+              onChange={(e) => setBoostPoints(e.target.value)}
+              placeholder="Сумма буста"
+            />
+            <button
+              type="button"
+              className="primary"
+              disabled={boosting || boostCooldown}
+              onClick={() => void boost()}
+            >
+              {boosting || boostCooldown ? "..." : "Бустить"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {ended && !g.drawnAt && (
         <p className="muted">Приём участников окончен, ожидается выбор победителей.</p>

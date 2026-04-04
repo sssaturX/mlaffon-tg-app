@@ -78,6 +78,51 @@ export const userBalances = pgTable("user_balances", {
   kickLifetimeEarned: integer("kick_lifetime_earned").notNull().default(0),
 });
 
+/**
+ * Справочник платформ поинтов для фич с изолированными балансами.
+ * Для twitch/kick используем legacy-колонки user_balances, для остальных — user_platform_balances.
+ */
+export const pointPlatforms = pgTable(
+  "point_platforms",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    type: text("type").notNull().unique(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [uniqueIndex("point_platforms_name_uidx").on(t.name)]
+);
+
+export const userPlatformBalances = pgTable(
+  "user_platform_balances",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    platformId: uuid("platform_id")
+      .notNull()
+      .references(() => pointPlatforms.id, { onDelete: "cascade" }),
+    balance: integer("balance").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("user_platform_balances_user_platform_uidx").on(
+      t.userId,
+      t.platformId
+    ),
+    index("user_platform_balances_platform_idx").on(t.platformId),
+  ]
+);
+
 export const userStreaks = pgTable("user_streaks", {
   userId: uuid("user_id")
     .primaryKey()
@@ -321,6 +366,90 @@ export const giveawayWinners = pgTable(
   (t) => [
     uniqueIndex("giveaway_winners_gw_user").on(t.giveawayId, t.userId),
     index("giveaway_winners_gw_idx").on(t.giveawayId),
+  ]
+);
+
+export const giveawayBoosts = pgTable(
+  "giveaway_boosts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    giveawayId: uuid("giveaway_id")
+      .notNull()
+      .references(() => giveaways.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    platformType: text("platform_type").notNull(),
+    pointsSpent: integer("points_spent").notNull().default(0),
+    ticketsAdded: integer("tickets_added").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("giveaway_boosts_giveaway_idx").on(t.giveawayId),
+    index("giveaway_boosts_user_idx").on(t.userId),
+  ]
+);
+
+export const predictions = pgTable(
+  "predictions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    title: text("title").notNull(),
+    optionA: text("option_a").notNull(),
+    optionB: text("option_b").notNull(),
+    platformId: uuid("platform_id")
+      .notNull()
+      .references(() => pointPlatforms.id, { onDelete: "restrict" }),
+    status: text("status").notNull().default("draft"),
+    startAt: timestamp("start_at", { withTimezone: true }),
+    autoCloseAt: timestamp("auto_close_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    winnerOption: text("winner_option"),
+    totalPool: integer("total_pool").notNull().default(0),
+    optionAPool: integer("option_a_pool").notNull().default(0),
+    optionBPool: integer("option_b_pool").notNull().default(0),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("predictions_status_idx").on(t.status),
+    index("predictions_platform_idx").on(t.platformId),
+    uniqueIndex("predictions_single_active_uidx")
+      .on(t.status)
+      .where(sql`${t.status} = 'active'`),
+  ]
+);
+
+export const predictionBets = pgTable(
+  "prediction_bets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    predictionId: uuid("prediction_id")
+      .notNull()
+      .references(() => predictions.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    option: text("option").notNull(),
+    amount: integer("amount").notNull(),
+    platformId: uuid("platform_id")
+      .notNull()
+      .references(() => pointPlatforms.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("prediction_bets_prediction_user_uidx").on(t.predictionId, t.userId),
+    index("prediction_bets_prediction_idx").on(t.predictionId),
   ]
 );
 

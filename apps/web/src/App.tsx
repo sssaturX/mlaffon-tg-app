@@ -42,6 +42,7 @@ import { useSyncedCountdownMs } from "./hooks/useSyncedCountdown";
 import { useRealtimeWebSocket, type DropStartedPayload } from "./hooks/useRealtimeWebSocket";
 import { useDocumentVisible } from "./hooks/useDocumentVisible";
 import { useLiveBroadcastStore } from "./store/liveBroadcastStore";
+import { usePredictionStore } from "./store/predictionStore";
 import {
   getStartParamFromInitData,
   looksLikeTelegramMiniApp,
@@ -303,6 +304,7 @@ function AppShell({
   const location = useLocation();
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const liveBroadcast = useLiveBroadcastStore((s) => s.broadcast);
+  const hydratePrediction = usePredictionStore((s) => s.hydrateFromApi);
 
   /** Пока идёт эфир — шапка и баланс строго по платформе стрима; без эфира переключатель свободен. */
   useEffect(() => {
@@ -386,10 +388,14 @@ function AppShell({
       onLiveEnded: () => {
         useLiveBroadcastStore.getState().applyLiveEndedFromWs();
       },
+      onPredictionState: (data) => {
+        usePredictionStore.getState().applyFromWs(data);
+      },
       onOpen: () => {
         void refreshMeFromService();
         void loadDrop();
         void useLiveBroadcastStore.getState().hydrateFromApi();
+        void usePredictionStore.getState().hydrateFromApi();
       },
       onLegacyBalancePing: () => void refreshMe(),
     },
@@ -403,7 +409,8 @@ function AppShell({
   useEffect(() => {
     if (needsPlatformLink) return;
     void useLiveBroadcastStore.getState().hydrateFromApi();
-  }, [needsPlatformLink]);
+    void hydratePrediction();
+  }, [needsPlatformLink, hydratePrediction]);
 
   useEffect(() => {
     if (needsPlatformLink) return;
@@ -416,8 +423,9 @@ function AppShell({
       void refreshMe();
       void loadDrop();
       void useLiveBroadcastStore.getState().hydrateFromApi();
+      void hydratePrediction();
     }
-  }, [docVisible, needsPlatformLink, refreshMe, loadDrop]);
+  }, [docVisible, needsPlatformLink, refreshMe, loadDrop, hydratePrediction]);
 
   /** Без WS — fallback-проверка каждые 2 мин чтобы не пропустить дроп. */
   useEffect(() => {

@@ -57,7 +57,33 @@ export type BroadcastWsEvent =
         vpnNote: string | null;
       };
     }
-  | { type: "live_ended"; v: 1 };
+  | { type: "live_ended"; v: 1 }
+  | {
+      type: "prediction_state";
+      v: 1;
+      data: {
+        id: string;
+        title: string;
+        status: string;
+        optionA: string;
+        optionB: string;
+        platform: { id: string; type: string; name: string };
+        totalPool: number;
+        optionAPool: number;
+        optionBPool: number;
+        participantsA: number;
+        participantsB: number;
+        coefficientA: number | null;
+        coefficientB: number | null;
+        startAt: string | null;
+        autoCloseAt: string | null;
+        closedAt: string | null;
+        resolvedAt: string | null;
+        winnerOption: "A" | "B" | null;
+        myBet: { option: "A" | "B"; amount: number } | null;
+        myPlatformBalance: number | null;
+      };
+    };
 
 export type DropClaimedEvent = {
   type: "drop_claimed";

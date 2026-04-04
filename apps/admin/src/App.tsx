@@ -140,6 +140,28 @@ type AdminTaskRow = {
   active: boolean;
 };
 
+type PredictionPlatformRow = {
+  id: string;
+  name: string;
+  type: string;
+  isActive: boolean;
+};
+
+type PredictionRow = {
+  id: string;
+  title: string;
+  status: "draft" | "active" | "paused" | "closed" | "resolved";
+  optionA: string;
+  optionB: string;
+  platform: { id: string; type: string; name: string };
+  totalPool: number;
+  optionAPool: number;
+  optionBPool: number;
+  participantsA: number;
+  participantsB: number;
+  winnerOption: "A" | "B" | null;
+};
+
 export function App() {
   const [token, setToken] = useState<string | null>(() => {
     try {
@@ -186,7 +208,14 @@ export function App() {
   const [promoCreditPlatform, setPromoCreditPlatform] = useState<"split" | "twitch" | "kick">("split");
 
   const [tab, setTab] = useState<
-    "giveaways" | "promos" | "users" | "drops" | "live" | "tasks" | "appeals"
+    | "giveaways"
+    | "promos"
+    | "users"
+    | "drops"
+    | "live"
+    | "tasks"
+    | "appeals"
+    | "predictions"
   >("giveaways");
   const [banAppeals, setBanAppeals] = useState<BanAppealRow[] | null>(null);
   const [adminUsers, setAdminUsers] = useState<AdminUserRow[] | null>(null);
@@ -244,6 +273,12 @@ export function App() {
     "" | "tv" | "gift" | "help" | "radio"
   >("");
   const [taskFormMetaJson, setTaskFormMetaJson] = useState("{}");
+  const [predictionPlatforms, setPredictionPlatforms] = useState<PredictionPlatformRow[] | null>(null);
+  const [predictions, setPredictions] = useState<PredictionRow[] | null>(null);
+  const [predictionTitle, setPredictionTitle] = useState("");
+  const [predictionOptionA, setPredictionOptionA] = useState("");
+  const [predictionOptionB, setPredictionOptionB] = useState("");
+  const [predictionPlatformType, setPredictionPlatformType] = useState("twitch");
 
   /**
    * Только с `includeJsonContentType: true` для запросов с JSON-телом.
@@ -389,6 +424,43 @@ export function App() {
     setAdminTasks(j.tasks ?? []);
   }, [token, authHeaders]);
 
+  const loadPredictionPlatforms = useCallback(async () => {
+    if (!token) return;
+    const r = await fetch(`${apiBase()}/api/admin/predictions/platforms`, {
+      headers: authHeaders(),
+    });
+    const j = (await r.json()) as {
+      platforms?: PredictionPlatformRow[];
+      error?: { message?: string };
+    };
+    if (!r.ok) {
+      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+      if (r.status === 401) setToken(null);
+      return;
+    }
+    setPredictionPlatforms(j.platforms ?? []);
+    if ((j.platforms ?? []).length > 0 && !predictionPlatformType) {
+      setPredictionPlatformType((j.platforms ?? [])[0]!.type);
+    }
+  }, [token, authHeaders, predictionPlatformType]);
+
+  const loadPredictions = useCallback(async () => {
+    if (!token) return;
+    const r = await fetch(`${apiBase()}/api/admin/predictions`, {
+      headers: authHeaders(),
+    });
+    const j = (await r.json()) as {
+      predictions?: PredictionRow[];
+      error?: { message?: string };
+    };
+    if (!r.ok) {
+      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+      if (r.status === 401) setToken(null);
+      return;
+    }
+    setPredictions(j.predictions ?? []);
+  }, [token, authHeaders]);
+
   useEffect(() => {
     if (token) {
       void loadStats();
@@ -412,6 +484,13 @@ export function App() {
   useEffect(() => {
     if (token && tab === "tasks") void loadAdminTasks();
   }, [token, tab, loadAdminTasks]);
+
+  useEffect(() => {
+    if (token && tab === "predictions") {
+      void loadPredictionPlatforms();
+      void loadPredictions();
+    }
+  }, [token, tab, loadPredictionPlatforms, loadPredictions]);
 
   const loadBanAppeals = useCallback(async () => {
     if (!token) return;
@@ -731,6 +810,13 @@ export function App() {
           onClick={() => setTab("tasks")}
         >
           Задания
+        </button>
+        <button
+          type="button"
+          className={tab === "predictions" ? "admin-tab admin-tab--active" : "admin-tab"}
+          onClick={() => setTab("predictions")}
+        >
+          Предикты
         </button>
       </nav>
 
@@ -1762,6 +1848,283 @@ export function App() {
                       >
                         Скрыть
                       </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : null}
+
+      {tab === "predictions" ? (
+        <>
+          <h2 className="admin-mt-0">Предикты (Live Predictions)</h2>
+          <p className="muted">
+            Админ создаёт предикт, запускает/ставит на паузу/закрывает и выбирает победивший исход.
+            Балансы списываются и выплачиваются строго в выбранной платформе.
+          </p>
+          <form
+            className="card stack"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!token) return;
+              setLoading(true);
+              setErr(null);
+              try {
+                const r = await fetch(`${apiBase()}/api/admin/predictions`, {
+                  method: "POST",
+                  headers: authHeaders(true),
+                  body: JSON.stringify({
+                    title: predictionTitle,
+                    optionA: predictionOptionA,
+                    optionB: predictionOptionB,
+                    platformType: predictionPlatformType,
+                  }),
+                });
+                const j = (await r.json()) as { id?: string; error?: { message?: string } };
+                if (!r.ok) {
+                  setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                  return;
+                }
+                setPredictionTitle("");
+                setPredictionOptionA("");
+                setPredictionOptionB("");
+                await loadPredictions();
+              } catch {
+                setErr("Сеть недоступна");
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            <div>
+              <label htmlFor="ptitle">Заголовок</label>
+              <input
+                id="ptitle"
+                value={predictionTitle}
+                onChange={(e) => setPredictionTitle(e.target.value)}
+                required
+              />
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="poptA">Исход A</label>
+                <input
+                  id="poptA"
+                  value={predictionOptionA}
+                  onChange={(e) => setPredictionOptionA(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="poptB">Исход B</label>
+                <input
+                  id="poptB"
+                  value={predictionOptionB}
+                  onChange={(e) => setPredictionOptionB(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="pplatform">Платформа</label>
+              <select
+                id="pplatform"
+                value={predictionPlatformType}
+                onChange={(e) => setPredictionPlatformType(e.target.value)}
+              >
+                {(predictionPlatforms ?? []).map((p) => (
+                  <option key={p.id} value={p.type}>
+                    {p.name} ({p.type})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button type="submit" className="primary" disabled={loading}>
+              Создать предикт
+            </button>
+          </form>
+
+          {predictions === null ? (
+            <p className="muted">Загрузка…</p>
+          ) : predictions.length === 0 ? (
+            <p className="muted">Пока нет предиктов.</p>
+          ) : (
+            <ul className="list">
+              {predictions.map((p) => (
+                <li key={p.id}>
+                  <div className="admin-gw-row">
+                    <div className="admin-gw-main">
+                      <strong>{p.title}</strong>
+                      <div className="muted">
+                        {p.platform.name} · статус {p.status} · пул {p.totalPool.toLocaleString("ru-RU")}
+                      </div>
+                      <div className="muted admin-muted-gap">
+                        A: {p.optionA} — {p.optionAPool.toLocaleString("ru-RU")} ({p.participantsA} уч.) · B:{" "}
+                        {p.optionB} — {p.optionBPool.toLocaleString("ru-RU")} ({p.participantsB} уч.)
+                        {p.winnerOption ? ` · победил ${p.winnerOption}` : ""}
+                      </div>
+                    </div>
+                    <div className="admin-actions">
+                      {p.status === "draft" || p.status === "paused" ? (
+                        <button
+                          type="button"
+                          className="primary"
+                          disabled={loading}
+                          onClick={async () => {
+                            if (!token) return;
+                            setLoading(true);
+                            setErr(null);
+                            try {
+                              const r = await fetch(
+                                `${apiBase()}/api/admin/predictions/${encodeURIComponent(p.id)}/start`,
+                                { method: "PATCH", headers: authHeaders() }
+                              );
+                              const j = (await r.json()) as { error?: { message?: string } };
+                              if (!r.ok) {
+                                setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                return;
+                              }
+                              await loadPredictions();
+                            } catch {
+                              setErr("Сеть недоступна");
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                        >
+                          Старт
+                        </button>
+                      ) : null}
+                      {p.status === "active" ? (
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={loading}
+                          onClick={async () => {
+                            if (!token) return;
+                            setLoading(true);
+                            setErr(null);
+                            try {
+                              const r = await fetch(
+                                `${apiBase()}/api/admin/predictions/${encodeURIComponent(p.id)}/pause`,
+                                { method: "PATCH", headers: authHeaders() }
+                              );
+                              const j = (await r.json()) as { error?: { message?: string } };
+                              if (!r.ok) {
+                                setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                return;
+                              }
+                              await loadPredictions();
+                            } catch {
+                              setErr("Сеть недоступна");
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                        >
+                          Пауза
+                        </button>
+                      ) : null}
+                      {p.status === "active" || p.status === "paused" ? (
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={loading}
+                          onClick={async () => {
+                            if (!token) return;
+                            setLoading(true);
+                            setErr(null);
+                            try {
+                              const r = await fetch(
+                                `${apiBase()}/api/admin/predictions/${encodeURIComponent(p.id)}/close`,
+                                { method: "PATCH", headers: authHeaders() }
+                              );
+                              const j = (await r.json()) as { error?: { message?: string } };
+                              if (!r.ok) {
+                                setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                return;
+                              }
+                              await loadPredictions();
+                            } catch {
+                              setErr("Сеть недоступна");
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                        >
+                          Закрыть
+                        </button>
+                      ) : null}
+                      {p.status === "closed" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={loading}
+                            onClick={async () => {
+                              if (!token) return;
+                              setLoading(true);
+                              setErr(null);
+                              try {
+                                const r = await fetch(
+                                  `${apiBase()}/api/admin/predictions/${encodeURIComponent(p.id)}/resolve`,
+                                  {
+                                    method: "PATCH",
+                                    headers: authHeaders(true),
+                                    body: JSON.stringify({ winnerOption: "A" }),
+                                  }
+                                );
+                                const j = (await r.json()) as { error?: { message?: string } };
+                                if (!r.ok) {
+                                  setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                  return;
+                                }
+                                await loadPredictions();
+                              } catch {
+                                setErr("Сеть недоступна");
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                          >
+                            Победил A
+                          </button>
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={loading}
+                            onClick={async () => {
+                              if (!token) return;
+                              setLoading(true);
+                              setErr(null);
+                              try {
+                                const r = await fetch(
+                                  `${apiBase()}/api/admin/predictions/${encodeURIComponent(p.id)}/resolve`,
+                                  {
+                                    method: "PATCH",
+                                    headers: authHeaders(true),
+                                    body: JSON.stringify({ winnerOption: "B" }),
+                                  }
+                                );
+                                const j = (await r.json()) as { error?: { message?: string } };
+                                if (!r.ok) {
+                                  setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                  return;
+                                }
+                                await loadPredictions();
+                              } catch {
+                                setErr("Сеть недоступна");
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                          >
+                            Победил B
+                          </button>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 </li>

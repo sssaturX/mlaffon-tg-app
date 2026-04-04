@@ -31,6 +31,7 @@ import {
   type LiveBroadcastPublic,
 } from "../store/liveBroadcastStore";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
+import { usePredictionStore } from "../store/predictionStore";
 
 const STREAK_TARGET = 7;
 
@@ -84,6 +85,14 @@ export default function Home({
   const [pub, setPub] = useState<HomePublic | null>(null);
   const [promo, setPromo] = useState("");
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
+  const prediction = usePredictionStore((s) => s.prediction);
+  const hydratePrediction = usePredictionStore((s) => s.hydrateFromApi);
+  const [predictionOpen, setPredictionOpen] = useState(false);
+  const [predictionOption, setPredictionOption] = useState<"A" | "B">("A");
+  const [predictionAmount, setPredictionAmount] = useState("");
+  const [predictionLoading, setPredictionLoading] = useState(false);
+  const [predictionCooldown, setPredictionCooldown] = useState(false);
+  const predictionCooldownTimerRef = useRef<number | null>(null);
 
   const loadPublic = useCallback(async () => {
     const r = await api<HomePublic>("/api/v1/home/public");
@@ -93,6 +102,18 @@ export default function Home({
   useEffect(() => {
     void loadPublic();
   }, [loadPublic]);
+
+  useEffect(() => {
+    void hydratePrediction();
+  }, [hydratePrediction]);
+
+  useEffect(() => {
+    return () => {
+      if (predictionCooldownTimerRef.current != null) {
+        window.clearTimeout(predictionCooldownTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let k: string | null = null;
@@ -294,8 +315,124 @@ export default function Home({
     setPromo("");
   }
 
+  async function submitPrediction() {
+    if (!prediction || predictionCooldown) return;
+    const amount = Math.floor(Number(predictionAmount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast("Введите сумму ставки больше нуля", "error");
+      return;
+    }
+    setPredictionCooldown(true);
+    if (predictionCooldownTimerRef.current != null) {
+      window.clearTimeout(predictionCooldownTimerRef.current);
+    }
+    predictionCooldownTimerRef.current = window.setTimeout(() => {
+      setPredictionCooldown(false);
+      predictionCooldownTimerRef.current = null;
+    }, 1500);
+    setPredictionLoading(true);
+    const r = await api<{ ok: boolean }>("/api/v1/predictions/" + prediction.id + "/bet", {
+      method: "POST",
+      body: JSON.stringify({ option: predictionOption, amount }),
+    });
+    setPredictionLoading(false);
+    if (!r.ok) {
+      showToast(formatApiError(r), "error");
+      return;
+    }
+    showToast("Ставка принята", "success");
+    setPredictionOpen(false);
+    setPredictionAmount("");
+    await hydratePrediction();
+  }
+
   return (
     <div>
+      {prediction && prediction.status === "active" ? (
+        <button
+          type="button"
+          className="prediction-toast-btn"
+          onClick={() => setPredictionOpen(true)}
+        >
+          Сделай прогноз
+        </button>
+      ) : null}
+
+      {predictionOpen && prediction ? (
+        <div className="prediction-modal__backdrop" onClick={() => setPredictionOpen(false)}>
+          <div
+            className="prediction-modal__card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="prediction-modal__head">
+              <h3>{prediction.title}</h3>
+              <p className="muted">Платформа: {prediction.platform.name}</p>
+            </div>
+            <div className="prediction-modal__options">
+              <button
+                type="button"
+                className={predictionOption === "A" ? "prediction-opt prediction-opt--active" : "prediction-opt"}
+                onClick={() => setPredictionOption("A")}
+              >
+                <strong>{prediction.optionA}</strong>
+                <span>{prediction.participantsA} участников</span>
+                <span>{prediction.optionAPool.toLocaleString("ru-RU")} очков</span>
+                <span>
+                  x
+                  {prediction.coefficientA != null
+                    ? prediction.coefficientA.toFixed(2)
+                    : "—"}
+                </span>
+              </button>
+              <button
+                type="button"
+                className={predictionOption === "B" ? "prediction-opt prediction-opt--active" : "prediction-opt"}
+                onClick={() => setPredictionOption("B")}
+              >
+                <strong>{prediction.optionB}</strong>
+                <span>{prediction.participantsB} участников</span>
+                <span>{prediction.optionBPool.toLocaleString("ru-RU")} очков</span>
+                <span>
+                  x
+                  {prediction.coefficientB != null
+                    ? prediction.coefficientB.toFixed(2)
+                    : "—"}
+                </span>
+              </button>
+            </div>
+            <div className="prediction-modal__form">
+              <label htmlFor="predictionAmount">Сумма</label>
+              <input
+                id="predictionAmount"
+                type="number"
+                min={1}
+                value={predictionAmount}
+                onChange={(e) => setPredictionAmount(e.target.value)}
+                placeholder="100"
+              />
+              <p className="muted">
+                Баланс:{" "}
+                {prediction.myPlatformBalance != null
+                  ? prediction.myPlatformBalance.toLocaleString("ru-RU")
+                  : "—"}
+              </p>
+              <button
+                type="button"
+                className="primary"
+                disabled={predictionLoading || predictionCooldown || prediction.myBet != null}
+                onClick={() => void submitPrediction()}
+              >
+                {prediction.myBet
+                  ? "Ставка уже сделана"
+                  : predictionLoading || predictionCooldown
+                    ? "..."
+                    : "Подтвердить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="home-hero">
         <div className="home-hero__row">
           {me.photoUrl ? (

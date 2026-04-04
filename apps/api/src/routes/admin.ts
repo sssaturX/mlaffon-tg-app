@@ -5,6 +5,7 @@ import { db } from "../db/index.js";
 import {
   giveaways,
   appSettings,
+  pointPlatforms,
   promoCodes,
   users,
   userBalances,
@@ -35,6 +36,16 @@ import {
 } from "../services/liveBroadcast.js";
 import { notifyTelegramLiveStarted } from "../services/telegramLiveNotify.js";
 import { notifyWebPushLiveStarted } from "../services/webPush.js";
+import {
+  closePrediction,
+  createPrediction,
+  getPredictionById,
+  listPredictionPlatforms,
+  listPredictionsAdmin,
+  pausePrediction,
+  resolvePrediction,
+  startPrediction,
+} from "../services/predictions.js";
 
 function parseBearer(req: { headers: { authorization?: string } }): string | null {
   const h = req.headers.authorization;
@@ -738,6 +749,146 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       return reply.status(400).send({
         error: { code: "not_live", message: "Нет активного эфира" },
       });
+    }
+    return { ok: true };
+  });
+
+  const createPredictionBody = z.object({
+    title: z.string().min(1),
+    optionA: z.string().min(1),
+    optionB: z.string().min(1),
+    platformType: z.string().min(1),
+    startAt: z.string().datetime().optional().nullable(),
+    autoCloseAt: z.string().datetime().optional().nullable(),
+  });
+
+  app.get("/api/admin/predictions/platforms", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const rows = await listPredictionPlatforms(true);
+    return { platforms: rows };
+  });
+
+  const patchPredictionPlatformBody = z.object({
+    isActive: z.boolean(),
+  });
+
+  app.patch("/api/admin/predictions/platforms/:type", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const type = (req.params as { type: string }).type;
+    const parsed = patchPredictionPlatformBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: "Передайте флаг isActive." },
+      });
+    }
+    const [updated] = await db
+      .update(pointPlatforms)
+      .set({ isActive: parsed.data.isActive, updatedAt: sql`now()` })
+      .where(eq(pointPlatforms.type, type))
+      .returning({ id: pointPlatforms.id });
+    if (!updated) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Платформа не найдена" },
+      });
+    }
+    return { ok: true };
+  });
+
+  app.post("/api/admin/predictions", async (req, reply) => {
+    const adminEmail = requireAdmin(req, reply);
+    if (!adminEmail) return;
+    const parsed = createPredictionBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const r = await createPrediction({
+      ...parsed.data,
+      createdBy: adminEmail,
+    });
+    if (!r.ok) {
+      return reply.status(400).send({
+        error: { code: r.code, message: "Выберите активную платформу." },
+      });
+    }
+    return { id: r.id };
+  });
+
+  app.get("/api/admin/predictions", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    return { predictions: await listPredictionsAdmin() };
+  });
+
+  app.get("/api/admin/predictions/:id", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const prediction = await getPredictionById(id, null);
+    if (!prediction) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Предикт не найден" },
+      });
+    }
+    return { prediction };
+  });
+
+  app.patch("/api/admin/predictions/:id/start", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const r = await startPrediction(id);
+    if (!r.ok) {
+      const status = r.code === "not_found" ? 404 : 409;
+      const message =
+        r.code === "not_found"
+          ? "Предикт не найден"
+          : r.code === "another_active"
+            ? "Уже есть активный предикт. Сначала закройте его."
+            : "Нельзя запустить из текущего статуса";
+      return reply.status(status).send({ error: { code: r.code, message } });
+    }
+    return { ok: true };
+  });
+
+  app.patch("/api/admin/predictions/:id/pause", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const r = await pausePrediction(id);
+    if (!r.ok) {
+      const status = r.code === "not_found" ? 404 : 409;
+      const message = r.code === "not_found" ? "Предикт не найден" : "Пауза доступна только для активного предикта";
+      return reply.status(status).send({ error: { code: r.code, message } });
+    }
+    return { ok: true };
+  });
+
+  app.patch("/api/admin/predictions/:id/close", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const r = await closePrediction(id);
+    if (!r.ok) {
+      const status = r.code === "not_found" ? 404 : 409;
+      const message = r.code === "not_found" ? "Предикт не найден" : "Нельзя закрыть из текущего статуса";
+      return reply.status(status).send({ error: { code: r.code, message } });
+    }
+    return { ok: true };
+  });
+
+  const resolveBody = z.object({ winnerOption: z.enum(["A", "B"]) });
+
+  app.patch("/api/admin/predictions/:id/resolve", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const parsed = resolveBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: "Выберите победивший исход." },
+      });
+    }
+    const r = await resolvePrediction({ predictionId: id, winnerOption: parsed.data.winnerOption });
+    if (!r.ok) {
+      const status = r.code === "not_found" ? 404 : 409;
+      const message = r.code === "not_found" ? "Предикт не найден" : "Сначала закройте предикт";
+      return reply.status(status).send({ error: { code: r.code, message } });
     }
     return { ok: true };
   });

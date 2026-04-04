@@ -46,6 +46,8 @@ export interface GameConfig {
     dropsAttempt: { max: number; timeWindowMs: number };
     promoApply: { max: number; timeWindowMs: number };
     giveawayJoin: { max: number; timeWindowMs: number };
+    giveawayBoost: { max: number; timeWindowMs: number };
+    predictionBet: { max: number; timeWindowMs: number };
     fortuneSpin: { max: number; timeWindowMs: number };
   };
   /** Множитель к наградам при заряде в инвентаре (см. inventoryItemId). Не выше maxMultiplier. */
@@ -97,6 +99,8 @@ const defaultConfig: GameConfig = {
     dropsAttempt: { max: 20, timeWindowMs: 60_000 },
     promoApply: { max: 15, timeWindowMs: 60_000 },
     giveawayJoin: { max: 30, timeWindowMs: 60_000 },
+    giveawayBoost: { max: 20, timeWindowMs: 60_000 },
+    predictionBet: { max: 12, timeWindowMs: 60_000 },
     fortuneSpin: { max: 25, timeWindowMs: 60_000 },
   },
   boost: {
