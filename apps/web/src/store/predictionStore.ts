@@ -30,7 +30,9 @@ export const usePredictionStore = create<PredictionStore>((set) => ({
   applyFromWs: (prediction) => {
     set({
       prediction:
-        prediction.status === "active" || prediction.status === "paused"
+        prediction.status === "active" ||
+        prediction.status === "paused" ||
+        prediction.status === "closed"
           ? prediction
           : null,
     });

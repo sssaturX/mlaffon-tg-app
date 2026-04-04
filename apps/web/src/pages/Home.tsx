@@ -390,6 +390,10 @@ export default function Home({
 
   async function submitPrediction() {
     if (!prediction || predictionCooldown) return;
+    if (prediction.status !== "active") {
+      showToast("Ставки уже закрыты", "info");
+      return;
+    }
     if (prediction.myBet && prediction.myBet.option !== predictionOption) {
       showToast("Можно докидывать только в уже выбранный исход", "error");
       return;
@@ -433,7 +437,7 @@ export default function Home({
 
   return (
     <div>
-      {prediction && prediction.status === "active" ? (
+      {prediction ? (
         <button
           type="button"
           className={
@@ -445,15 +449,23 @@ export default function Home({
         >
           <div className="prediction-live">
             <span className="prediction-live__dot" />
-            <span>LIVE</span>
+            <span>{prediction.status === "active" ? "LIVE" : "CLOSED"}</span>
           </div>
           <div className="prediction-toast__text">
-            <strong>{predictionToastCompact ? "Prediction LIVE" : "Prediction started"}</strong>
+            <strong>
+              {prediction.status === "active"
+                ? predictionToastCompact
+                  ? "Prediction LIVE"
+                  : "Prediction started"
+                : "Prediction closed"}
+            </strong>
             {!predictionToastCompact ? (
               <span>
                 {prediction.title}
-                {prediction.autoCloseAt
+                {prediction.status === "active" && prediction.autoCloseAt
                   ? ` · ${formatLiveCountdown(prediction.autoCloseAt, predictionNowMs)}`
+                  : prediction.status !== "active"
+                  ? " · ставки закрыты, ждём исход"
                   : ""}
               </span>
             ) : null}
@@ -472,17 +484,19 @@ export default function Home({
                 <h3>{prediction.title}</h3>
                 <div className="prediction-live">
                   <span className="prediction-live__dot" />
-                  <span>LIVE</span>
+                  <span>{prediction.status === "active" ? "LIVE" : "CLOSED"}</span>
                 </div>
               </div>
               <div className="prediction-modal__head-meta">
                 <span className="prediction-using-badge">
                   Using: {prediction.platform.name}
                 </span>
-                {prediction.autoCloseAt ? (
+                {prediction.status === "active" && prediction.autoCloseAt ? (
                   <span className="muted">
                     Закрытие через {formatLiveCountdown(prediction.autoCloseAt, predictionNowMs)}
                   </span>
+                ) : prediction.status !== "active" ? (
+                  <span className="muted">Ставки закрыты, ожидаем выбор победителя</span>
                 ) : null}
               </div>
             </div>
@@ -576,6 +590,7 @@ export default function Home({
                 type="button"
                 className="primary prediction-modal__cta"
                 disabled={
+                  prediction.status !== "active" ||
                   predictionLoading ||
                   predictionCooldown ||
                   (prediction.myBet != null && prediction.myBet.option !== predictionOption) ||
@@ -584,7 +599,9 @@ export default function Home({
                 }
                 onClick={() => void submitPrediction()}
               >
-                {prediction.myBet && prediction.myBet.option !== predictionOption
+                {prediction.status !== "active"
+                  ? "Ставки закрыты"
+                  : prediction.myBet && prediction.myBet.option !== predictionOption
                   ? "Выбран другой исход"
                   : predictionSuccess
                     ? "Placed"

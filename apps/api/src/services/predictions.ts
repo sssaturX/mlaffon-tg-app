@@ -285,8 +285,12 @@ export async function getActivePrediction(
   const [row] = await db
     .select()
     .from(predictions)
-    .where(eq(predictions.status, "active"))
-    .orderBy(desc(predictions.createdAt))
+    .where(sql`${predictions.status} in ('active', 'paused', 'closed')`)
+    .orderBy(
+      sql`case ${predictions.status} when 'active' then 0 when 'paused' then 1 when 'closed' then 2 else 9 end`,
+      desc(predictions.updatedAt),
+      desc(predictions.createdAt)
+    )
     .limit(1);
   if (!row) return null;
   const platform = await getPointPlatformById(row.platformId);
