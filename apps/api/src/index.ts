@@ -53,8 +53,10 @@ import { markReferralPercentEligible } from "./services/referralEligibility.js";
 import { handleRealtimeWsConnection } from "./services/realtimeWs.js";
 import { startRealtimeSubscriber } from "./services/realtimePublish.js";
 import { seedDefaultPointPlatforms } from "./services/platformBalances.js";
+import { closeExpiredPredictionsNow } from "./services/predictions.js";
 
 const app = Fastify({ logger: true });
+let predictionTimerCloser: NodeJS.Timeout | null = null;
 
 await app.register(cors, {
   origin: true,
@@ -802,6 +804,18 @@ try {
   await waitForDatabaseReady();
   await seedDefaultPointPlatforms();
   await startRealtimeSubscriber(app.log);
+  predictionTimerCloser = setInterval(() => {
+    void closeExpiredPredictionsNow().catch((err) => {
+      app.log.warn({ err }, "prediction_auto_close_failed");
+    });
+  }, 1000);
+  predictionTimerCloser.unref();
+  app.addHook("onClose", async () => {
+    if (predictionTimerCloser) {
+      clearInterval(predictionTimerCloser);
+      predictionTimerCloser = null;
+    }
+  });
   await app.listen({ port, host });
   app.log.info(`API http://${host}:${port}`);
 } catch (err) {

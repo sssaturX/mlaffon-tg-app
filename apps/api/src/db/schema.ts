@@ -403,6 +403,7 @@ export const predictions = pgTable(
       .notNull()
       .references(() => pointPlatforms.id, { onDelete: "restrict" }),
     status: text("status").notNull().default("draft"),
+    bettingDurationSec: integer("betting_duration_sec").notNull().default(60),
     startAt: timestamp("start_at", { withTimezone: true }),
     autoCloseAt: timestamp("auto_close_at", { withTimezone: true }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
@@ -448,8 +449,8 @@ export const predictionBets = pgTable(
       .notNull(),
   },
   (t) => [
-    uniqueIndex("prediction_bets_prediction_user_uidx").on(t.predictionId, t.userId),
     index("prediction_bets_prediction_idx").on(t.predictionId),
+    index("prediction_bets_prediction_user_idx").on(t.predictionId, t.userId),
   ]
 );
 

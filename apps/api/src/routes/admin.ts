@@ -758,6 +758,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     optionA: z.string().min(1),
     optionB: z.string().min(1),
     platformType: z.string().min(1),
+    bettingDurationSec: z.number().int().min(5).max(300),
     startAt: z.string().datetime().optional().nullable(),
     autoCloseAt: z.string().datetime().optional().nullable(),
   });

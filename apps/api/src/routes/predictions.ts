@@ -47,14 +47,15 @@ export async function registerPredictionRoutes(app: FastifyInstance) {
         const status: Record<typeof r.code, number> = {
           not_found: 404,
           not_active: 409,
-          already_bet: 409,
+          different_option_locked: 409,
           insufficient_balance: 400,
           platform_inactive: 409,
         };
         const messages: Record<typeof r.code, string> = {
           not_found: "Предикт не найден",
           not_active: "Предикт сейчас не принимает ставки",
-          already_bet: "Вы уже сделали ставку в этом предикте",
+          different_option_locked:
+            "Нельзя ставить на оба исхода в одном предикте. Доступны только повторные ставки на ваш исход.",
           insufficient_balance: "Недостаточно баланса на выбранной платформе",
           platform_inactive: "Платформа предикта отключена администратором",
         };

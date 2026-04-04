@@ -160,6 +160,8 @@ type PredictionRow = {
   participantsA: number;
   participantsB: number;
   winnerOption: "A" | "B" | null;
+  autoCloseAt?: string | null;
+  bettingDurationSec?: number;
 };
 
 function AdminSkeletonRows({ rows = 3 }: { rows?: number }) {
@@ -289,6 +291,7 @@ export function App() {
   const [predictionOptionA, setPredictionOptionA] = useState("");
   const [predictionOptionB, setPredictionOptionB] = useState("");
   const [predictionPlatformType, setPredictionPlatformType] = useState("twitch");
+  const [predictionBettingDurationSec, setPredictionBettingDurationSec] = useState(40);
   const [statsLoading, setStatsLoading] = useState(false);
   const [giveawaysLoading, setGiveawaysLoading] = useState(false);
   const [promosLoading, setPromosLoading] = useState(false);
@@ -1946,6 +1949,7 @@ export function App() {
                     optionA: predictionOptionA,
                     optionB: predictionOptionB,
                     platformType: predictionPlatformType,
+                    bettingDurationSec: Math.max(5, Math.min(300, predictionBettingDurationSec)),
                   }),
                 });
                 const j = (await r.json()) as { id?: string; error?: { message?: string } };
@@ -1956,6 +1960,7 @@ export function App() {
                 setPredictionTitle("");
                 setPredictionOptionA("");
                 setPredictionOptionB("");
+                setPredictionBettingDurationSec(40);
                 await loadPredictions();
               } catch {
                 setErr("Сеть недоступна");
@@ -2007,6 +2012,18 @@ export function App() {
                 ))}
               </select>
             </div>
+            <div>
+              <label htmlFor="pduration">Таймер приёма ставок (секунды, до 300)</label>
+              <input
+                id="pduration"
+                type="number"
+                min={5}
+                max={300}
+                value={predictionBettingDurationSec}
+                onChange={(e) => setPredictionBettingDurationSec(Number(e.target.value))}
+                required
+              />
+            </div>
             <button type="submit" className="primary" disabled={loading}>
               Создать предикт
             </button>
@@ -2029,6 +2046,10 @@ export function App() {
                       <strong>{p.title}</strong>
                       <div className="muted">
                         {p.platform.name} · статус {p.status} · пул {p.totalPool.toLocaleString("ru-RU")}
+                        {typeof p.bettingDurationSec === "number"
+                          ? ` · таймер ${p.bettingDurationSec}с`
+                          : ""}
+                        {p.autoCloseAt ? ` · закрытие ${new Date(p.autoCloseAt).toLocaleString("ru-RU")}` : ""}
                       </div>
                       <div className="muted admin-muted-gap">
                         A: {p.optionA} — {p.optionAPool.toLocaleString("ru-RU")} ({p.participantsA} уч.) · B:{" "}

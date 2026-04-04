@@ -184,6 +184,11 @@ export default function Home({
   }, [prediction?.id, prediction?.status]);
 
   useEffect(() => {
+    if (!prediction?.myBet) return;
+    setPredictionOption(prediction.myBet.option);
+  }, [prediction?.id, prediction?.myBet?.option]);
+
+  useEffect(() => {
     let k: string | null = null;
     try {
       k = sessionStorage.getItem(OAUTH_TOAST_KEY);
@@ -385,6 +390,10 @@ export default function Home({
 
   async function submitPrediction() {
     if (!prediction || predictionCooldown) return;
+    if (prediction.myBet && prediction.myBet.option !== predictionOption) {
+      showToast("Можно докидывать только в уже выбранный исход", "error");
+      return;
+    }
     const amount = Math.floor(Number(predictionAmount));
     if (!Number.isFinite(amount) || amount <= 0) {
       showToast("Введите сумму ставки больше нуля", "error");
@@ -557,24 +566,32 @@ export default function Home({
                   ? <AnimatedInt value={prediction.myPlatformBalance} />
                   : "—"}
               </p>
+              {prediction.myBet ? (
+                <p className="muted">
+                  Ваша ставка: {prediction.myBet.option} ·{" "}
+                  <AnimatedInt value={prediction.myBet.amount} /> очков
+                </p>
+              ) : null}
               <button
                 type="button"
                 className="primary prediction-modal__cta"
                 disabled={
                   predictionLoading ||
                   predictionCooldown ||
-                  prediction.myBet != null ||
+                  (prediction.myBet != null && prediction.myBet.option !== predictionOption) ||
                   !Number.isFinite(Number(predictionAmount)) ||
                   Number(predictionAmount) <= 0
                 }
                 onClick={() => void submitPrediction()}
               >
-                {prediction.myBet
-                  ? "Ставка уже сделана"
+                {prediction.myBet && prediction.myBet.option !== predictionOption
+                  ? "Выбран другой исход"
                   : predictionSuccess
                     ? "Placed"
                     : predictionLoading || predictionCooldown
                     ? "..."
+                    : prediction.myBet
+                    ? "Добавить к ставке"
                     : "Place Prediction"}
               </button>
             </div>

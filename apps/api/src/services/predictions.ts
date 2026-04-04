@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
@@ -14,6 +15,7 @@ import { publishBalanceUpdate, publishBroadcastEvent } from "./realtimePublish.j
 type PredictionOption = "A" | "B";
 type PredictionStatus = "draft" | "active" | "paused" | "closed" | "resolved";
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+const MAX_BETTING_DURATION_SEC = 5 * 60;
 
 function isLegacyPlatform(platformType: string): platformType is "twitch" | "kick" {
   return platformType === "twitch" || platformType === "kick";
@@ -39,7 +41,7 @@ async function aggregatePredictionStats(predictionId: string): Promise<{
   const rows = await db
     .select({
       option: predictionBets.option,
-      count: sql<number>`count(*)::int`,
+      count: sql<number>`count(distinct ${predictionBets.userId})::int`,
     })
     .from(predictionBets)
     .where(eq(predictionBets.predictionId, predictionId))
@@ -67,6 +69,7 @@ export type PredictionSnapshot = {
   participantsB: number;
   coefficientA: number | null;
   coefficientB: number | null;
+  bettingDurationSec: number;
   startAt: string | null;
   autoCloseAt: string | null;
   closedAt: string | null;
@@ -115,7 +118,7 @@ async function toSnapshot(
   let myPlatformBalance: number | null = null;
 
   if (userId) {
-    const [bet] = await db
+    const betRows = await db
       .select({ option: predictionBets.option, amount: predictionBets.amount })
       .from(predictionBets)
       .where(
@@ -124,9 +127,13 @@ async function toSnapshot(
           eq(predictionBets.userId, userId)
         )
       )
-      .limit(1);
-    if (bet && (bet.option === "A" || bet.option === "B")) {
-      myBet = { option: bet.option, amount: bet.amount };
+      .orderBy(desc(predictionBets.createdAt));
+    if (betRows.length > 0) {
+      const totalAmount = betRows.reduce((sum, b) => sum + b.amount, 0);
+      const lockedOption = betRows[0]!.option;
+      if ((lockedOption === "A" || lockedOption === "B") && totalAmount > 0) {
+        myBet = { option: lockedOption, amount: totalAmount };
+      }
     }
     myPlatformBalance = await db.transaction((tx) =>
       readUserBalanceTx(tx, userId, platform)
@@ -150,6 +157,7 @@ async function toSnapshot(
     participantsB: participants.participantsB,
     coefficientA: cA,
     coefficientB: cB,
+    bettingDurationSec: row.bettingDurationSec,
     startAt: row.startAt ? row.startAt.toISOString() : null,
     autoCloseAt: row.autoCloseAt ? row.autoCloseAt.toISOString() : null,
     closedAt: row.closedAt ? row.closedAt.toISOString() : null,
@@ -181,6 +189,7 @@ export async function createPrediction(input: {
   optionA: string;
   optionB: string;
   platformType: string;
+  bettingDurationSec: number;
   startAt?: string | null;
   autoCloseAt?: string | null;
   createdBy?: string | null;
@@ -188,6 +197,7 @@ export async function createPrediction(input: {
   const platform = await getPointPlatformByType(input.platformType);
   if (!platform || !platform.isActive) return { ok: false, code: "bad_platform" };
 
+  const durationSec = Math.max(5, Math.min(MAX_BETTING_DURATION_SEC, Math.floor(input.bettingDurationSec)));
   const [ins] = await db
     .insert(predictions)
     .values({
@@ -196,6 +206,7 @@ export async function createPrediction(input: {
       optionB: input.optionB.trim(),
       platformId: platform.id,
       status: "draft",
+      bettingDurationSec: durationSec,
       startAt: input.startAt ? new Date(input.startAt) : null,
       autoCloseAt: input.autoCloseAt ? new Date(input.autoCloseAt) : null,
       createdBy: input.createdBy ?? null,
@@ -204,7 +215,39 @@ export async function createPrediction(input: {
   return { ok: true, id: ins!.id };
 }
 
+async function closeExpiredPredictionsTx(tx: Tx): Promise<string[]> {
+  const rows = await tx
+    .update(predictions)
+    .set({
+      status: "closed",
+      closedAt: sql`now()`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(predictions.status, "active"),
+        sql`${predictions.autoCloseAt} is not null`,
+        sql`${predictions.autoCloseAt} <= now()`
+      )
+    )
+    .returning({ id: predictions.id });
+  return rows.map((r) => r.id);
+}
+
+async function syncExpiredPredictions(): Promise<void> {
+  await closeExpiredPredictionsNow();
+}
+
+export async function closeExpiredPredictionsNow(): Promise<number> {
+  const closedIds = await db.transaction((tx) => closeExpiredPredictionsTx(tx));
+  for (const id of closedIds) {
+    await publishPredictionState(id);
+  }
+  return closedIds.length;
+}
+
 export async function listPredictionsAdmin(): Promise<PredictionSnapshot[]> {
+  await syncExpiredPredictions();
   const rows = await db.select().from(predictions).orderBy(desc(predictions.createdAt));
   const platformIds = Array.from(new Set(rows.map((r) => r.platformId)));
   const platforms = platformIds.length
@@ -227,6 +270,7 @@ export async function getPredictionById(
   id: string,
   userId: string | null
 ): Promise<PredictionSnapshot | null> {
+  await syncExpiredPredictions();
   const [row] = await db.select().from(predictions).where(eq(predictions.id, id)).limit(1);
   if (!row) return null;
   const platform = await getPointPlatformById(row.platformId);
@@ -237,6 +281,7 @@ export async function getPredictionById(
 export async function getActivePrediction(
   userId: string | null
 ): Promise<PredictionSnapshot | null> {
+  await syncExpiredPredictions();
   const [row] = await db
     .select()
     .from(predictions)
@@ -261,6 +306,7 @@ export async function startPrediction(
   { ok: true } | { ok: false; code: "not_found" | "bad_status" | "another_active" }
 > {
   const r = await db.transaction(async (tx) => {
+    await closeExpiredPredictionsTx(tx);
     const [row] = await tx
       .select()
       .from(predictions)
@@ -278,7 +324,16 @@ export async function startPrediction(
     if (otherActive) return { ok: false as const, code: "another_active" as const };
     const [updated] = await tx
       .update(predictions)
-      .set({ status: "active", startAt: row.startAt ?? sql`now()`, updatedAt: sql`now()` })
+      .set({
+        status: "active",
+        startAt: row.startAt ?? sql`now()`,
+        autoCloseAt:
+          row.autoCloseAt && row.autoCloseAt.getTime() > Date.now()
+            ? row.autoCloseAt
+            : new Date(Date.now() + row.bettingDurationSec * 1000),
+        closedAt: null,
+        updatedAt: sql`now()`,
+      })
       .where(
         and(
           eq(predictions.id, predictionId),
@@ -351,7 +406,7 @@ export async function placePredictionBet(input: {
       code:
         | "not_found"
         | "not_active"
-        | "already_bet"
+        | "different_option_locked"
         | "insufficient_balance"
         | "platform_inactive";
     }
@@ -359,6 +414,7 @@ export async function placePredictionBet(input: {
   if (input.amount <= 0) throw new Error("amount_must_be_positive");
 
   let platformTypeUsed: string | null = null;
+  let autoClosedByTimer = false;
   try {
     await db.transaction(async (tx) => {
       const [predictionRow] = await tx
@@ -367,6 +423,22 @@ export async function placePredictionBet(input: {
         .where(eq(predictions.id, input.predictionId))
         .limit(1);
       if (!predictionRow) throw new Error("not_found");
+      if (
+        predictionRow.status === "active" &&
+        predictionRow.autoCloseAt &&
+        predictionRow.autoCloseAt.getTime() <= Date.now()
+      ) {
+        await tx
+          .update(predictions)
+          .set({
+            status: "closed",
+            closedAt: sql`now()`,
+            updatedAt: sql`now()`,
+          })
+          .where(and(eq(predictions.id, input.predictionId), eq(predictions.status, "active")));
+        autoClosedByTimer = true;
+        throw new Error("not_active");
+      }
       if (predictionRow.status !== "active") throw new Error("not_active");
 
       const [p] = await tx
@@ -382,8 +454,8 @@ export async function placePredictionBet(input: {
       if (!p || !p.isActive) throw new Error("platform_inactive");
       platformTypeUsed = p.type;
 
-      const [existingBet] = await tx
-        .select({ id: predictionBets.id })
+      const existingBets = await tx
+        .select({ option: predictionBets.option })
         .from(predictionBets)
         .where(
           and(
@@ -391,8 +463,10 @@ export async function placePredictionBet(input: {
             eq(predictionBets.userId, input.userId)
           )
         )
-        .limit(1);
-      if (existingBet) throw new Error("already_bet");
+        .limit(20);
+      if (existingBets.length > 0 && existingBets.some((b) => b.option !== input.option)) {
+        throw new Error("different_option_locked");
+      }
 
       if (isLegacyPlatform(p.type)) {
         const [updated] = await tx
@@ -446,7 +520,7 @@ export async function placePredictionBet(input: {
         kind: "prediction_bet",
         referenceType: "prediction",
         referenceId: input.predictionId,
-        idempotencyKey: `prediction_bet:${input.predictionId}:${input.userId}`,
+        idempotencyKey: `prediction_bet:${input.predictionId}:${input.userId}:${randomUUID()}`,
         meta: { option: input.option, platformType: p.type, platformId: p.id },
       });
 
@@ -476,17 +550,18 @@ export async function placePredictionBet(input: {
         .where(eq(predictions.id, input.predictionId));
     });
   } catch (e) {
-    if (isUniqueViolationError(e)) {
-      return { ok: false, code: "already_bet" };
-    }
+    if (isUniqueViolationError(e)) throw e;
     const msg = e instanceof Error ? e.message : "unknown";
     if (
       msg === "not_found" ||
       msg === "not_active" ||
-      msg === "already_bet" ||
+      msg === "different_option_locked" ||
       msg === "insufficient_balance" ||
       msg === "platform_inactive"
     ) {
+      if (msg === "not_active" && autoClosedByTimer) {
+        await publishPredictionState(input.predictionId);
+      }
       return { ok: false, code: msg };
     }
     throw e;
@@ -535,14 +610,18 @@ export async function resolvePrediction(input: {
     if (!locked) return false;
 
     const winners = await tx
-      .select({ userId: predictionBets.userId, amount: predictionBets.amount })
+      .select({
+        userId: predictionBets.userId,
+        amount: sql<number>`sum(${predictionBets.amount})::int`,
+      })
       .from(predictionBets)
       .where(
         and(
           eq(predictionBets.predictionId, input.predictionId),
           eq(predictionBets.option, input.winnerOption)
         )
-      );
+      )
+      .groupBy(predictionBets.userId);
 
     for (const w of winners) {
       const payout = roundPayout(totalPool, winnerPool, w.amount);
