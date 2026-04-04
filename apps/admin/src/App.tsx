@@ -162,6 +162,16 @@ type PredictionRow = {
   winnerOption: "A" | "B" | null;
 };
 
+function AdminSkeletonRows({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="admin-skeleton-list" aria-hidden>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="admin-skeleton-row" />
+      ))}
+    </div>
+  );
+}
+
 export function App() {
   const [token, setToken] = useState<string | null>(() => {
     try {
@@ -279,6 +289,16 @@ export function App() {
   const [predictionOptionA, setPredictionOptionA] = useState("");
   const [predictionOptionB, setPredictionOptionB] = useState("");
   const [predictionPlatformType, setPredictionPlatformType] = useState("twitch");
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [giveawaysLoading, setGiveawaysLoading] = useState(false);
+  const [promosLoading, setPromosLoading] = useState(false);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [dropStatusLoading, setDropStatusLoading] = useState(false);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [appealsLoading, setAppealsLoading] = useState(false);
+  const [predictionPlatformsLoading, setPredictionPlatformsLoading] = useState(false);
+  const [predictionsLoading, setPredictionsLoading] = useState(false);
 
   /**
    * Только с `includeJsonContentType: true` для запросов с JSON-телом.
@@ -293,12 +313,14 @@ export function App() {
 
   const loadStats = useCallback(async () => {
     if (!token) return;
+    setStatsLoading(true);
     setErr(null);
     const r = await fetch(`${apiBase()}/api/admin/stats`, { headers: authHeaders() });
     const j = (await r.json()) as AdminStats & { error?: { message?: string } };
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
       if (r.status === 401) setToken(null);
+      setStatsLoading(false);
       return;
     }
     setStats({
@@ -307,37 +329,45 @@ export function App() {
       activeGiveaways: j.activeGiveaways,
       giveawayEntriesTotal: j.giveawayEntriesTotal,
     });
+    setStatsLoading(false);
   }, [token, authHeaders]);
 
   const loadGiveaways = useCallback(async () => {
     if (!token) return;
+    setGiveawaysLoading(true);
     setErr(null);
     const r = await fetch(`${apiBase()}/api/admin/giveaways`, { headers: authHeaders() });
     const j = (await r.json()) as { giveaways?: GiveawayRow[]; error?: { message?: string } };
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
       if (r.status === 401) setToken(null);
+      setGiveawaysLoading(false);
       return;
     }
     setGiveaways(j.giveaways ?? []);
+    setGiveawaysLoading(false);
   }, [token, authHeaders]);
 
   const loadPromos = useCallback(async () => {
     if (!token) return;
+    setPromosLoading(true);
     setErr(null);
     const r = await fetch(`${apiBase()}/api/admin/promos`, { headers: authHeaders() });
     const j = (await r.json()) as { promos?: PromoRow[]; error?: { message?: string } };
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
       if (r.status === 401) setToken(null);
+      setPromosLoading(false);
       return;
     }
     setPromos(j.promos ?? []);
+    setPromosLoading(false);
   }, [token, authHeaders]);
 
   const loadAdminUsers = useCallback(
     async (offset: number) => {
       if (!token) return;
+      setUsersLoading(true);
       setErr(null);
       const r = await fetch(
         `${apiBase()}/api/admin/users?limit=${USERS_PAGE}&offset=${offset}`,
@@ -351,10 +381,12 @@ export function App() {
       if (!r.ok) {
         setErr(j.error?.message ?? `Ошибка ${r.status}`);
         if (r.status === 401) setToken(null);
+        setUsersLoading(false);
         return;
       }
       setAdminUsers(j.users ?? []);
       setUsersTotal(j.total ?? 0);
+      setUsersLoading(false);
     },
     [token, authHeaders]
   );
@@ -380,19 +412,23 @@ export function App() {
 
   const loadDropStatus = useCallback(async () => {
     if (!token) return;
+    setDropStatusLoading(true);
     setErr(null);
     const r = await fetch(`${apiBase()}/api/admin/drops`, { headers: authHeaders() });
     const j = (await r.json()) as AdminDropStatus & { error?: { message?: string } };
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
       if (r.status === 401) setToken(null);
+      setDropStatusLoading(false);
       return;
     }
     setDropStatus({ active: j.active, drop: j.drop ?? null });
+    setDropStatusLoading(false);
   }, [token, authHeaders]);
 
   const loadLiveBroadcast = useCallback(async () => {
     if (!token) return;
+    setLiveLoading(true);
     setErr(null);
     const r = await fetch(`${apiBase()}/api/admin/live-broadcast`, {
       headers: authHeaders(),
@@ -403,13 +439,16 @@ export function App() {
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
       if (r.status === 401) setToken(null);
+      setLiveLoading(false);
       return;
     }
     setLiveBroadcastStatus(j.active ? j : { active: false });
+    setLiveLoading(false);
   }, [token, authHeaders]);
 
   const loadAdminTasks = useCallback(async () => {
     if (!token) return;
+    setTasksLoading(true);
     setErr(null);
     const r = await fetch(`${apiBase()}/api/admin/tasks`, { headers: authHeaders() });
     const j = (await r.json()) as {
@@ -419,13 +458,16 @@ export function App() {
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
       if (r.status === 401) setToken(null);
+      setTasksLoading(false);
       return;
     }
     setAdminTasks(j.tasks ?? []);
+    setTasksLoading(false);
   }, [token, authHeaders]);
 
   const loadPredictionPlatforms = useCallback(async () => {
     if (!token) return;
+    setPredictionPlatformsLoading(true);
     const r = await fetch(`${apiBase()}/api/admin/predictions/platforms`, {
       headers: authHeaders(),
     });
@@ -436,16 +478,19 @@ export function App() {
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
       if (r.status === 401) setToken(null);
+      setPredictionPlatformsLoading(false);
       return;
     }
     setPredictionPlatforms(j.platforms ?? []);
     if ((j.platforms ?? []).length > 0 && !predictionPlatformType) {
       setPredictionPlatformType((j.platforms ?? [])[0]!.type);
     }
+    setPredictionPlatformsLoading(false);
   }, [token, authHeaders, predictionPlatformType]);
 
   const loadPredictions = useCallback(async () => {
     if (!token) return;
+    setPredictionsLoading(true);
     const r = await fetch(`${apiBase()}/api/admin/predictions`, {
       headers: authHeaders(),
     });
@@ -456,9 +501,11 @@ export function App() {
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
       if (r.status === 401) setToken(null);
+      setPredictionsLoading(false);
       return;
     }
     setPredictions(j.predictions ?? []);
+    setPredictionsLoading(false);
   }, [token, authHeaders]);
 
   useEffect(() => {
@@ -494,6 +541,7 @@ export function App() {
 
   const loadBanAppeals = useCallback(async () => {
     if (!token) return;
+    setAppealsLoading(true);
     setErr(null);
     const r = await fetch(`${apiBase()}/api/admin/ban-appeals`, { headers: authHeaders() });
     const j = (await r.json()) as {
@@ -503,9 +551,11 @@ export function App() {
     if (!r.ok) {
       setErr(j.error?.message ?? `Ошибка ${r.status}`);
       if (r.status === 401) setToken(null);
+      setAppealsLoading(false);
       return;
     }
     setBanAppeals(j.appeals ?? []);
+    setAppealsLoading(false);
   }, [token, authHeaders]);
 
   useEffect(() => {
@@ -822,26 +872,29 @@ export function App() {
 
       <h2>Статистика</h2>
       {stats === null ? (
-        <p className="muted">Загрузка…</p>
+        <AdminSkeletonRows rows={4} />
       ) : (
-        <div className="admin-stats">
-          <div className="admin-stat">
-            <span className="admin-stat__label">Пользователей</span>
-            <span className="admin-stat__val">{stats.usersCount.toLocaleString("ru-RU")}</span>
+        <>
+          {statsLoading ? <p className="muted admin-refreshing">Обновляем статистику…</p> : null}
+          <div className="admin-stats">
+            <div className="admin-stat">
+              <span className="admin-stat__label">Пользователей</span>
+              <span className="admin-stat__val">{stats.usersCount.toLocaleString("ru-RU")}</span>
+            </div>
+            <div className="admin-stat">
+              <span className="admin-stat__label">Монет заработано (всего)</span>
+              <span className="admin-stat__val">{stats.coinsEarnedTotal.toLocaleString("ru-RU")}</span>
+            </div>
+            <div className="admin-stat">
+              <span className="admin-stat__label">Активных розыгрышей</span>
+              <span className="admin-stat__val">{stats.activeGiveaways}</span>
+            </div>
+            <div className="admin-stat">
+              <span className="admin-stat__label">Участий в розыгрышах</span>
+              <span className="admin-stat__val">{stats.giveawayEntriesTotal.toLocaleString("ru-RU")}</span>
+            </div>
           </div>
-          <div className="admin-stat">
-            <span className="admin-stat__label">Монет заработано (всего)</span>
-            <span className="admin-stat__val">{stats.coinsEarnedTotal.toLocaleString("ru-RU")}</span>
-          </div>
-          <div className="admin-stat">
-            <span className="admin-stat__label">Активных розыгрышей</span>
-            <span className="admin-stat__val">{stats.activeGiveaways}</span>
-          </div>
-          <div className="admin-stat">
-            <span className="admin-stat__label">Участий в розыгрышах</span>
-            <span className="admin-stat__val">{stats.giveawayEntriesTotal.toLocaleString("ru-RU")}</span>
-          </div>
-        </div>
+        </>
       )}
 
       {tab === "giveaways" ? (
@@ -969,11 +1022,13 @@ export function App() {
       </form>
 
       {giveaways === null ? (
-        <p className="muted">Загрузка…</p>
+        <AdminSkeletonRows rows={4} />
       ) : giveaways.length === 0 ? (
         <p className="muted">Пока нет розыгрышей.</p>
       ) : (
-        <ul className="list">
+        <>
+          {giveawaysLoading ? <p className="muted admin-refreshing">Обновляем список розыгрышей…</p> : null}
+          <ul className="list">
           {giveaways.map((g) => (
             <li key={g.id}>
               <div className="admin-gw-row">
@@ -1023,7 +1078,7 @@ export function App() {
               {expandedId === g.id && (
                 <div className="giveaway-admin-detail admin-detail-block">
                   {detailLoading ? (
-                    <p className="muted">Загрузка списка…</p>
+                    <AdminSkeletonRows rows={2} />
                   ) : detail && detail.giveaway.id === g.id ? (
                     <>
                       <p className="muted admin-mt-0">
@@ -1061,7 +1116,8 @@ export function App() {
               )}
             </li>
           ))}
-        </ul>
+          </ul>
+        </>
       )}
         </>
       ) : null}
@@ -1140,11 +1196,13 @@ export function App() {
       </form>
 
       {promos === null ? (
-        <p className="muted">Загрузка промокодов…</p>
+        <AdminSkeletonRows rows={3} />
       ) : promos.length === 0 ? (
         <p className="muted">Промокодов пока нет.</p>
       ) : (
-        <ul className="list">
+        <>
+          {promosLoading ? <p className="muted admin-refreshing">Обновляем промокоды…</p> : null}
+          <ul className="list">
           {promos.map((p) => (
             <li key={p.id}>
               {p.displayName ? (
@@ -1162,7 +1220,8 @@ export function App() {
               {p.active ? "активен" : "выкл"}
             </li>
           ))}
-        </ul>
+          </ul>
+        </>
       )}
         </>
       ) : null}
@@ -1172,9 +1231,10 @@ export function App() {
           <h2 className="admin-mt-0">Пользователи</h2>
           <p className="muted">Балансы и рефералы (по дате регистрации, новые сверху).</p>
           {adminUsers === null ? (
-            <p className="muted">Загрузка…</p>
+            <AdminSkeletonRows rows={5} />
           ) : (
             <>
+              {usersLoading ? <p className="muted admin-refreshing">Обновляем список пользователей…</p> : null}
               <div className="admin-users-wrap">
                 <table className="admin-users-table">
                   <thead>
@@ -1338,11 +1398,13 @@ export function App() {
             после пометки).
           </p>
           {banAppeals === null ? (
-            <p className="muted">Загрузка…</p>
+            <AdminSkeletonRows rows={3} />
           ) : banAppeals.length === 0 ? (
             <p className="muted">Пока нет апелляций.</p>
           ) : (
-            <ul className="list admin-appeals-list">
+            <>
+              {appealsLoading ? <p className="muted admin-refreshing">Обновляем апелляции…</p> : null}
+              <ul className="list admin-appeals-list">
               {banAppeals.map((a) => (
                 <li key={a.id} className="admin-appeal-card">
                   <div className="admin-appeal-head">
@@ -1404,7 +1466,8 @@ export function App() {
                   )}
                 </li>
               ))}
-            </ul>
+              </ul>
+            </>
           )}
         </>
       ) : null}
@@ -1740,11 +1803,13 @@ export function App() {
           </form>
 
           {adminTasks === null ? (
-            <p className="muted">Загрузка…</p>
+            <AdminSkeletonRows rows={4} />
           ) : adminTasks.length === 0 ? (
             <p className="muted">Пока нет заданий в БД.</p>
           ) : (
-            <ul className="list">
+            <>
+              {tasksLoading ? <p className="muted admin-refreshing">Обновляем задания…</p> : null}
+              <ul className="list">
               {adminTasks.map((row) => (
                 <li key={row.id}>
                   <div className="admin-gw-row">
@@ -1852,7 +1917,8 @@ export function App() {
                   </div>
                 </li>
               ))}
-            </ul>
+              </ul>
+            </>
           )}
         </>
       ) : null}
@@ -1947,11 +2013,15 @@ export function App() {
           </form>
 
           {predictions === null ? (
-            <p className="muted">Загрузка…</p>
+            <AdminSkeletonRows rows={4} />
           ) : predictions.length === 0 ? (
             <p className="muted">Пока нет предиктов.</p>
           ) : (
-            <ul className="list">
+            <>
+              {(predictionsLoading || predictionPlatformsLoading) ? (
+                <p className="muted admin-refreshing">Обновляем предикты…</p>
+              ) : null}
+              <ul className="list">
               {predictions.map((p) => (
                 <li key={p.id}>
                   <div className="admin-gw-row">
@@ -2129,7 +2199,8 @@ export function App() {
                   </div>
                 </li>
               ))}
-            </ul>
+              </ul>
+            </>
           )}
         </>
       ) : null}
@@ -2145,23 +2216,26 @@ export function App() {
             завершается по таймеру; при остановке эфира дроп тоже снимается.
           </p>
           {dropStatus === null ? (
-            <p className="muted">Загрузка…</p>
+            <AdminSkeletonRows rows={2} />
           ) : (
-            <div className="card stack admin-drop-status">
-              <p className="admin-m-0">
-                <strong>Статус:</strong>{" "}
-                {dropStatus.active && dropStatus.drop ? (
-                  <>
-                    активен · {dropStatus.drop.platform} · код{" "}
-                    <code>{dropStatus.drop.code}</code> · победителей{" "}
-                    {dropStatus.drop.winnersCount} / {dropStatus.drop.maxWinners} · до{" "}
-                    {new Date(dropStatus.drop.endsAt).toLocaleString("ru-RU")}
-                  </>
-                ) : (
-                  "нет активного дропа"
-                )}
-              </p>
-            </div>
+            <>
+              {dropStatusLoading ? <p className="muted admin-refreshing">Обновляем статус дропа…</p> : null}
+              <div className="card stack admin-drop-status">
+                <p className="admin-m-0">
+                  <strong>Статус:</strong>{" "}
+                  {dropStatus.active && dropStatus.drop ? (
+                    <>
+                      активен · {dropStatus.drop.platform} · код{" "}
+                      <code>{dropStatus.drop.code}</code> · победителей{" "}
+                      {dropStatus.drop.winnersCount} / {dropStatus.drop.maxWinners} · до{" "}
+                      {new Date(dropStatus.drop.endsAt).toLocaleString("ru-RU")}
+                    </>
+                  ) : (
+                    "нет активного дропа"
+                  )}
+                </p>
+              </div>
+            </>
           )}
           <form
             className="card stack"
@@ -2285,49 +2359,52 @@ export function App() {
             платформе. Завершите эфир — карточка исчезнет.
           </p>
           {liveBroadcastStatus === null ? (
-            <p className="muted">Загрузка…</p>
+            <AdminSkeletonRows rows={2} />
           ) : liveBroadcastStatus.active ? (
-            <div className="card stack">
-              <p className="admin-m-0">
-                <strong>Эфир активен</strong> · {liveBroadcastStatus.platform} ·{" "}
-                <a href={liveBroadcastStatus.streamUrl} target="_blank" rel="noreferrer">
-                  {liveBroadcastStatus.streamUrl}
-                </a>
-                <br />
-                Старт: {new Date(liveBroadcastStatus.startedAt).toLocaleString("ru-RU")}
-              </p>
-              {liveBroadcastStatus.vpnNote ? (
-                <p className="muted admin-m-0">VPN: {liveBroadcastStatus.vpnNote}</p>
-              ) : null}
-              <button
-                type="button"
-                className="secondary"
-                disabled={loading}
-                onClick={async () => {
-                  if (!token) return;
-                  setLoading(true);
-                  setErr(null);
-                  try {
-                    const r = await fetch(`${apiBase()}/api/admin/live-broadcast/end`, {
-                      method: "POST",
-                      headers: authHeaders(),
-                    });
-                    const j = (await r.json()) as { error?: { message?: string } };
-                    if (!r.ok) {
-                      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-                      return;
+            <>
+              {liveLoading ? <p className="muted admin-refreshing">Обновляем статус эфира…</p> : null}
+              <div className="card stack">
+                <p className="admin-m-0">
+                  <strong>Эфир активен</strong> · {liveBroadcastStatus.platform} ·{" "}
+                  <a href={liveBroadcastStatus.streamUrl} target="_blank" rel="noreferrer">
+                    {liveBroadcastStatus.streamUrl}
+                  </a>
+                  <br />
+                  Старт: {new Date(liveBroadcastStatus.startedAt).toLocaleString("ru-RU")}
+                </p>
+                {liveBroadcastStatus.vpnNote ? (
+                  <p className="muted admin-m-0">VPN: {liveBroadcastStatus.vpnNote}</p>
+                ) : null}
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={loading}
+                  onClick={async () => {
+                    if (!token) return;
+                    setLoading(true);
+                    setErr(null);
+                    try {
+                      const r = await fetch(`${apiBase()}/api/admin/live-broadcast/end`, {
+                        method: "POST",
+                        headers: authHeaders(),
+                      });
+                      const j = (await r.json()) as { error?: { message?: string } };
+                      if (!r.ok) {
+                        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                        return;
+                      }
+                      await loadLiveBroadcast();
+                    } catch {
+                      setErr("Сеть недоступна");
+                    } finally {
+                      setLoading(false);
                     }
-                    await loadLiveBroadcast();
-                  } catch {
-                    setErr("Сеть недоступна");
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-              >
-                Завершить эфир
-              </button>
-            </div>
+                  }}
+                >
+                  Завершить эфир
+                </button>
+              </div>
+            </>
           ) : (
             <form
               className="card stack"

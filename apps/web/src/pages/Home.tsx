@@ -61,6 +61,54 @@ function formatCountdown(iso: string): string {
   return `${d} дн. ${h} ч.`;
 }
 
+function formatLiveCountdown(iso: string, nowMs: number): string {
+  const end = new Date(iso).getTime();
+  const left = Math.max(0, end - nowMs);
+  const m = Math.floor(left / 60000);
+  const s = Math.floor((left % 60000) / 1000);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function AnimatedInt({ value }: { value: number }) {
+  const [shown, setShown] = useState(value);
+  const [bump, setBump] = useState(false);
+  const prevRef = useRef(value);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const from = prevRef.current;
+    const to = value;
+    if (from === to) return;
+    const dur = 260;
+    const start = performance.now();
+    setBump(false);
+    requestAnimationFrame(() => setBump(true));
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      const next = Math.round(from + (to - from) * eased);
+      setShown(next);
+      if (p < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        prevRef.current = to;
+        rafRef.current = null;
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [value]);
+
+  return (
+    <span className={bump ? "prediction-num prediction-num--bump" : "prediction-num"}>
+      {shown.toLocaleString("ru-RU")}
+    </span>
+  );
+}
+
 export default function Home({
   me,
   realtimeWsConnected,
@@ -92,7 +140,11 @@ export default function Home({
   const [predictionAmount, setPredictionAmount] = useState("");
   const [predictionLoading, setPredictionLoading] = useState(false);
   const [predictionCooldown, setPredictionCooldown] = useState(false);
+  const [predictionSuccess, setPredictionSuccess] = useState(false);
   const predictionCooldownTimerRef = useRef<number | null>(null);
+  const predictionSuccessTimerRef = useRef<number | null>(null);
+  const [predictionToastCompact, setPredictionToastCompact] = useState(false);
+  const [predictionNowMs, setPredictionNowMs] = useState(() => Date.now());
 
   const loadPublic = useCallback(async () => {
     const r = await api<HomePublic>("/api/v1/home/public");
@@ -112,8 +164,24 @@ export default function Home({
       if (predictionCooldownTimerRef.current != null) {
         window.clearTimeout(predictionCooldownTimerRef.current);
       }
+      if (predictionSuccessTimerRef.current != null) {
+        window.clearTimeout(predictionSuccessTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!prediction || prediction.status !== "active") return;
+    setPredictionToastCompact(false);
+    const id = window.setTimeout(() => setPredictionToastCompact(true), 6500);
+    return () => window.clearTimeout(id);
+  }, [prediction?.id, prediction?.status]);
+
+  useEffect(() => {
+    if (!prediction || prediction.status !== "active") return;
+    const id = window.setInterval(() => setPredictionNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [prediction?.id, prediction?.status]);
 
   useEffect(() => {
     let k: string | null = null;
@@ -341,6 +409,14 @@ export default function Home({
       return;
     }
     showToast("Ставка принята", "success");
+    setPredictionSuccess(true);
+    if (predictionSuccessTimerRef.current != null) {
+      window.clearTimeout(predictionSuccessTimerRef.current);
+    }
+    predictionSuccessTimerRef.current = window.setTimeout(() => {
+      setPredictionSuccess(false);
+      predictionSuccessTimerRef.current = null;
+    }, 1200);
     setPredictionOpen(false);
     setPredictionAmount("");
     await hydratePrediction();
@@ -351,10 +427,28 @@ export default function Home({
       {prediction && prediction.status === "active" ? (
         <button
           type="button"
-          className="prediction-toast-btn"
+          className={
+            predictionToastCompact
+              ? "prediction-toast prediction-toast--compact"
+              : "prediction-toast"
+          }
           onClick={() => setPredictionOpen(true)}
         >
-          Сделай прогноз
+          <div className="prediction-live">
+            <span className="prediction-live__dot" />
+            <span>LIVE</span>
+          </div>
+          <div className="prediction-toast__text">
+            <strong>{predictionToastCompact ? "Prediction LIVE" : "Prediction started"}</strong>
+            {!predictionToastCompact ? (
+              <span>
+                {prediction.title}
+                {prediction.autoCloseAt
+                  ? ` · ${formatLiveCountdown(prediction.autoCloseAt, predictionNowMs)}`
+                  : ""}
+              </span>
+            ) : null}
+          </div>
         </button>
       ) : null}
 
@@ -365,8 +459,23 @@ export default function Home({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="prediction-modal__head">
-              <h3>{prediction.title}</h3>
-              <p className="muted">Платформа: {prediction.platform.name}</p>
+              <div className="prediction-modal__head-top">
+                <h3>{prediction.title}</h3>
+                <div className="prediction-live">
+                  <span className="prediction-live__dot" />
+                  <span>LIVE</span>
+                </div>
+              </div>
+              <div className="prediction-modal__head-meta">
+                <span className="prediction-using-badge">
+                  Using: {prediction.platform.name}
+                </span>
+                {prediction.autoCloseAt ? (
+                  <span className="muted">
+                    Закрытие через {formatLiveCountdown(prediction.autoCloseAt, predictionNowMs)}
+                  </span>
+                ) : null}
+              </div>
             </div>
             <div className="prediction-modal__options">
               <button
@@ -375,13 +484,12 @@ export default function Home({
                 onClick={() => setPredictionOption("A")}
               >
                 <strong>{prediction.optionA}</strong>
-                <span>{prediction.participantsA} участников</span>
-                <span>{prediction.optionAPool.toLocaleString("ru-RU")} очков</span>
-                <span>
-                  x
-                  {prediction.coefficientA != null
-                    ? prediction.coefficientA.toFixed(2)
-                    : "—"}
+                <div className="prediction-opt__meta">
+                  <span><AnimatedInt value={prediction.optionAPool} /> очков</span>
+                  <span><AnimatedInt value={prediction.participantsA} /> участников</span>
+                </div>
+                <span className="prediction-opt__odds">
+                  x{prediction.coefficientA != null ? prediction.coefficientA.toFixed(2) : "—"}
                 </span>
               </button>
               <button
@@ -390,19 +498,19 @@ export default function Home({
                 onClick={() => setPredictionOption("B")}
               >
                 <strong>{prediction.optionB}</strong>
-                <span>{prediction.participantsB} участников</span>
-                <span>{prediction.optionBPool.toLocaleString("ru-RU")} очков</span>
-                <span>
-                  x
-                  {prediction.coefficientB != null
-                    ? prediction.coefficientB.toFixed(2)
-                    : "—"}
+                <div className="prediction-opt__meta">
+                  <span><AnimatedInt value={prediction.optionBPool} /> очков</span>
+                  <span><AnimatedInt value={prediction.participantsB} /> участников</span>
+                </div>
+                <span className="prediction-opt__odds">
+                  x{prediction.coefficientB != null ? prediction.coefficientB.toFixed(2) : "—"}
                 </span>
               </button>
             </div>
             <div className="prediction-modal__form">
               <label htmlFor="predictionAmount">Сумма</label>
               <input
+                className="prediction-modal__amount"
                 id="predictionAmount"
                 type="number"
                 min={1}
@@ -410,23 +518,64 @@ export default function Home({
                 onChange={(e) => setPredictionAmount(e.target.value)}
                 placeholder="100"
               />
+              <div className="prediction-quick">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() =>
+                    setPredictionAmount((v) =>
+                      String((Number.parseInt(v || "0", 10) || 0) + 100)
+                    )
+                  }
+                >
+                  +100
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() =>
+                    setPredictionAmount((v) =>
+                      String((Number.parseInt(v || "0", 10) || 0) + 500)
+                    )
+                  }
+                >
+                  +500
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() =>
+                    setPredictionAmount(String(Math.max(0, prediction.myPlatformBalance ?? 0)))
+                  }
+                >
+                  MAX
+                </button>
+              </div>
               <p className="muted">
                 Баланс:{" "}
                 {prediction.myPlatformBalance != null
-                  ? prediction.myPlatformBalance.toLocaleString("ru-RU")
+                  ? <AnimatedInt value={prediction.myPlatformBalance} />
                   : "—"}
               </p>
               <button
                 type="button"
-                className="primary"
-                disabled={predictionLoading || predictionCooldown || prediction.myBet != null}
+                className="primary prediction-modal__cta"
+                disabled={
+                  predictionLoading ||
+                  predictionCooldown ||
+                  prediction.myBet != null ||
+                  !Number.isFinite(Number(predictionAmount)) ||
+                  Number(predictionAmount) <= 0
+                }
                 onClick={() => void submitPrediction()}
               >
                 {prediction.myBet
                   ? "Ставка уже сделана"
-                  : predictionLoading || predictionCooldown
+                  : predictionSuccess
+                    ? "Placed"
+                    : predictionLoading || predictionCooldown
                     ? "..."
-                    : "Подтвердить"}
+                    : "Place Prediction"}
               </button>
             </div>
           </div>

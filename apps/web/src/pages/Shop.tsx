@@ -4,6 +4,7 @@ import { api, formatApiError } from "../api";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { scheduleSmartRefresh } from "../services/meService";
 import { useActivePlatform } from "../context/PlatformContext";
+import { PageSkeleton } from "../components/PageSkeleton";
 
 type Item = {
   id: string;
@@ -25,6 +26,7 @@ export default function Shop() {
   const { patchMe, reconcileFromServer } = useMeEconomySync();
   const { activePlatform } = useActivePlatform();
   const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
   const [tab, setTab] = useState<"shop" | "cases">("shop");
 
@@ -34,6 +36,7 @@ export default function Shop() {
       setItems(r.data.items);
       setMsg(null);
     } else setMsg(formatApiError(r));
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -100,6 +103,8 @@ export default function Shop() {
 
       {tab === "cases" ? (
         <p className="muted">Раздел «Кейсы» скоро появится.</p>
+      ) : loading && items.length === 0 ? (
+        <PageSkeleton />
       ) : (
         <>
           <p className="muted shop-intro">

@@ -54,6 +54,7 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
   const { activePlatform } = useActivePlatform();
   const [data, setData] = useState<GiveawayDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [joining, setJoining] = useState(false);
   const [joinCooldown, setJoinCooldown] = useState(false);
   const joinCooldownTimerRef = useRef<number | null>(null);
@@ -61,15 +62,28 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
   const [boosting, setBoosting] = useState(false);
   const [boostCooldown, setBoostCooldown] = useState(false);
   const boostCooldownTimerRef = useRef<number | null>(null);
+  const hasLoadedDataRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!id) return;
-    setLoading(true);
+    if (!opts?.silent && !hasLoadedDataRef.current) setLoading(true);
+    if (hasLoadedDataRef.current) setRefreshing(true);
     const r = await api<GiveawayDetail>(`/api/v1/giveaways/${id}`);
-    if (r.ok) setData(r.data);
+    if (r.ok) {
+      setData(r.data);
+      hasLoadedDataRef.current = true;
+    }
     else showToast(formatApiError(r), "error");
     setLoading(false);
+    setRefreshing(false);
   }, [id, showToast]);
+
+  useEffect(() => {
+    hasLoadedDataRef.current = false;
+    setData(null);
+    setLoading(true);
+    setRefreshing(false);
+  }, [id]);
 
   useEffect(() => {
     void load();
@@ -112,7 +126,7 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     }
     patchEconomy(r.data.economy);
     showToast("Вы участвуете в розыгрыше", "success");
-    await load();
+    await load({ silent: true });
   }
 
   async function share() {
@@ -183,7 +197,7 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     return <PageSkeleton />;
   }
 
-  if (loading || !data) {
+  if (!data) {
     return (
       <div className="giveaway-detail">
         <Link to="/" className="giveaway-detail__back">
@@ -236,6 +250,7 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
 
   return (
     <div className="giveaway-detail">
+      {refreshing ? <p className="muted">Обновляем данные…</p> : null}
       <div className="giveaway-detail__hero">
         <Link to="/" className="giveaway-detail__back" aria-label="Назад">
           <ChevronLeft size={22} />
@@ -356,7 +371,7 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
             <button
               type="button"
               className="link-like giveaway-detail__refresh-sub"
-              onClick={() => void load()}
+              onClick={() => void load({ silent: true })}
             >
               Обновить статус подписки
             </button>

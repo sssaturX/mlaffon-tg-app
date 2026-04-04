@@ -1,4 +1,5 @@
 import WebApp from "@twa-dev/sdk";
+import { memo } from "react";
 
 const creatorName =
   import.meta.env.VITE_CREATOR_DISPLAY_NAME?.trim() || "Стример";
@@ -40,7 +41,7 @@ export function openExternal(url: string) {
   }
 }
 
-export function LiveBroadcastCard({
+export const LiveBroadcastCard = memo(function LiveBroadcastCard({
   live,
   viewerFirstName,
   watching,
@@ -105,5 +106,5 @@ export function LiveBroadcastCard({
       </button>
     </div>
   );
-}
+});
 

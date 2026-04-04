@@ -558,7 +558,7 @@ function AppShell({
           />
         ) : null}
 
-        <main key={location.pathname} className="app-main">
+        <main className="app-main">
           <Suspense fallback={<AppLoadingSpinner />}>
             <Routes>
               <Route

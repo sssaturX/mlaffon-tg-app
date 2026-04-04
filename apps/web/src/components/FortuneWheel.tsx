@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 
 export type FortuneSegment = {
   index: number;
@@ -46,7 +46,11 @@ type Props = {
 /**
  * Колесо: сектор 0 начинается сверху, указатель зафиксирован на 12 часов.
  */
-export function FortuneWheel({ segments, rotationDeg, spinning }: Props) {
+export const FortuneWheel = memo(function FortuneWheel({
+  segments,
+  rotationDeg,
+  spinning,
+}: Props) {
   const n = segments.length;
   const slice = 360 / n;
 
@@ -114,7 +118,7 @@ export function FortuneWheel({ segments, rotationDeg, spinning }: Props) {
       </div>
     </div>
   );
-}
+});
 
 /** Угол центра сектора i от «верха» по часовой стрелке (0..360). */
 export function segmentCenterAngleDeg(segmentIndex: number, segmentCount: number): number {
