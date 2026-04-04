@@ -48,7 +48,7 @@ async function getLeaderboardByCoins(
 
   const platformJoinCondition =
     platform !== "all"
-      ? sql`AND EXISTS (SELECT 1 FROM platform_accounts pa WHERE pa.user_id = ${users.id} AND pa.platform = ${platform})`
+      ? sql`AND EXISTS (SELECT 1 FROM platform_accounts pa WHERE pa.user_id = u.id AND pa.platform = ${platform})`
       : sql``;
 
   const rows = await db.execute<{

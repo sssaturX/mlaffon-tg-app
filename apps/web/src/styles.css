@@ -247,14 +247,16 @@
 
 @media (max-width: 640px) {
   .prediction-modal__backdrop {
-    padding: 0;
-    place-items: end stretch;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+    place-items: end center;
   }
   .prediction-modal__card {
-    max-width: none;
-    min-height: 100dvh;
-    border-radius: 0;
-    padding: calc(12px + env(safe-area-inset-top)) 14px 12px;
+    width: min(100%, 480px);
+    max-width: 480px;
+    max-height: min(90dvh, 760px);
+    overflow: auto;
+    border-radius: 18px;
+    padding: 14px 14px 12px;
   }
   .prediction-modal__form {
     margin-top: auto;
