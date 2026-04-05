@@ -19,6 +19,7 @@ import {
 import { generatePkcePair } from "../platforms/kick/pkce.js";
 import { kickValidateToken } from "../platforms/kick/api.js";
 import { markReferralPercentEligible } from "../services/referralEligibility.js";
+import { qualifyReferralOnPlatformLink } from "../services/referrals.js";
 
 function webBase(): string {
   const raw = process.env.PUBLIC_WEB_URL ?? "http://localhost:5173";
@@ -156,6 +157,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
         });
 
       await markReferralPercentEligible(userId);
+      await qualifyReferralOnPlatformLink(userId);
       return reply.redirect(redirectSuccess("twitch"));
     } catch (e) {
       app.log.error(e);
@@ -296,6 +298,7 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
         });
 
       await markReferralPercentEligible(parsed.userId);
+      await qualifyReferralOnPlatformLink(parsed.userId);
       return reply.redirect(redirectSuccess("kick"));
     } catch (e) {
       app.log.error(e);

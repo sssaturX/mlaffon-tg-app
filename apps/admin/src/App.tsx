@@ -311,6 +311,11 @@ export function App() {
     "" | "tv" | "gift" | "help" | "radio"
   >("");
   const [taskFormMetaJson, setTaskFormMetaJson] = useState("{}");
+  const [taskFormChainKey, setTaskFormChainKey] = useState("");
+  const [taskFormChainOrder, setTaskFormChainOrder] = useState(1);
+  const [taskFormProgressSource, setTaskFormProgressSource] = useState("");
+  const [taskFormTargetValue, setTaskFormTargetValue] = useState(0);
+  const [taskFormProgressLabel, setTaskFormProgressLabel] = useState("");
   const [predictionPlatforms, setPredictionPlatforms] = useState<PredictionPlatformRow[] | null>(null);
   const [predictions, setPredictions] = useState<PredictionRow[] | null>(null);
   const [predictionTitle, setPredictionTitle] = useState("");
@@ -1623,6 +1628,22 @@ export function App() {
                 setErr("meta: невалидный JSON");
                 return;
               }
+              if (taskFormChainKey.trim()) {
+                meta.chainKey = taskFormChainKey.trim();
+                meta.chainOrder = taskFormChainOrder;
+              } else {
+                delete meta.chainKey;
+                delete meta.chainOrder;
+              }
+              if (taskFormProgressSource.trim()) {
+                meta.progressSource = taskFormProgressSource.trim();
+                meta.targetValue = taskFormTargetValue;
+                if (taskFormProgressLabel.trim()) meta.progressLabel = taskFormProgressLabel.trim();
+              } else {
+                delete meta.progressSource;
+                delete meta.targetValue;
+                delete meta.progressLabel;
+              }
               if (taskFormActionUrl.trim()) meta.actionUrl = taskFormActionUrl.trim();
               else delete meta.actionUrl;
               if (taskFormActionLabel.trim()) meta.actionLabel = taskFormActionLabel.trim();
@@ -1697,6 +1718,11 @@ export function App() {
                 setTaskFormHelpBody("");
                 setTaskFormHelpIcon("");
                 setTaskFormMetaJson("{}");
+                setTaskFormChainKey("");
+                setTaskFormChainOrder(1);
+                setTaskFormProgressSource("");
+                setTaskFormTargetValue(0);
+                setTaskFormProgressLabel("");
                 await loadAdminTasks();
               } catch {
                 setErr("Сеть недоступна");
@@ -1890,6 +1916,67 @@ export function App() {
                 placeholder="Промокоды можно найти на стримах…"
               />
             </div>
+            <p className="muted admin-m-0" style={{fontWeight:600}}>Цепочка / прогрессия (динамические задания)</p>
+            <div className="row">
+              <div>
+                <label htmlFor="tchk">Chain Key</label>
+                <input
+                  id="tchk"
+                  value={taskFormChainKey}
+                  onChange={(e) => setTaskFormChainKey(e.target.value)}
+                  placeholder="invite, streams_twitch…"
+                />
+              </div>
+              <div>
+                <label htmlFor="tcho">Порядок</label>
+                <input
+                  id="tcho"
+                  type="number"
+                  min={1}
+                  value={taskFormChainOrder}
+                  onChange={(e) => setTaskFormChainOrder(Number(e.target.value))}
+                />
+              </div>
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="tpsrc">Источник прогресса</label>
+                <select
+                  id="tpsrc"
+                  value={taskFormProgressSource}
+                  onChange={(e) => setTaskFormProgressSource(e.target.value)}
+                >
+                  <option value="">— нет —</option>
+                  <option value="referrals_total">Рефералы</option>
+                  <option value="streak_twitch">Стрик Twitch</option>
+                  <option value="streak_kick">Стрик Kick</option>
+                  <option value="linked_twitch">Привязка Twitch</option>
+                  <option value="linked_kick">Привязка Kick</option>
+                  <option value="stream_messages_twitch">Сообщения Twitch</option>
+                  <option value="stream_messages_kick">Сообщения Kick</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="ttarget">Цель</label>
+                <input
+                  id="ttarget"
+                  type="number"
+                  min={1}
+                  value={taskFormTargetValue}
+                  onChange={(e) => setTaskFormTargetValue(Number(e.target.value))}
+                  placeholder="5"
+                />
+              </div>
+              <div>
+                <label htmlFor="tplbl">Подпись</label>
+                <input
+                  id="tplbl"
+                  value={taskFormProgressLabel}
+                  onChange={(e) => setTaskFormProgressLabel(e.target.value)}
+                  placeholder="Друзья"
+                />
+              </div>
+            </div>
             <div>
               <label htmlFor="tmeta">meta (JSON, Helix/Kick + любые поля)</label>
               <textarea
@@ -1925,6 +2012,11 @@ export function App() {
                     setTaskFormHelpBody("");
                     setTaskFormHelpIcon("");
                     setTaskFormMetaJson("{}");
+                    setTaskFormChainKey("");
+                    setTaskFormChainOrder(1);
+                    setTaskFormProgressSource("");
+                    setTaskFormTargetValue(0);
+                    setTaskFormProgressLabel("");
                   }}
                 >
                   Новое (сброс)
@@ -2004,6 +2096,11 @@ export function App() {
                             setTaskFormHelpBody("");
                             setTaskFormHelpIcon("");
                           }
+                          setTaskFormChainKey(typeof m.chainKey === "string" ? m.chainKey : "");
+                          setTaskFormChainOrder(typeof m.chainOrder === "number" ? m.chainOrder : 1);
+                          setTaskFormProgressSource(typeof m.progressSource === "string" ? m.progressSource : "");
+                          setTaskFormTargetValue(typeof m.targetValue === "number" ? m.targetValue : 0);
+                          setTaskFormProgressLabel(typeof m.progressLabel === "string" ? m.progressLabel : "");
                         }}
                       >
                         Править

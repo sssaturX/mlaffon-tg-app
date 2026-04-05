@@ -23,20 +23,44 @@ export async function maybeQualifyReferral(refereeUserId: string): Promise<void>
   const le = b?.le ?? 0;
   if (le < qualifyMinLifetimeEarned) return;
 
+  await qualifyReferralInternal(ref.id, ref.referrerId, referrerReward);
+}
+
+/**
+ * Qualify referral immediately when referee links a platform (Twitch/Kick).
+ * No lifetime-earned check — platform link alone counts.
+ */
+export async function qualifyReferralOnPlatformLink(refereeUserId: string): Promise<void> {
+  const [ref] = await db
+    .select()
+    .from(referrals)
+    .where(eq(referrals.refereeId, refereeUserId))
+    .limit(1);
+  if (!ref || ref.qualifiedAt) return;
+
+  const { referrerReward } = gameConfig.referral;
+  await qualifyReferralInternal(ref.id, ref.referrerId, referrerReward);
+}
+
+async function qualifyReferralInternal(
+  referralId: string,
+  referrerId: string,
+  referrerReward: number,
+): Promise<void> {
   await db
     .update(referrals)
     .set({ qualifiedAt: sql`now()` })
-    .where(eq(referrals.id, ref.id));
+    .where(eq(referrals.id, referralId));
 
   if (referrerReward <= 0) return;
 
-  const idem = `referral_referrer_qualified:${ref.id}`;
+  const idem = `referral_referrer_qualified:${referralId}`;
   await applyCreditSplit({
-    userId: ref.referrerId,
+    userId: referrerId,
     amount: referrerReward,
     idempotencyKey: idem,
     kind: "referral_referrer",
     referenceType: "referral",
-    referenceId: ref.id,
+    referenceId: referralId,
   });
 }

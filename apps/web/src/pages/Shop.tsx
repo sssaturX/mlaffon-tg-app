@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Coins } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, memo } from "react";
+import { Coins, ShoppingBag, Sparkles, Crown, Gamepad2, Shield, Gift, Zap, Star, Tag } from "lucide-react";
 import { api, formatApiError } from "../api";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { scheduleSmartRefresh } from "../services/meService";
@@ -13,14 +13,73 @@ type Item = {
   priceCoins: number;
 };
 
-function shopEmoji(title: string, kind: string): string {
+type PlaceholderItem = {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+  accent: string;
+};
+
+const twitchPlaceholders: PlaceholderItem[] = [
+  { id: "tw_vip", title: "VIP в чате", icon: <Crown size={22} />, accent: "#a855f7" },
+  { id: "tw_bp", title: "Battle Pass", icon: <Gamepad2 size={22} />, accent: "#c084fc" },
+  { id: "tw_steam", title: "Пополнение Steam", icon: <Gift size={22} />, accent: "#818cf8" },
+  { id: "tw_vpn", title: "VPN / прокси", icon: <Shield size={22} />, accent: "#7c3aed" },
+];
+
+const kickPlaceholders: PlaceholderItem[] = [
+  { id: "ki_vip", title: "VIP в чате", icon: <Crown size={22} />, accent: "#53fc18" },
+  { id: "ki_bonus", title: "Бонуска за ??", icon: <Star size={22} />, accent: "#4ade80" },
+];
+
+function shopIcon(title: string, kind: string): React.ReactNode {
   const s = `${title} ${kind}`.toLowerCase();
-  if (s.includes("vpn") || s.includes("shield")) return "🛡️";
-  if (s.includes("shirt") || s.includes("футбол")) return "👕";
-  if (s.includes("gift") || s.includes("подар")) return "🎁";
-  if (s.includes("boost") || s.includes("буст")) return "⚡";
-  return "🛒";
+  if (s.includes("vpn") || s.includes("shield")) return <Shield size={24} />;
+  if (s.includes("boost") || s.includes("буст")) return <Zap size={24} />;
+  if (s.includes("gift") || s.includes("подар")) return <Gift size={24} />;
+  if (s.includes("spin") || s.includes("спин") || s.includes("колес")) return <Sparkles size={24} />;
+  return <ShoppingBag size={24} />;
 }
+
+const PlaceholderCard = memo(function PlaceholderCard({ item }: { item: PlaceholderItem }) {
+  return (
+    <div className="shop-placeholder-card">
+      <div className="shop-placeholder-card__icon" style={{ color: item.accent, background: `${item.accent}18` }}>
+        {item.icon}
+      </div>
+      <span className="shop-placeholder-card__title">{item.title}</span>
+      <span className="shop-placeholder-card__badge">Скоро</span>
+    </div>
+  );
+});
+
+const BuyableCard = memo(function BuyableCard({
+  item,
+  onBuy,
+}: {
+  item: Item;
+  onBuy: (id: string) => void;
+}) {
+  return (
+    <div className="shop-buyable-card">
+      <div className="shop-buyable-card__icon">
+        {shopIcon(item.title, item.kind)}
+      </div>
+      <div className="shop-buyable-card__body">
+        <p className="shop-buyable-card__title">{item.title}</p>
+        {item.kind ? <span className="shop-buyable-card__kind">{item.kind}</span> : null}
+      </div>
+      <button
+        type="button"
+        className="primary shop-buyable-card__cta"
+        onClick={() => onBuy(item.id)}
+      >
+        <Coins size={14} className="icon-inline-coins" aria-hidden />
+        {item.priceCoins.toLocaleString("ru-RU")}
+      </button>
+    </div>
+  );
+});
 
 export default function Shop() {
   const { patchMe, reconcileFromServer } = useMeEconomySync();
@@ -28,6 +87,7 @@ export default function Shop() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
+  const [msgType, setMsgType] = useState<"ok" | "err">("ok");
 
   const load = useCallback(async () => {
     const r = await api<{ items: Item[] }>("/api/v1/shop/items");
@@ -55,137 +115,113 @@ export default function Shop() {
     return items.filter((i) => (i.kind || "Другое") === kindFilter);
   }, [items, kindFilter]);
 
-  async function buy(id: string) {
-    setMsg(null);
-    const r = await api<{
-      coins: number;
-      coinsTwitch: number;
-      coinsKick: number;
-    }>("/api/v1/shop/purchase", {
-      method: "POST",
-      body: JSON.stringify({ itemId: id, platform: activePlatform }),
-    });
-    if (r.ok) {
-      setMsg(`Куплено. Баланс: ${r.data.coins.toLocaleString("ru-RU")}`);
-      patchMe(() => ({
-        coins: r.data.coins,
-        coinsTwitch: r.data.coinsTwitch,
-        coinsKick: r.data.coinsKick,
-      }));
-      scheduleSmartRefresh(300);
-      reconcileFromServer();
-    } else {
-      setMsg(formatApiError(r));
-    }
-  }
+  const buy = useCallback(
+    async (id: string) => {
+      setMsg(null);
+      const r = await api<{
+        coins: number;
+        coinsTwitch: number;
+        coinsKick: number;
+      }>("/api/v1/shop/purchase", {
+        method: "POST",
+        body: JSON.stringify({ itemId: id, platform: activePlatform }),
+      });
+      if (r.ok) {
+        setMsg("Покупка оформлена");
+        setMsgType("ok");
+        patchMe(() => ({
+          coins: r.data.coins,
+          coinsTwitch: r.data.coinsTwitch,
+          coinsKick: r.data.coinsKick,
+        }));
+        scheduleSmartRefresh(300);
+        reconcileFromServer();
+      } else {
+        setMsg(formatApiError(r));
+        setMsgType("err");
+      }
+    },
+    [activePlatform, patchMe, reconcileFromServer]
+  );
+
+  const isTwitch = activePlatform === "twitch";
+  const placeholders = isTwitch ? twitchPlaceholders : kickPlaceholders;
+  const platformName = isTwitch ? "Twitch" : "Kick";
+  const platformColor = isTwitch ? "#a855f7" : "#53fc18";
 
   return (
-    <div>
+    <div className="shop-page">
       {loading && items.length === 0 ? (
         <PageSkeleton />
       ) : (
-        <>
-          <p className="muted shop-intro">Ассортимент магазина будет пополняться.</p>
-          <p className="muted shop-intro">
-            Оплата с баланса{" "}
-            {activePlatform === "twitch" ? "Twitch" : "Kick"} (переключатель в
-            шапке).
-          </p>
-          {msg && <p className="muted">{msg}</p>}
-
-          {(() => {
-            const featured = filtered.length > 1 ? filtered[0] : null;
-            const gridItems = featured ? filtered.slice(1) : filtered;
-            const twitchShowcase = [
-              "VIP в чате",
-              "Battle Pass / эквивалент",
-              "Пополнение Steam (500₽)",
-              "VPN / прокси (опционально)",
-            ];
-            const kickShowcase = ["VIP в чате", "Бонуска за ??"];
-            return (
-              <>
-                <div className="card stack">
-                  <strong>Twitch магазин</strong>
-                  <p className="muted shop-intro">Плановые позиции:</p>
-                  <ul className="list">
-                    {twitchShowcase.map((row) => (
-                      <li key={row}>{row}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="card stack">
-                  <strong>Kick магазин</strong>
-                  <p className="muted shop-intro">Плановые позиции:</p>
-                  <ul className="list">
-                    {kickShowcase.map((row) => (
-                      <li key={row}>{row}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                {featured && (
-                  <div className="card shop-featured card--tint">
-                    <p className="muted shop-featured__label">Рекомендуем</p>
-                    <span className="shop-featured__title">{featured.title}</span>
-                    <p className="muted shop-featured__kind">{featured.kind}</p>
-                    <button
-                      type="button"
-                      className="primary btn-block"
-                      onClick={() => buy(featured.id)}
-                    >
-                      Купить за{" "}
-                      <Coins
-                        size={18}
-                        className="icon-inline-coins"
-                        aria-hidden
-                      />
-                      {featured.priceCoins.toLocaleString("ru-RU")}
-                    </button>
-                  </div>
-                )}
-
-          <div className="filters filters--tight">
-            {kinds.map((k) => (
-              <button
-                key={k}
-                type="button"
-                className={kindFilter === k ? "on" : ""}
-                onClick={() => setKindFilter(k)}
-              >
-                {k}
-              </button>
-            ))}
+        <div className="shop-page__content fade-in-soft">
+          {/* Header */}
+          <div className="shop-header">
+            <div className="shop-header__icon" style={{ color: platformColor, background: `${platformColor}18`, borderColor: `${platformColor}35` }}>
+              <Tag size={22} />
+            </div>
+            <div>
+              <h2 className="shop-header__title">Магазин</h2>
+              <p className="shop-header__sub">
+                Баланс {platformName} · переключатель в шапке
+              </p>
+            </div>
           </div>
 
-          <div className="shop-grid">
-            {gridItems.map((i, idx) => (
-              <div key={i.id} className="shop-card">
-                <div className="shop-card__img" aria-hidden>
-                  {shopEmoji(i.title, i.kind)}
-                </div>
-                <div className="shop-card__body">
-                  <p className="shop-card__title">{i.title}</p>
-                  <button
-                    type="button"
-                    className={
-                      idx % 2 === 0
-                        ? "primary shop-card__buy"
-                        : "shop-card__buy shop-card__buy--blue"
-                    }
-                    onClick={() => buy(i.id)}
-                  >
-                    <Coins size={14} className="icon-inline-coins" aria-hidden />
-                    {i.priceCoins.toLocaleString("ru-RU")}
-                  </button>
-                </div>
+          {msg && (
+            <div className={`shop-toast ${msgType === "ok" ? "shop-toast--ok" : "shop-toast--err"}`}>
+              {msg}
+            </div>
+          )}
+
+          {/* Buyable items from DB */}
+          {filtered.length > 0 && (
+            <div className="shop-section">
+              <div className="shop-section__head">
+                <Sparkles size={16} className="shop-section__head-icon" />
+                <span>Доступные товары</span>
               </div>
-            ))}
+              {kinds.length > 2 && (
+                <div className="filters filters--tight">
+                  {kinds.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      className={kindFilter === k ? "on" : ""}
+                      onClick={() => setKindFilter(k)}
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="shop-buyable-grid">
+                {filtered.map((i) => (
+                  <BuyableCard key={i.id} item={i} onBuy={buy} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Platform showcase */}
+          <div className="shop-section">
+            <div className="shop-section__head">
+              <Crown size={16} className="shop-section__head-icon" />
+              <span>{platformName} магазин</span>
+            </div>
+            <div className="shop-placeholder-grid">
+              {placeholders.map((p) => (
+                <PlaceholderCard key={p.id} item={p} />
+              ))}
+            </div>
           </div>
-              </>
-            );
-          })()}
-        </>
+
+          {/* Assortment notice */}
+          <div className="shop-notice">
+            <ShoppingBag size={18} className="shop-notice__icon" />
+            <span>Ассортимент магазина будет пополняться</span>
+          </div>
+        </div>
       )}
     </div>
   );
