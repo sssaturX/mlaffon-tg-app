@@ -825,39 +825,41 @@ export default function Home({
               Все
             </Link>
           </div>
-          {pub.giveaways.map((g) => (
-            <Link
-              key={g.id}
-              to={`/giveaway/${g.id}`}
-              className="card giveaway-card giveaway-card--link"
-            >
-              {g.imageUrl ? (
-                <img
-                  src={g.imageUrl}
-                  alt=""
-                  className="giveaway-card__img"
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : (
-                <div className="giveaway-card__placeholder" aria-hidden />
-              )}
-              <div className="giveaway-card__body">
-                <p className="giveaway-card__prize">{g.prizeText}</p>
-                <p className="giveaway-card__title">{g.title}</p>
-                <p className="giveaway-card__meta muted">
-                  {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
-                  {g.winnerCount} победител{g.winnerCount === 1 ? "ь" : g.winnerCount < 5 ? "я" : "ей"}
-                  {g.ticketPriceCoins > 0
-                    ? ` · билет ${g.ticketPriceCoins} мон.`
-                    : " · бесплатно"}
-                </p>
-                <div className="giveaway-card__timer">
-                  {formatCountdown(g.endsAt)}
+          <div className="giveaways-grid">
+            {pub.giveaways.map((g) => (
+              <Link
+                key={g.id}
+                to={`/giveaway/${g.id}`}
+                className="card giveaway-card giveaway-card--link"
+              >
+                {g.imageUrl ? (
+                  <img
+                    src={g.imageUrl}
+                    alt=""
+                    className="giveaway-card__img"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <div className="giveaway-card__placeholder" aria-hidden />
+                )}
+                <div className="giveaway-card__body">
+                  <p className="giveaway-card__prize">{g.prizeText}</p>
+                  <p className="giveaway-card__title">{g.title}</p>
+                  <p className="giveaway-card__meta muted">
+                    {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
+                    {g.winnerCount} победител{g.winnerCount === 1 ? "ь" : g.winnerCount < 5 ? "я" : "ей"}
+                    {g.ticketPriceCoins > 0
+                      ? ` · билет ${g.ticketPriceCoins} мон.`
+                      : " · бесплатно"}
+                  </p>
+                  <div className="giveaway-card__timer">
+                    {formatCountdown(g.endsAt)}
+                  </div>
                 </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 

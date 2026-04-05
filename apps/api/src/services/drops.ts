@@ -487,7 +487,7 @@ export async function getAdminDropStatus(): Promise<{
     .innerJoin(users, eq(users.id, dropUserStates.userId))
     .where(eq(dropUserStates.won, true))
     .groupBy(dropUserStates.userId, users.username, users.firstName)
-    .orderBy(sql`count(*) desc`, users.createdAt)
+    .orderBy(sql`count(*) desc`)
     .limit(30);
 
   const now = new Date();
