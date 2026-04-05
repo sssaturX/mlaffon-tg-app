@@ -30,6 +30,8 @@ export function TaskDetailModal({
   onClaim,
   claiming,
   statusMessage,
+  evidenceUploading,
+  onUploadEvidence,
 }: {
   task: TaskDto | null;
   open: boolean;
@@ -37,9 +39,12 @@ export function TaskDetailModal({
   onClaim: () => void;
   claiming: boolean;
   statusMessage: string | null;
+  evidenceUploading?: boolean;
+  onUploadEvidence?: (images: string[]) => Promise<void>;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [openedLink, setOpenedLink] = useState(false);
+  const [files, setFiles] = useState<FileList | null>(null);
 
   useEffect(() => {
     setOpenedLink(false);
@@ -65,6 +70,27 @@ export function TaskDetailModal({
   const showLinkHint =
     Boolean(actionUrl) && canClaim && !openedLink && task.userStatus === "available";
   const pulseVerify = Boolean(actionUrl) && openedLink && canClaim;
+
+  async function uploadEvidence() {
+    if (!onUploadEvidence || !files || files.length === 0) return;
+    const list = Array.from(files).slice(0, 4);
+    const encoded: string[] = [];
+    for (const f of list) {
+      if (!/^image\//i.test(f.type)) continue;
+      if (f.size > 2_500_000) continue;
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("read_failed"));
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.readAsDataURL(f);
+      });
+      encoded.push(data);
+    }
+    if (encoded.length > 0) {
+      await onUploadEvidence(encoded);
+      setFiles(null);
+    }
+  }
 
   const content = (
     <div
@@ -118,6 +144,28 @@ export function TaskDetailModal({
 
         {statusMessage ? (
           <p className="task-detail-modal__msg muted">{statusMessage}</p>
+        ) : null}
+
+        {task.hard ? (
+          <div className="stack">
+            <p className="muted m-0">
+              HARD {Math.max(0, task.hardStageCurrent ?? 0)}/{Math.max(0, task.hardStageTotal ?? 2)}
+            </p>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => setFiles(e.target.files)}
+            />
+            <button
+              type="button"
+              className="task-detail-btn task-detail-btn--secondary"
+              disabled={!onUploadEvidence || evidenceUploading || !files || files.length === 0}
+              onClick={() => void uploadEvidence()}
+            >
+              {evidenceUploading ? "Загрузка…" : "Загрузить скрины"}
+            </button>
+          </div>
         ) : null}
 
         <div className="task-detail-modal__actions">

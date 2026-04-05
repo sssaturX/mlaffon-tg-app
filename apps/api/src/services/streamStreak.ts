@@ -44,11 +44,37 @@ export async function ensureStreamStreakRow(
     return { twitch: 0, kick: 0, twitchLast: null, kickLast: null };
   }
 
+  const today = utcDateString();
+  const yesterday = addDays(today, -1);
+  let twitchCurrent = row.twitchCurrent;
+  let kickCurrent = row.kickCurrent;
+  let twitchLast = row.twitchLastUtcDate ?? null;
+  let kickLast = row.kickLastUtcDate ?? null;
+  let changed = false;
+
+  if (twitchLast && twitchLast !== today && twitchLast !== yesterday && twitchCurrent !== 0) {
+    twitchCurrent = 0;
+    changed = true;
+  }
+  if (kickLast && kickLast !== today && kickLast !== yesterday && kickCurrent !== 0) {
+    kickCurrent = 0;
+    changed = true;
+  }
+  if (changed) {
+    await db
+      .update(userStreamStreaks)
+      .set({
+        twitchCurrent,
+        kickCurrent,
+      })
+      .where(eq(userStreamStreaks.userId, userId));
+  }
+
   return {
-    twitch: row.twitchCurrent,
-    kick: row.kickCurrent,
-    twitchLast: row.twitchLastUtcDate ?? null,
-    kickLast: row.kickLastUtcDate ?? null,
+    twitch: twitchCurrent,
+    kick: kickCurrent,
+    twitchLast,
+    kickLast,
   };
 }
 

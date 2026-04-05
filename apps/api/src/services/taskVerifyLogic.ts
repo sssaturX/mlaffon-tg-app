@@ -2,6 +2,8 @@ import { tasks } from "../db/schema.js";
 import type { InferSelectModel } from "drizzle-orm";
 import { parseTaskMeta } from "../taskMeta.js";
 import { getKickAccount, getTwitchAccount } from "./platformTokens.js";
+import { db } from "../db/index.js";
+import { users } from "../db/schema.js";
 import {
   helixCheckFollow,
   helixCheckSubscription,
@@ -11,6 +13,8 @@ import {
   kickCheckFollowChannel,
   kickValidateToken,
 } from "../platforms/kick/api.js";
+import { checkTelegramChannelMembership } from "./telegramChannel.js";
+import { eq } from "drizzle-orm";
 
 export type TaskRow = InferSelectModel<typeof tasks>;
 
@@ -44,7 +48,16 @@ export async function verifyPlatformTask(
   }
 
   if (task.platform === "telegram") {
-    return { ok: false, reason: "telegram_api_pending" };
+    const cfg = meta?.telegram;
+    if (!cfg || !cfg.chat_id) return { ok: false, reason: "telegram_chat_not_configured" };
+    const [u] = await db
+      .select({ telegramId: users.telegramId })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!u?.telegramId) return { ok: false, reason: "telegram_not_linked" };
+    const okMember = await checkTelegramChannelMembership(u.telegramId, cfg.chat_id);
+    return okMember ? { ok: true } : { ok: false, reason: "telegram_not_subscribed" };
   }
 
   if (task.platform === "kick") {

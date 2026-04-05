@@ -11,11 +11,14 @@
 # Переменные окружения:
 #   REPO=/opt/mlaffon/mlaffon-tg-app
 #   DEPLOY_SKIP_DB=1           # не выполнять db:push
-#   DEPLOY_DB_SEED=1           # выполнить npm run db:seed -w api после db:push
+#   DEPLOY_DB_SEED=0           # НЕ выполнять db:seed (по умолчанию seed включён)
 #   DEPLOY_SKIP_INFRA=1        # не запускать docker compose postgres/redis
 #   DEPLOY_CADDY=1             # обновить /etc/caddy/Caddyfile и reload
 #   DEPLOY_DB_RETRIES=5        # кол-во retry для db:push
 #   DEPLOY_DB_RETRY_DELAY=3    # сек между retry
+#   DEPLOY_DB_SEED_RETRIES=3   # retry для db:seed
+#   DEPLOY_DB_SEED_RETRY_DELAY=3
+#   DEPLOY_SYSTEMD_DAEMON_RELOAD=1  # перед restart выполнить daemon-reload
 #
 # Web Push: после npm ci скрипт дописывает VAPID_* в apps/api/.env.
 #
@@ -25,6 +28,12 @@ set -euo pipefail
 REPO="${REPO:-/opt/mlaffon/mlaffon-tg-app}"
 DEPLOY_DB_RETRIES="${DEPLOY_DB_RETRIES:-5}"
 DEPLOY_DB_RETRY_DELAY="${DEPLOY_DB_RETRY_DELAY:-3}"
+DEPLOY_DB_SEED_RETRIES="${DEPLOY_DB_SEED_RETRIES:-3}"
+DEPLOY_DB_SEED_RETRY_DELAY="${DEPLOY_DB_SEED_RETRY_DELAY:-3}"
+DEPLOY_DB_SEED="${DEPLOY_DB_SEED:-1}"
+DEPLOY_SYSTEMD_DAEMON_RELOAD="${DEPLOY_SYSTEMD_DAEMON_RELOAD:-1}"
+DEPLOY_HEALTH_RETRIES="${DEPLOY_HEALTH_RETRIES:-15}"
+DEPLOY_HEALTH_RETRY_DELAY="${DEPLOY_HEALTH_RETRY_DELAY:-2}"
 
 SUDO=""
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -66,12 +75,27 @@ assert_repo() {
   [[ -d "$REPO" ]] || die "Нет каталога REPO=$REPO"
   [[ -f "$REPO/package.json" ]] || die "В $REPO нет package.json (не корень монорепо)"
   [[ -f "$REPO/apps/api/.env" ]] || die "Нет $REPO/apps/api/.env"
+  [[ -f "$REPO/apps/api/package.json" ]] || die "Нет $REPO/apps/api/package.json"
 }
 
 assert_required_env_vars() {
   local envf="$REPO/apps/api/.env"
   grep -qE '^DATABASE_URL=' "$envf" || die "В $envf отсутствует DATABASE_URL"
   grep -qE '^REDIS_URL=' "$envf" || die "В $envf отсутствует REDIS_URL"
+}
+
+assert_api_scripts() {
+  local pkg="$REPO/apps/api/package.json"
+  node -e "
+    const fs = require('fs');
+    const p = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+    const s = p && p.scripts ? p.scripts : {};
+    const miss = ['build','db:push','db:seed'].filter((k) => typeof s[k] !== 'string');
+    if (miss.length) {
+      console.error('missing scripts in apps/api/package.json:', miss.join(', '));
+      process.exit(1);
+    }
+  " "$pkg" || die "Проверьте scripts в $pkg (нужны build, db:push, db:seed)"
 }
 
 wait_compose_service_healthy() {
@@ -161,10 +185,47 @@ reload_caddy_if_requested() {
   $SUDO systemctl reload caddy
 }
 
+systemd_reload_if_requested() {
+  if [[ "$DEPLOY_SYSTEMD_DAEMON_RELOAD" != "1" ]]; then
+    return 0
+  fi
+  log "systemctl daemon-reload"
+  $SUDO systemctl daemon-reload
+}
+
+run_db_sync() {
+  if [[ "${DEPLOY_SKIP_DB:-0}" == "1" ]]; then
+    log "пропуск db:push (DEPLOY_SKIP_DB=1)"
+    return 0
+  fi
+  log "db:push (apps/api) с retry=${DEPLOY_DB_RETRIES}"
+  run_with_retries "$DEPLOY_DB_RETRIES" "$DEPLOY_DB_RETRY_DELAY" bash -lc "cd '$REPO/apps/api' && npm run db:push" \
+    || die "db:push не удалось после ${DEPLOY_DB_RETRIES} попыток"
+
+  if [[ "$DEPLOY_DB_SEED" != "0" ]]; then
+    log "db:seed (apps/api) с retry=${DEPLOY_DB_SEED_RETRIES}"
+    run_with_retries "$DEPLOY_DB_SEED_RETRIES" "$DEPLOY_DB_SEED_RETRY_DELAY" bash -lc "cd '$REPO/apps/api' && npm run db:seed" \
+      || die "db:seed не удалось после ${DEPLOY_DB_SEED_RETRIES} попыток"
+  else
+    log "пропуск db:seed (DEPLOY_DB_SEED=0)"
+  fi
+}
+
+post_deploy_smoke_checks() {
+  log "проверка health API"
+  run_with_retries "$DEPLOY_HEALTH_RETRIES" "$DEPLOY_HEALTH_RETRY_DELAY" curl -fsS "http://127.0.0.1:3001/health" >/dev/null \
+    || die "API /health недоступен после перезапуска"
+
+  log "проверка публичного API /api/v1/home/public"
+  run_with_retries "$DEPLOY_HEALTH_RETRIES" "$DEPLOY_HEALTH_RETRY_DELAY" curl -fsS "http://127.0.0.1:3001/api/v1/home/public" >/dev/null \
+    || die "API /api/v1/home/public недоступен после перезапуска"
+}
+
 main() {
   require_cmd git
   require_cmd npm
   require_cmd node
+  require_cmd curl
   assert_repo
   cd "$REPO"
 
@@ -177,6 +238,7 @@ main() {
   fi
 
   assert_required_env_vars
+  assert_api_scripts
   ensure_infra
 
   log "git pull --ff-only"
@@ -190,31 +252,21 @@ main() {
   log "npm run build (api + web + admin)"
   npm run build
 
-  if [[ "${DEPLOY_SKIP_DB:-0}" != "1" ]]; then
-    log "db:push (apps/api) с retry=${DEPLOY_DB_RETRIES}"
-    run_with_retries "$DEPLOY_DB_RETRIES" "$DEPLOY_DB_RETRY_DELAY" bash -lc "cd '$REPO/apps/api' && npm run db:push" \
-      || die "db:push не удалось после ${DEPLOY_DB_RETRIES} попыток"
-    if [[ "${DEPLOY_DB_SEED:-0}" == "1" ]]; then
-      log "db:seed (apps/api)"
-      (cd "$REPO/apps/api" && npm run db:seed)
-    fi
-  else
-    log "пропуск db:push (DEPLOY_SKIP_DB=1)"
-  fi
+  run_db_sync
 
   log "права на dist и .env"
   $SUDO chmod -R o+rX "$REPO/apps/api/dist" "$REPO/apps/web/dist" "$REPO/apps/admin/dist"
   $SUDO chown root:www-data "$REPO/apps/api/.env"
   $SUDO chmod 640 "$REPO/apps/api/.env"
 
+  systemd_reload_if_requested
+
   log "systemctl restart mlaffon-api mlaffon-worker"
   $SUDO systemctl restart mlaffon-api mlaffon-worker
 
   reload_caddy_if_requested
 
-  log "проверка health API"
-  run_with_retries 10 2 curl -fsS "http://127.0.0.1:3001/health" >/dev/null \
-    || die "API /health недоступен после перезапуска"
+  post_deploy_smoke_checks
 
   echo ""
   log "готово"

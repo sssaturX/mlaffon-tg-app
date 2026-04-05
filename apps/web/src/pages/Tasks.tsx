@@ -41,6 +41,7 @@ export default function Tasks() {
   const [selected, setSelected] = useState<TaskDto | null>(null);
   const [modalMsg, setModalMsg] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
+  const [evidenceUploading, setEvidenceUploading] = useState(false);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -112,14 +113,46 @@ export default function Tasks() {
     }
   }
 
+  async function uploadEvidence(task: TaskDto, images: string[]) {
+    setModalMsg(null);
+    setEvidenceUploading(true);
+    const stage = Math.max(1, (task.hardStageCurrent ?? 0) + 1);
+    const r = await api<{ ok: boolean }>(`/api/v1/tasks/${task.id}/evidence`, {
+      method: "POST",
+      body: JSON.stringify({ stage, images }),
+    });
+    setEvidenceUploading(false);
+    if (r.ok) {
+      setModalMsg("Скрины загружены. Дождитесь проверки админом.");
+      await load({ silent: true });
+      return;
+    }
+    setModalMsg(formatApiError(r));
+  }
+
+  function actionLabelForTask(t: TaskDto): string {
+    if (t.userStatus === "completed") return "Выполнено";
+    if (t.userStatus === "pending") return "Проверяем…";
+    if (t.userStatus === "locked") return "Недоступно";
+    if (
+      typeof t.progressTarget === "number" &&
+      typeof t.progressCurrent === "number" &&
+      t.progressCurrent >= t.progressTarget
+    ) {
+      return "Получить";
+    }
+    return t.verifyLabel ?? "Проверить";
+  }
+
+  function actionDisabled(t: TaskDto): boolean {
+    return t.userStatus === "completed" || t.userStatus === "pending" || t.userStatus === "locked";
+  }
+
   return (
     <div>
       <div className="task-hint" role="note">
         <Lightbulb size={20} className="task-hint__icon" aria-hidden />
-        <span>
-          Список для платформы в шапке ({activePlatform === "twitch" ? "Twitch" : "Kick"}) плюс
-          общие и Telegram. Нажмите на карточку — откроются детали, ссылка и проверка.
-        </span>
+        <span>Короткие задания. Главное — прогресс и кнопка действия.</span>
       </div>
 
       {msg && !selected ? <p className="muted fade-in-soft">{msg}</p> : null}
@@ -169,9 +202,46 @@ export default function Tasks() {
               </div>
               <p className="task-card__title">{t.title}</p>
               <p className="task-card__desc task-card__desc--compact">{t.description}</p>
+              {t.hard ? (
+                <p className="task-card__status task-card__status--hard">
+                  HARD {Math.max(0, t.hardStageCurrent ?? 0)}/{Math.max(0, t.hardStageTotal ?? 2)}
+                </p>
+              ) : null}
+              {typeof t.progressCurrent === "number" && typeof t.progressTarget === "number" ? (
+                <div className="task-progress">
+                  <div className="task-progress__head">
+                    <span className="muted">{t.progressLabel ?? "Прогресс"}</span>
+                    <span className="muted">
+                      {t.progressCurrent}/{t.progressTarget}
+                    </span>
+                  </div>
+                  <div className="task-progress__bar">
+                    <div
+                      className="task-progress__fill"
+                      style={{
+                        width: `${Math.max(
+                          0,
+                          Math.min(100, (t.progressCurrent / Math.max(1, t.progressTarget)) * 100)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : null}
               {t.lastError ? (
                 <p className="err task-card__err">{t.lastError}</p>
               ) : null}
+              <button
+                type="button"
+                className="primary"
+                disabled={claiming || actionDisabled(t)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void claim(t.id);
+                }}
+              >
+                {actionLabelForTask(t)}
+              </button>
               <div className="task-card__row-open">
                 <span>Подробнее</span>
                 <ChevronRight size={18} className="muted" aria-hidden />
@@ -191,6 +261,14 @@ export default function Tasks() {
         }}
         claiming={claiming}
         statusMessage={modalMsg}
+        evidenceUploading={evidenceUploading}
+        onUploadEvidence={
+          selected?.hard
+            ? async (images) => {
+                await uploadEvidence(selected, images);
+              }
+            : undefined
+        }
         onClaim={() => {
           if (selected) void claim(selected.id);
         }}

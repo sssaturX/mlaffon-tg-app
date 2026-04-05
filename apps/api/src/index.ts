@@ -30,6 +30,7 @@ import {
 import { buildMeEconomyPatch, buildMeResponse } from "./services/me.js";
 import { createBanAppeal } from "./services/banAppeals.js";
 import { listTasksForUser, claimTask } from "./services/tasks.js";
+import { registerStreamTaskMessage } from "./services/taskStreamMessages.js";
 import { getLeaderboard, rankOfUser } from "./services/leaderboard.js";
 import { referrals, users } from "./db/schema.js";
 import { authUser, registerAuth } from "./plugins/auth.js";
@@ -54,6 +55,8 @@ import { handleRealtimeWsConnection } from "./services/realtimeWs.js";
 import { startRealtimeSubscriber } from "./services/realtimePublish.js";
 import { seedDefaultPointPlatforms } from "./services/platformBalances.js";
 import { closeExpiredPredictionsNow } from "./services/predictions.js";
+import { trackSecurityFingerprint } from "./services/securitySignals.js";
+import { taskEvidence, tasks } from "./db/schema.js";
 
 const app = Fastify({ logger: true });
 let predictionTimerCloser: NodeJS.Timeout | null = null;
@@ -522,6 +525,20 @@ app.get("/api/v1/tasks", async (req, reply) => {
 app.post("/api/v1/tasks/:id/claim", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
+  const sec = await trackSecurityFingerprint({
+    userId,
+    ip: req.ip,
+    userAgent: req.headers["user-agent"],
+    deviceId: String(req.headers["x-device-id"] ?? ""),
+  });
+  if (sec.suspicious) {
+    return reply.status(403).send({
+      error: {
+        code: "multi_account_suspected",
+        message: "Подозрение на мультиаккаунт. Обратитесь в поддержку.",
+      },
+    });
+  }
   const lim = await assertClaimRateLimits(userId, req.ip);
   if (!lim.ok) {
     return reply.status(429).send({
@@ -538,12 +555,20 @@ app.post("/api/v1/tasks/:id/claim", async (req, reply) => {
       task_not_found: 404,
       already_completed: 409,
       platform_required: 403,
+      progress_not_reached: 400,
+      evidence_required: 400,
+      evidence_pending: 409,
+      multi_account_suspected: 403,
       queue_unavailable: 503,
     };
     const claimMsg: Record<string, string> = {
       task_not_found: "Задание не найдено",
       already_completed: "Уже выполнено",
       platform_required: "Подключите Twitch или Kick в профиле",
+      progress_not_reached: "Цель задания ещё не достигнута",
+      evidence_required: "Сначала загрузите подтверждающие изображения",
+      evidence_pending: "Доказательства ещё не проверены админом",
+      multi_account_suspected: "Подозрение на мультиаккаунт. Обратитесь в поддержку.",
       queue_unavailable:
         "Проверка задания временно недоступна. Попробуйте позже.",
     };
@@ -761,6 +786,123 @@ app.get("/api/v1/shop/items", async (req, reply) => {
 const shopPurchaseBody = z.object({
   itemId: z.string().min(1),
   platform: z.enum(["twitch", "kick"]),
+});
+
+const streamTaskMessageBody = z.object({
+  platform: z.enum(["twitch", "kick"]),
+  text: z.string().min(2).max(500),
+});
+
+app.post("/api/v1/tasks/stream-message", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  const parsed = streamTaskMessageBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return reply.status(400).send({
+      error: { code: "bad_request", message: "Передайте platform и text" },
+    });
+  }
+  const sec = await trackSecurityFingerprint({
+    userId,
+    ip: req.ip,
+    userAgent: req.headers["user-agent"],
+    deviceId: String(req.headers["x-device-id"] ?? ""),
+  });
+  if (sec.suspicious) {
+    return reply.status(403).send({
+      error: {
+        code: "multi_account_suspected",
+        message: "Подозрение на мультиаккаунт. Действие временно недоступно.",
+      },
+    });
+  }
+  const r = await registerStreamTaskMessage({
+    userId,
+    platform: parsed.data.platform,
+    text: parsed.data.text,
+  });
+  if (!r.ok) {
+    const map: Record<typeof r.code, number> = {
+      not_live: 409,
+      platform_mismatch: 409,
+      watch_required: 403,
+      too_frequent: 429,
+      message_too_short: 400,
+    };
+    const msg: Record<typeof r.code, string> = {
+      not_live: "Сейчас нет активного стрима",
+      platform_mismatch: "Платформа сообщения не совпадает с текущим стримом",
+      watch_required: "Сначала зайдите на стрим",
+      too_frequent: "Не чаще 1 сообщения в минуту для зачёта",
+      message_too_short: "Сообщение слишком короткое",
+    };
+    return reply.status(map[r.code]).send({ error: { code: r.code, message: msg[r.code] } });
+  }
+  return r;
+});
+
+const taskEvidenceBody = z.object({
+  stage: z.number().int().min(1).max(2),
+  images: z.array(z.string().min(10)).min(1).max(4),
+  note: z.string().max(500).optional().nullable(),
+});
+
+function isValidEvidenceImage(raw: string): boolean {
+  if (/^https?:\/\//i.test(raw)) return raw.length <= 2000;
+  return /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(raw) && raw.length <= 4_000_000;
+}
+
+app.post("/api/v1/tasks/:id/evidence", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  const taskId = (req.params as { id: string }).id;
+  const parsed = taskEvidenceBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return reply.status(400).send({
+      error: { code: "bad_request", message: "Неверный формат evidence" },
+    });
+  }
+  const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
+  if (!task) {
+    return reply.status(404).send({ error: { code: "task_not_found", message: "Задание не найдено" } });
+  }
+  const taskMeta = (task.meta as Record<string, unknown> | null) ?? null;
+  if (!taskMeta || taskMeta.requiresEvidence !== true) {
+    return reply.status(400).send({
+      error: { code: "evidence_not_required", message: "Для этого задания evidence не требуется" },
+    });
+  }
+  if (parsed.data.images.some((img) => !isValidEvidenceImage(img))) {
+    return reply.status(400).send({
+      error: { code: "invalid_image", message: "Разрешены только http(s) URL или data:image/* base64" },
+    });
+  }
+  await db
+    .insert(taskEvidence)
+    .values({
+      userId,
+      taskId,
+      stage: parsed.data.stage,
+      images: parsed.data.images,
+      note: parsed.data.note?.trim() || null,
+      status: "submitted",
+      adminNote: null,
+      reviewedAt: null,
+      reviewedBy: null,
+    })
+    .onConflictDoUpdate({
+      target: [taskEvidence.userId, taskEvidence.taskId, taskEvidence.stage],
+      set: {
+        images: parsed.data.images,
+        note: parsed.data.note?.trim() || null,
+        status: "submitted",
+        adminNote: null,
+        reviewedAt: null,
+        reviewedBy: null,
+        updatedAt: sql`now()`,
+      },
+    });
+  return { ok: true };
 });
 
 app.post("/api/v1/shop/purchase", async (req, reply) => {

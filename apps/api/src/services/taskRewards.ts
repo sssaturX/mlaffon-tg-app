@@ -13,6 +13,8 @@ export async function grantTaskReward(params: {
   periodKey: string;
 }): Promise<{ ok: true; coins: number; reward: number }> {
   const { userId, task, periodKey } = params;
+  const rewardPlatform: "twitch" | "kick" | "split" =
+    task.platform === "twitch" ? "twitch" : task.platform === "kick" ? "kick" : "split";
 
   const [b] = await db
     .select({ lifetimeEarned: userBalances.lifetimeEarned })
@@ -100,6 +102,8 @@ export async function grantTaskReward(params: {
         .set({
           status: "completed",
           lastError: null,
+          rewardGranted: credit.creditedAmount,
+          rewardPlatform,
           updatedAt: sql`now()`,
         })
         .where(eq(userTasks.id, existing.id));
@@ -109,6 +113,8 @@ export async function grantTaskReward(params: {
         taskId: task.id,
         status: "completed",
         periodKey,
+        rewardGranted: credit.creditedAmount,
+        rewardPlatform,
       });
     }
   } catch {

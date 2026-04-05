@@ -118,6 +118,12 @@ type AdminDropStatus = {
     startedAt: string;
     endsAt: string;
   } | null;
+  userStats: Array<{
+    userId: string;
+    username: string | null;
+    firstName: string | null;
+    dropsWon: number;
+  }>;
 };
 
 type BanAppealRow = {
@@ -143,6 +149,20 @@ type AdminTaskRow = {
   validationType: string;
   meta: unknown;
   active: boolean;
+};
+
+type AdminTaskEvidenceRow = {
+  id: string;
+  userId: string;
+  taskId: string;
+  taskTitle: string;
+  stage: number;
+  status: string;
+  images: string[];
+  note: string | null;
+  adminNote: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
 };
 
 type PredictionPlatformRow = {
@@ -269,6 +289,7 @@ export function App() {
   const [liveStartVpn, setLiveStartVpn] = useState("");
 
   const [adminTasks, setAdminTasks] = useState<AdminTaskRow[] | null>(null);
+  const [taskEvidenceRows, setTaskEvidenceRows] = useState<AdminTaskEvidenceRow[] | null>(null);
   const [taskEditingId, setTaskEditingId] = useState<string | null>(null);
   const [taskFormId, setTaskFormId] = useState("");
   const [taskFormTitle, setTaskFormTitle] = useState("");
@@ -304,6 +325,7 @@ export function App() {
   const [dropStatusLoading, setDropStatusLoading] = useState(false);
   const [liveLoading, setLiveLoading] = useState(false);
   const [tasksLoading, setTasksLoading] = useState(false);
+  const [taskEvidenceLoading, setTaskEvidenceLoading] = useState(false);
   const [appealsLoading, setAppealsLoading] = useState(false);
   const [predictionPlatformsLoading, setPredictionPlatformsLoading] = useState(false);
   const [predictionsLoading, setPredictionsLoading] = useState(false);
@@ -441,7 +463,7 @@ export function App() {
       setDropStatusLoading(false);
       return;
     }
-    setDropStatus({ active: j.active, drop: j.drop ?? null });
+    setDropStatus({ active: j.active, drop: j.drop ?? null, userStats: j.userStats ?? [] });
     setDropStatusLoading(false);
   }, [token, authHeaders]);
 
@@ -482,6 +504,26 @@ export function App() {
     }
     setAdminTasks(j.tasks ?? []);
     setTasksLoading(false);
+  }, [token, authHeaders]);
+
+  const loadTaskEvidence = useCallback(async () => {
+    if (!token) return;
+    setTaskEvidenceLoading(true);
+    const r = await fetch(`${apiBase()}/api/admin/tasks/evidence?status=submitted`, {
+      headers: authHeaders(),
+    });
+    const j = (await r.json()) as {
+      evidence?: AdminTaskEvidenceRow[];
+      error?: { message?: string };
+    };
+    if (!r.ok) {
+      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+      if (r.status === 401) setToken(null);
+      setTaskEvidenceLoading(false);
+      return;
+    }
+    setTaskEvidenceRows(j.evidence ?? []);
+    setTaskEvidenceLoading(false);
   }, [token, authHeaders]);
 
   const loadPredictionPlatforms = useCallback(async () => {
@@ -548,8 +590,11 @@ export function App() {
   }, [token, tab, loadLiveBroadcast]);
 
   useEffect(() => {
-    if (token && tab === "tasks") void loadAdminTasks();
-  }, [token, tab, loadAdminTasks]);
+    if (token && tab === "tasks") {
+      void loadAdminTasks();
+      void loadTaskEvidence();
+    }
+  }, [token, tab, loadAdminTasks, loadTaskEvidence]);
 
   useEffect(() => {
     if (token && tab === "predictions") {
@@ -616,7 +661,7 @@ export function App() {
           return;
         }
         if (tab === "tasks") {
-          await loadAdminTasks();
+          await Promise.all([loadAdminTasks(), loadTaskEvidence()]);
           return;
         }
         if (tab === "appeals") {
@@ -651,6 +696,7 @@ export function App() {
     loadDropStatus,
     loadLiveBroadcast,
     loadAdminTasks,
+    loadTaskEvidence,
     loadBanAppeals,
     loadPredictionPlatforms,
     loadPredictions,
@@ -1336,12 +1382,7 @@ export function App() {
                     <tr>
                       <th>Пользователь</th>
                       <th>TG ID</th>
-                      <th>Всего монет</th>
-                      <th>Twitch</th>
-                      <th>Kick</th>
-                      <th>Заработано всего</th>
-                      <th>Twitch всего</th>
-                      <th>Kick всего</th>
+                      <th>Текущий баланс</th>
                       <th>Рефералов</th>
                       <th>Регистрация</th>
                       <th>Бан</th>
@@ -1362,11 +1403,6 @@ export function App() {
                         </td>
                         <td className="mono">{u.telegramId}</td>
                         <td>{u.coins.toLocaleString("ru-RU")}</td>
-                        <td>{u.twitchCoins.toLocaleString("ru-RU")}</td>
-                        <td>{u.kickCoins.toLocaleString("ru-RU")}</td>
-                        <td>{u.lifetimeEarned.toLocaleString("ru-RU")}</td>
-                        <td>{u.twitchLifetimeEarned.toLocaleString("ru-RU")}</td>
-                        <td>{u.kickLifetimeEarned.toLocaleString("ru-RU")}</td>
                         <td>{u.referralCount}</td>
                         <td className="muted admin-table-nowrap">
                           {new Date(u.createdAt).toLocaleString("ru-RU")}</td>
@@ -2015,6 +2051,108 @@ export function App() {
               </ul>
             </>
           )}
+          <h3 className="admin-mt-0">BR / task evidence (pending)</h3>
+          {taskEvidenceRows === null ? (
+            <AdminSkeletonRows rows={2} />
+          ) : taskEvidenceRows.length === 0 ? (
+            <p className="muted">Нет заявок на проверку.</p>
+          ) : (
+            <>
+              {taskEvidenceLoading ? <p className="muted admin-refreshing">Обновляем evidence…</p> : null}
+              <ul className="list">
+                {taskEvidenceRows.map((ev) => (
+                  <li key={ev.id}>
+                    <div className="admin-gw-row">
+                      <div className="admin-gw-main">
+                        <strong>{ev.taskTitle}</strong>{" "}
+                        <span className="muted">
+                          <code>{ev.taskId}</code> · stage {ev.stage} · user {ev.userId.slice(0, 8)}…
+                        </span>
+                        <div className="muted admin-muted-gap">
+                          {ev.images.length} изображений · {new Date(ev.createdAt).toLocaleString("ru-RU")}
+                        </div>
+                        {ev.note ? <p className="muted admin-m-0">{ev.note}</p> : null}
+                        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                          {ev.images.map((img, idx) => (
+                            <a key={idx} href={img} target="_blank" rel="noreferrer" className="secondary">
+                              image {idx + 1}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="admin-actions">
+                        <button
+                          type="button"
+                          className="primary"
+                          disabled={loading}
+                          onClick={async () => {
+                            if (!token) return;
+                            setLoading(true);
+                            setErr(null);
+                            try {
+                              const r = await fetch(
+                                `${apiBase()}/api/admin/tasks/evidence/${encodeURIComponent(ev.id)}`,
+                                {
+                                  method: "PATCH",
+                                  headers: authHeaders(true),
+                                  body: JSON.stringify({ status: "approved" }),
+                                }
+                              );
+                              const j = (await r.json()) as { error?: { message?: string } };
+                              if (!r.ok) {
+                                setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                return;
+                              }
+                              await loadTaskEvidence();
+                            } catch {
+                              setErr("Сеть недоступна");
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                        >
+                          Одобрить
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={loading}
+                          onClick={async () => {
+                            if (!token) return;
+                            const note = window.prompt("Причина отклонения (опционально)") ?? "";
+                            setLoading(true);
+                            setErr(null);
+                            try {
+                              const r = await fetch(
+                                `${apiBase()}/api/admin/tasks/evidence/${encodeURIComponent(ev.id)}`,
+                                {
+                                  method: "PATCH",
+                                  headers: authHeaders(true),
+                                  body: JSON.stringify({ status: "rejected", adminNote: note }),
+                                }
+                              );
+                              const j = (await r.json()) as { error?: { message?: string } };
+                              if (!r.ok) {
+                                setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                return;
+                              }
+                              await loadTaskEvidence();
+                            } catch {
+                              setErr("Сеть недоступна");
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                        >
+                          Отклонить
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </>
       ) : null}
 
@@ -2347,6 +2485,25 @@ export function App() {
                     "нет активного дропа"
                   )}
                 </p>
+              </div>
+              <div className="card stack">
+                <p className="admin-m-0">
+                  <strong>Пользователи по дропам</strong>
+                </p>
+                {dropStatus.userStats.length === 0 ? (
+                  <p className="muted admin-m-0">Пока нет победителей дропов.</p>
+                ) : (
+                  <ul className="list">
+                    {dropStatus.userStats.map((u) => (
+                      <li key={u.userId}>
+                        <strong>
+                          {u.username ? `@${u.username}` : u.firstName || `${u.userId.slice(0, 8)}…`}
+                        </strong>{" "}
+                        · дропов получено: {u.dropsWon}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </>
           )}

@@ -32,6 +32,17 @@ export interface TaskDto {
   verifyLabel?: string | null;
   /** Справка в стиле отдельной модалки (из meta.help). */
   help?: TaskHelpHint | null;
+  /** Единый прогресс для цепочек (invite/streams/messages/subscriptions). */
+  progressCurrent?: number;
+  progressTarget?: number;
+  progressLabel?: string | null;
+  /** Логическая категория цепочки, чтобы UI не дёргался при замене этапа. */
+  chainKey?: string | null;
+  /** Для визуального выделения сложных задач (например BR). */
+  hard?: boolean;
+  /** Для staged hard-задач (пример: 0/2, 1/2, 2/2). */
+  hardStageCurrent?: number;
+  hardStageTotal?: number;
 }
 
 export type UserTaskStatus =

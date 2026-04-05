@@ -14,6 +14,12 @@ export const taskMetaSchema = z
         channel_slug: z.string().min(1).optional(),
       })
       .optional(),
+    telegram: z
+      .object({
+        kind: z.enum(["channel_member", "chat_member"]),
+        chat_id: z.string().min(2),
+      })
+      .optional(),
   })
   .optional();
 

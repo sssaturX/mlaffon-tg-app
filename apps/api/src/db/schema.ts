@@ -167,6 +167,8 @@ export const userTasks = pgTable(
       .references(() => tasks.id, { onDelete: "cascade" }),
     status: text("status").notNull(),
     periodKey: text("period_key"),
+    rewardGranted: integer("reward_granted").notNull().default(0),
+    rewardPlatform: text("reward_platform"),
     lastError: text("last_error"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -177,6 +179,84 @@ export const userTasks = pgTable(
   },
   (t) => [
     uniqueIndex("user_tasks_unique_daily").on(t.userId, t.taskId, t.periodKey),
+  ]
+);
+
+export const taskStreamMessages = pgTable(
+  "task_stream_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    broadcastId: text("broadcast_id").notNull(),
+    minuteKey: text("minute_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("task_stream_messages_user_platform_minute_uidx").on(
+      t.userId,
+      t.platform,
+      t.minuteKey
+    ),
+    index("task_stream_messages_user_platform_idx").on(t.userId, t.platform),
+  ]
+);
+
+export const taskEvidence = pgTable(
+  "task_evidence",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    stage: integer("stage").notNull().default(1),
+    status: text("status").notNull().default("submitted"),
+    images: jsonb("images").notNull(),
+    note: text("note"),
+    adminNote: text("admin_note"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedBy: text("reviewed_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("task_evidence_user_task_stage_uidx").on(t.userId, t.taskId, t.stage),
+    index("task_evidence_task_status_idx").on(t.taskId, t.status),
+  ]
+);
+
+export const userSecurityFingerprints = pgTable(
+  "user_security_fingerprints",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    ip: text("ip").notNull(),
+    deviceHash: text("device_hash").notNull(),
+    userAgent: text("user_agent"),
+    seenCount: integer("seen_count").notNull().default(1),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("user_security_fingerprint_unique").on(t.userId, t.ip, t.deviceHash),
+    index("user_security_fingerprint_device_idx").on(t.deviceHash),
   ]
 );
 

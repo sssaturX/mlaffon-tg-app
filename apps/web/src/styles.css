@@ -983,6 +983,11 @@ select:focus-visible {
   font-size: var(--text-caption);
 }
 
+.task-card__status--hard {
+  color: #f87171;
+  font-weight: 700;
+}
+
 /* Shell */
 .app-shell {
   min-height: 100vh;
@@ -1715,6 +1720,33 @@ h3 {
   font-size: 13px;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.task-progress {
+  margin-top: 10px;
+}
+
+.task-progress__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.task-progress__bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.task-progress__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #5eead4);
+  transition: width 220ms ease-out;
 }
 
 .task-card .primary {

@@ -6,7 +6,7 @@
 | [Caddyfile.manual-certs](Caddyfile.manual-certs) | Тот же сайт, но **свои** `fullchain.pem` / `privkey.pem` (уже выданные сертификаты) |
 | [mlaffon-api.service](mlaffon-api.service) | systemd: API |
 | [mlaffon-worker.service](mlaffon-worker.service) | systemd: BullMQ worker |
-| [redeploy.sh](redeploy.sh) | **Быстрый деплой на сервере**: `git pull`, `docker compose up -d postgres redis` + ожидание health, `npm ci`, **дописывает `VAPID_*` в `apps/api/.env`** (subject по умолчанию `mailto:itoly569@gmail.com`, ключи из `deploy.env` или уже в `.env`, иначе генерация), сборка, `db:push` (с retry), `chmod`, restart API/worker |
+| [redeploy.sh](redeploy.sh) | **Быстрый деплой на сервере**: `git pull`, `docker compose up -d postgres redis` + ожидание health, `npm ci`, **дописывает `VAPID_*` в `apps/api/.env`** (subject по умолчанию `mailto:itoly569@gmail.com`, ключи из `deploy.env` или уже в `.env`, иначе генерация), сборка, `db:push` + `db:seed` (оба с retry), `chmod`, restart API/worker, smoke-check `/health` и `/api/v1/home/public` |
 | [deploy.env.example](deploy.env.example) | Пример `deploy/deploy.env` для `VITE_*` при сборке |
 
 **Админка не логинится:** в `apps/api/.env` должны быть заданы `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PASSPHRASE` (без них API отвечает 503). После правки `.env`: `sudo systemctl restart mlaffon-api`. Сборка админки шлёт запросы на `/api` **того же хоста** `admin.…` (Caddy проксирует на API) — отдельный `VITE_API_ORIGIN` на проде для поддомена не обязателен.
@@ -59,7 +59,9 @@
 ### Полезные флаги для `redeploy.sh`
 
 - `DEPLOY_SKIP_DB=1` — пропустить `db:push`
-- `DEPLOY_DB_SEED=1` — выполнить `db:seed` после `db:push`
+- `DEPLOY_DB_SEED=0` — пропустить `db:seed` (по умолчанию `db:seed` выполняется)
 - `DEPLOY_SKIP_INFRA=1` — не запускать `docker compose up -d postgres redis`
 - `DEPLOY_DB_RETRIES=5` и `DEPLOY_DB_RETRY_DELAY=3` — retry для `db:push`
+- `DEPLOY_DB_SEED_RETRIES=3` и `DEPLOY_DB_SEED_RETRY_DELAY=3` — retry для `db:seed`
 - `DEPLOY_CADDY=1` — обновить `/etc/caddy/Caddyfile` и reload Caddy
+- `DEPLOY_SYSTEMD_DAEMON_RELOAD=1` — выполнить `systemctl daemon-reload` перед restart сервисов

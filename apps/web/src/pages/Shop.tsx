@@ -28,7 +28,6 @@ export default function Shop() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
-  const [tab, setTab] = useState<"shop" | "cases">("shop");
 
   const load = useCallback(async () => {
     const r = await api<{ items: Item[] }>("/api/v1/shop/items");
@@ -82,31 +81,11 @@ export default function Shop() {
 
   return (
     <div>
-      <div className="segment" role="tablist" aria-label="Раздел магазина">
-        <button
-          type="button"
-          className={tab === "shop" ? "on" : ""}
-          onClick={() => setTab("shop")}
-        >
-          Магазин
-        </button>
-        <button
-          type="button"
-          className={tab === "cases" ? "on" : ""}
-          onClick={() => setTab("cases")}
-          disabled
-          title="Скоро"
-        >
-          Кейсы
-        </button>
-      </div>
-
-      {tab === "cases" ? (
-        <p className="muted">Раздел «Кейсы» скоро появится.</p>
-      ) : loading && items.length === 0 ? (
+      {loading && items.length === 0 ? (
         <PageSkeleton />
       ) : (
         <>
+          <p className="muted shop-intro">Ассортимент магазина будет пополняться.</p>
           <p className="muted shop-intro">
             Оплата с баланса{" "}
             {activePlatform === "twitch" ? "Twitch" : "Kick"} (переключатель в
@@ -117,8 +96,34 @@ export default function Shop() {
           {(() => {
             const featured = filtered.length > 1 ? filtered[0] : null;
             const gridItems = featured ? filtered.slice(1) : filtered;
+            const twitchShowcase = [
+              "VIP в чате",
+              "Battle Pass / эквивалент",
+              "Пополнение Steam (500₽)",
+              "VPN / прокси (опционально)",
+            ];
+            const kickShowcase = ["VIP в чате", "Бонуска за ??"];
             return (
               <>
+                <div className="card stack">
+                  <strong>Twitch магазин</strong>
+                  <p className="muted shop-intro">Плановые позиции:</p>
+                  <ul className="list">
+                    {twitchShowcase.map((row) => (
+                      <li key={row}>{row}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="card stack">
+                  <strong>Kick магазин</strong>
+                  <p className="muted shop-intro">Плановые позиции:</p>
+                  <ul className="list">
+                    {kickShowcase.map((row) => (
+                      <li key={row}>{row}</li>
+                    ))}
+                  </ul>
+                </div>
+
                 {featured && (
                   <div className="card shop-featured card--tint">
                     <p className="muted shop-featured__label">Рекомендуем</p>

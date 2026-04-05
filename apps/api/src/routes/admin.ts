@@ -10,6 +10,8 @@ import {
   users,
   userBalances,
   giveawayParticipants,
+  taskEvidence,
+  tasks,
 } from "../db/schema.js";
 import {
   drawGiveawayWinners,
@@ -592,6 +594,71 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (!requireAdmin(req, reply)) return;
     const rows = await listTasksAdmin();
     return { tasks: rows };
+  });
+
+  app.get("/api/admin/tasks/evidence", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const q = req.query as { status?: string };
+    const status = (q.status ?? "").trim();
+    const rows = await db
+      .select({
+        id: taskEvidence.id,
+        userId: taskEvidence.userId,
+        taskId: taskEvidence.taskId,
+        stage: taskEvidence.stage,
+        status: taskEvidence.status,
+        images: taskEvidence.images,
+        note: taskEvidence.note,
+        adminNote: taskEvidence.adminNote,
+        reviewedAt: taskEvidence.reviewedAt,
+        createdAt: taskEvidence.createdAt,
+        taskTitle: tasks.title,
+      })
+      .from(taskEvidence)
+      .innerJoin(tasks, eq(taskEvidence.taskId, tasks.id))
+      .where(status ? eq(taskEvidence.status, status) : sql`true`)
+      .orderBy(desc(taskEvidence.createdAt));
+    return {
+      evidence: rows.map((r) => ({
+        ...r,
+        reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    };
+  });
+
+  const reviewEvidenceBody = z.object({
+    status: z.enum(["approved", "rejected"]),
+    adminNote: z.string().max(1000).optional().nullable(),
+  });
+
+  app.patch("/api/admin/tasks/evidence/:id", async (req, reply) => {
+    const adminEmail = requireAdmin(req, reply);
+    if (!adminEmail) return;
+    const id = (req.params as { id: string }).id;
+    const parsed = reviewEvidenceBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: "Передайте status и optional adminNote" },
+      });
+    }
+    const [u] = await db
+      .update(taskEvidence)
+      .set({
+        status: parsed.data.status,
+        adminNote: parsed.data.adminNote?.trim() || null,
+        reviewedBy: adminEmail,
+        reviewedAt: sql`now()`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(taskEvidence.id, id))
+      .returning({ id: taskEvidence.id });
+    if (!u) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Evidence не найден" },
+      });
+    }
+    return { ok: true };
   });
 
   app.post("/api/admin/tasks", async (req, reply) => {

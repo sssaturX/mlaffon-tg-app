@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { dropUserStates, drops, platformAccounts } from "../db/schema.js";
+import { dropUserStates, drops, platformAccounts, users } from "../db/schema.js";
 import { applyCredit, applyCreditSplit } from "./economy.js";
 import {
   publishBroadcastEvent,
@@ -469,7 +469,27 @@ export async function getAdminDropStatus(): Promise<{
     startedAt: string;
     endsAt: string;
   } | null;
+  userStats: Array<{
+    userId: string;
+    username: string | null;
+    firstName: string | null;
+    dropsWon: number;
+  }>;
 }> {
+  const userStatsRows = await db
+    .select({
+      userId: dropUserStates.userId,
+      username: users.username,
+      firstName: users.firstName,
+      dropsWon: sql<number>`count(*)::int`,
+    })
+    .from(dropUserStates)
+    .innerJoin(users, eq(users.id, dropUserStates.userId))
+    .where(eq(dropUserStates.won, true))
+    .groupBy(dropUserStates.userId, users.username, users.firstName)
+    .orderBy(sql`count(*) desc`, users.createdAt)
+    .limit(30);
+
   const now = new Date();
   const [d] = await db
     .select()
@@ -478,7 +498,18 @@ export async function getAdminDropStatus(): Promise<{
     .orderBy(desc(drops.startedAt))
     .limit(1);
 
-  if (!d) return { active: false, drop: null };
+  if (!d) {
+    return {
+      active: false,
+      drop: null,
+      userStats: userStatsRows.map((r) => ({
+        userId: r.userId,
+        username: r.username ?? null,
+        firstName: r.firstName ?? null,
+        dropsWon: r.dropsWon ?? 0,
+      })),
+    };
+  }
 
   return {
     active: true,
@@ -493,5 +524,11 @@ export async function getAdminDropStatus(): Promise<{
       startedAt: d.startedAt.toISOString(),
       endsAt: d.endsAt.toISOString(),
     },
+    userStats: userStatsRows.map((r) => ({
+      userId: r.userId,
+      username: r.username ?? null,
+      firstName: r.firstName ?? null,
+      dropsWon: r.dropsWon ?? 0,
+    })),
   };
 }

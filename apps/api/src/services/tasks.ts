@@ -1,6 +1,16 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { tasks, userBalances, userTasks } from "../db/schema.js";
+import {
+  platformAccounts,
+  referrals,
+  taskEvidence,
+  taskStreamMessages,
+  tasks,
+  transactions,
+  userBalances,
+  userStreamStreaks,
+  userTasks,
+} from "../db/schema.js";
 import { utcDateString } from "./streak.js";
 import { canCompletePlatformTask } from "../platforms/registry.js";
 import { computeLevel, computeRewardMultiplier } from "../config.js";
@@ -10,17 +20,271 @@ import { reverseTaskRewardCredit } from "./taskRewardCompensation.js";
 import { getTaskVerifyQueue } from "../queue/bullmq.js";
 import type { TaskDto, UserTaskStatus } from "shared";
 import { extractTaskUiFields } from "./taskUiMeta.js";
+import { verifyPlatformTask } from "./taskVerifyLogic.js";
 
 function periodKeyForTask(task: { type: string }): string {
   if (task.type === "daily") return utcDateString();
   return "once";
 }
 
+type ProgressSnapshot = {
+  referralsTotal: number;
+  twitchStreak: number;
+  kickStreak: number;
+  linkedTwitch: boolean;
+  linkedKick: boolean;
+  twitchMessages: number;
+  kickMessages: number;
+};
+
+function toTaskMeta(taskMeta: unknown): Record<string, unknown> {
+  if (taskMeta && typeof taskMeta === "object") return taskMeta as Record<string, unknown>;
+  return {};
+}
+
+function asString(v: unknown): string | null {
+  return typeof v === "string" && v.trim().length > 0 ? v : null;
+}
+
+function asNumber(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function readProgress(
+  meta: Record<string, unknown>,
+  snapshot: ProgressSnapshot
+): { current: number; target: number; label: string | null } | null {
+  const source = asString(meta.progressSource);
+  const targetRaw = asNumber(meta.targetValue);
+  if (!source || !targetRaw || targetRaw <= 0) return null;
+  const target = Math.floor(targetRaw);
+  let current = 0;
+  let label: string | null = null;
+  if (source === "referrals_total") {
+    current = snapshot.referralsTotal;
+    label = "Приглашено";
+  } else if (source === "streak_twitch") {
+    current = snapshot.twitchStreak;
+    label = "Стрик Twitch";
+  } else if (source === "streak_kick") {
+    current = snapshot.kickStreak;
+    label = "Стрик Kick";
+  } else if (source === "linked_twitch") {
+    current = snapshot.linkedTwitch ? 1 : 0;
+    label = "Привязка Twitch";
+  } else if (source === "linked_kick") {
+    current = snapshot.linkedKick ? 1 : 0;
+    label = "Привязка Kick";
+  } else if (source === "stream_messages_twitch") {
+    current = snapshot.twitchMessages;
+    label = "Сообщения";
+  } else if (source === "stream_messages_kick") {
+    current = snapshot.kickMessages;
+    label = "Сообщения";
+  } else {
+    return null;
+  }
+  const customLabel = asString(meta.progressLabel);
+  if (customLabel) label = customLabel;
+  return { current, target, label };
+}
+
+async function buildProgressSnapshot(userId: string): Promise<ProgressSnapshot> {
+  const [refRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(referrals)
+    .where(eq(referrals.referrerId, userId));
+  const [streak] = await db
+    .select({
+      twitchCurrent: userStreamStreaks.twitchCurrent,
+      kickCurrent: userStreamStreaks.kickCurrent,
+    })
+    .from(userStreamStreaks)
+    .where(eq(userStreamStreaks.userId, userId))
+    .limit(1);
+  const linked = await db
+    .select({ platform: platformAccounts.platform })
+    .from(platformAccounts)
+    .where(eq(platformAccounts.userId, userId));
+  const [twMsg] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(taskStreamMessages)
+    .where(
+      and(
+        eq(taskStreamMessages.userId, userId),
+        eq(taskStreamMessages.platform, "twitch")
+      )
+    );
+  const [kickMsg] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(taskStreamMessages)
+    .where(
+      and(eq(taskStreamMessages.userId, userId), eq(taskStreamMessages.platform, "kick"))
+    );
+  const linkedSet = new Set(linked.map((r) => r.platform));
+  return {
+    referralsTotal: refRow?.count ?? 0,
+    twitchStreak: streak?.twitchCurrent ?? 0,
+    kickStreak: streak?.kickCurrent ?? 0,
+    linkedTwitch: linkedSet.has("twitch"),
+    linkedKick: linkedSet.has("kick"),
+    twitchMessages: twMsg?.c ?? 0,
+    kickMessages: kickMsg?.c ?? 0,
+  };
+}
+
+function rewardPlatformLabel(taskPlatform: string): "twitch" | "kick" | "split" {
+  if (taskPlatform === "twitch") return "twitch";
+  if (taskPlatform === "kick") return "kick";
+  return "split";
+}
+
+async function enforceTaskRevocationIfNeeded(
+  userId: string,
+  taskRow: typeof tasks.$inferSelect,
+  periodKey: string
+): Promise<void> {
+  const meta = toTaskMeta(taskRow.meta);
+  if (meta.revokeOnUnsubscribe !== true) return;
+  const [ut] = await db
+    .select()
+    .from(userTasks)
+    .where(
+      and(
+        eq(userTasks.userId, userId),
+        eq(userTasks.taskId, taskRow.id),
+        eq(userTasks.periodKey, periodKey),
+        eq(userTasks.status, "completed"),
+        gt(userTasks.rewardGranted, 0)
+      )
+    )
+    .limit(1);
+  if (!ut) return;
+
+  const verify = await verifyPlatformTask(userId, taskRow);
+  if (verify.ok) return;
+
+  await db.transaction(async (tx) => {
+    const [fresh] = await tx
+      .select()
+      .from(userTasks)
+      .where(eq(userTasks.id, ut.id))
+      .limit(1);
+    if (!fresh || fresh.status !== "completed" || (fresh.rewardGranted ?? 0) <= 0) return;
+    const revokeKey = `task_revoke:${userId}:${taskRow.id}:${periodKey}`;
+    const [dup] = await tx
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(eq(transactions.idempotencyKey, revokeKey))
+      .limit(1);
+    if (dup) return;
+
+    const [bal] = await tx
+      .select({
+        coins: userBalances.coins,
+        twitchCoins: userBalances.twitchCoins,
+        kickCoins: userBalances.kickCoins,
+      })
+      .from(userBalances)
+      .where(eq(userBalances.userId, userId))
+      .limit(1);
+    if (!bal) return;
+
+    const granted = fresh.rewardGranted ?? 0;
+    const p = fresh.rewardPlatform ?? rewardPlatformLabel(taskRow.platform);
+    const twNeed = p === "twitch" ? granted : p === "split" ? Math.floor(granted / 2) : 0;
+    const kickNeed = p === "kick" ? granted : p === "split" ? granted - Math.floor(granted / 2) : 0;
+    const twDeduct = Math.max(0, Math.min(bal.twitchCoins ?? 0, twNeed));
+    const kickDeduct = Math.max(0, Math.min(bal.kickCoins ?? 0, kickNeed));
+    const totalDeduct = twDeduct + kickDeduct;
+    if (totalDeduct > 0) {
+      await tx.insert(transactions).values({
+        userId,
+        amount: -totalDeduct,
+        kind: "task_revoke",
+        referenceType: "task",
+        referenceId: taskRow.id,
+        idempotencyKey: revokeKey,
+        meta: { reason: verify.reason, twDeduct, kickDeduct },
+      });
+      await tx
+        .update(userBalances)
+        .set({
+          twitchCoins: sql`${userBalances.twitchCoins} - ${twDeduct}`,
+          kickCoins: sql`${userBalances.kickCoins} - ${kickDeduct}`,
+          coins: sql`${userBalances.coins} - ${totalDeduct}`,
+        })
+        .where(eq(userBalances.userId, userId));
+    }
+    await tx
+      .update(userTasks)
+      .set({
+        status: "available",
+        lastError: "revoked_unsubscribed",
+        rewardGranted: 0,
+        rewardPlatform: null,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(userTasks.id, fresh.id));
+  });
+}
+
 export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
   const all = await db.select().from(tasks).where(eq(tasks.active, true));
+  for (const t of all) {
+    const pk = periodKeyForTask(t);
+    await enforceTaskRevocationIfNeeded(userId, t, pk);
+  }
+  const progressSnapshot = await buildProgressSnapshot(userId);
+  const chainTasks = new Map<string, Array<typeof all[number]>>();
+  const standaloneTasks: Array<typeof all[number]> = [];
+  for (const t of all) {
+    const meta = toTaskMeta(t.meta);
+    const chainKey = asString(meta.chainKey);
+    if (!chainKey) {
+      standaloneTasks.push(t);
+      continue;
+    }
+    const arr = chainTasks.get(chainKey) ?? [];
+    arr.push(t);
+    chainTasks.set(chainKey, arr);
+  }
+  const selectedTasks: Array<typeof all[number]> = [...standaloneTasks];
+  for (const [, group] of chainTasks) {
+    const sorted = [...group].sort((a, b) => {
+      const ma = toTaskMeta(a.meta);
+      const mb = toTaskMeta(b.meta);
+      const oa = asNumber(ma.chainOrder) ?? 0;
+      const ob = asNumber(mb.chainOrder) ?? 0;
+      if (oa !== ob) return oa - ob;
+      const ta = asNumber(ma.targetValue) ?? 0;
+      const tb = asNumber(mb.targetValue) ?? 0;
+      return ta - tb;
+    });
+    let chosen = sorted[sorted.length - 1]!;
+    for (const stage of sorted) {
+      const pk = periodKeyForTask(stage);
+      const [ut] = await db
+        .select()
+        .from(userTasks)
+        .where(
+          and(
+            eq(userTasks.userId, userId),
+            eq(userTasks.taskId, stage.id),
+            eq(userTasks.periodKey, pk)
+          )
+        )
+        .limit(1);
+      if (ut?.status !== "completed") {
+        chosen = stage;
+        break;
+      }
+    }
+    selectedTasks.push(chosen);
+  }
 
   const rows: TaskDto[] = [];
-  for (const t of all) {
+  for (const t of selectedTasks) {
     const pk = periodKeyForTask(t);
     const [ut] = await db
       .select()
@@ -64,7 +328,11 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       }
     }
 
-    const meta = (t.meta as Record<string, unknown> | null) ?? null;
+    const meta = toTaskMeta(t.meta);
+    const progress = readProgress(meta, progressSnapshot);
+    const chainKey = asString(meta.chainKey);
+    const hardStageTotal = asNumber(meta.hardStageTotal);
+    const hardStageCurrent = asNumber(meta.hardStageCurrent);
     const ui = extractTaskUiFields(meta);
     rows.push({
       id: t.id,
@@ -82,6 +350,13 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       actionLabel: ui.actionLabel,
       verifyLabel: ui.verifyLabel,
       help: ui.help,
+      progressCurrent: progress?.current,
+      progressTarget: progress?.target,
+      progressLabel: progress?.label ?? null,
+      chainKey,
+      hard: meta.hard === true,
+      hardStageCurrent: hardStageCurrent != null ? Math.floor(hardStageCurrent) : undefined,
+      hardStageTotal: hardStageTotal != null ? Math.floor(hardStageTotal) : undefined,
     });
   }
   return rows;
@@ -147,6 +422,30 @@ export async function claimTask(
     meta: t.meta,
   });
   if (!platformOk) return { ok: false, error: "platform_required" };
+
+  const progress = readProgress(toTaskMeta(t.meta), await buildProgressSnapshot(userId));
+  if (progress && progress.current < progress.target) {
+    return { ok: false, error: "progress_not_reached" };
+  }
+
+  const meta = toTaskMeta(t.meta);
+  if (meta.requiresEvidence === true) {
+    const stageRaw = asNumber(meta.hardStageCurrent);
+    const stage = stageRaw != null ? Math.max(1, Math.floor(stageRaw) + 1) : 1;
+    const [ev] = await db
+      .select()
+      .from(taskEvidence)
+      .where(
+        and(
+          eq(taskEvidence.userId, userId),
+          eq(taskEvidence.taskId, taskId),
+          eq(taskEvidence.stage, stage)
+        )
+      )
+      .limit(1);
+    if (!ev) return { ok: false, error: "evidence_required" };
+    if (ev.status !== "approved") return { ok: false, error: "evidence_pending" };
+  }
 
   if (t.validationType === "api") {
     const jobId = `v:${userId}:${taskId}:${pk}`;
@@ -262,7 +561,13 @@ export async function claimTask(
     if (existing) {
       await db
         .update(userTasks)
-        .set({ status: "completed", lastError: null, updatedAt: sql`now()` })
+        .set({
+          status: "completed",
+          lastError: null,
+          rewardGranted: credit.creditedAmount,
+          rewardPlatform: rewardPlatformLabel(t.platform),
+          updatedAt: sql`now()`,
+        })
         .where(eq(userTasks.id, existing.id));
     } else {
       await db.insert(userTasks).values({
@@ -270,6 +575,8 @@ export async function claimTask(
         taskId,
         status: "completed",
         periodKey: pk,
+        rewardGranted: credit.creditedAmount,
+        rewardPlatform: rewardPlatformLabel(t.platform),
       });
     }
   } catch {
