@@ -31,6 +31,11 @@ export async function buildMeResponse(userId: string): Promise<{
   streakTwitch: number;
   streakKick: number;
   referralCode: string;
+  /** Ссылка для мини-приложения Telegram (`startapp=ref_*`). */
+  referralLinkMiniApp: string;
+  /** Ссылка для регистрации в браузере (`?ref=`). */
+  referralLinkWeb: string;
+  /** Дублирует referralLinkMiniApp (совместимость со старыми клиентами). */
   referralLink: string;
   referralCount: number;
   platforms: {
@@ -96,7 +101,13 @@ export async function buildMeResponse(userId: string): Promise<{
   };
 
   const bot = process.env.TELEGRAM_BOT_USERNAME ?? "YOUR_BOT";
-  const referralLink = `https://t.me/${bot}?start=ref_${u.referralCode}`;
+  const referralLinkMiniApp = `https://t.me/${bot}?startapp=ref_${u.referralCode}`;
+  const baseWeb = (process.env.PUBLIC_WEB_URL ?? "http://localhost:5173").replace(
+    /\/$/,
+    ""
+  );
+  const referralLinkWeb = `${baseWeb}/?ref=${encodeURIComponent(u.referralCode)}`;
+  const referralLink = referralLinkMiniApp;
 
   const coinsTwitch = b?.twitchCoins ?? 0;
   const coinsKick = b?.kickCoins ?? 0;
@@ -134,6 +145,8 @@ export async function buildMeResponse(userId: string): Promise<{
     streakTwitch,
     streakKick,
     referralCode: u.referralCode,
+    referralLinkMiniApp,
+    referralLinkWeb,
     referralLink,
     referralCount: Number(c),
     platforms: {

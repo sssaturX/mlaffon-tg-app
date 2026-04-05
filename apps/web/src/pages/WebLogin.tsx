@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   authLogin,
   authRegister,
   formatApiError,
   setToken,
 } from "../api";
+
+const REF_STORAGE_KEY = "mlaffon_pending_ref";
 
 type Mode = "login" | "register";
 
@@ -13,11 +16,33 @@ export function WebLogin({
 }: {
   onLoggedIn: () => void | Promise<void>;
 }) {
+  const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const q = searchParams.get("ref")?.trim();
+    if (q && q.length > 0) {
+      try {
+        sessionStorage.setItem(REF_STORAGE_KEY, q);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [searchParams]);
+
+  const pendingRef = useMemo(() => {
+    const fromUrl = searchParams.get("ref")?.trim();
+    if (fromUrl && fromUrl.length > 0) return fromUrl;
+    try {
+      return sessionStorage.getItem(REF_STORAGE_KEY)?.trim() ?? null;
+    } catch {
+      return null;
+    }
+  }, [searchParams]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,11 +51,18 @@ export function WebLogin({
     try {
       const r =
         mode === "register"
-          ? await authRegister(email, password)
+          ? await authRegister(email, password, pendingRef)
           : await authLogin(email, password);
       if (!r.ok) {
         setErr(formatApiError(r));
         return;
+      }
+      if (mode === "register") {
+        try {
+          sessionStorage.removeItem(REF_STORAGE_KEY);
+        } catch {
+          /* ignore */
+        }
       }
       setToken(r.data.token);
       await onLoggedIn();
@@ -51,6 +83,12 @@ export function WebLogin({
             Telegram — в профиле задайте email и пароль для входа в браузере.
           </p>
           {err && <p className="err">{err}</p>}
+          {mode === "register" && pendingRef ? (
+            <p className="muted small m-0">
+              Регистрация по приглашению — бонус начислится по правилам сервиса после
+              проверок.
+            </p>
+          ) : null}
           <form className="stack" onSubmit={submit}>
             <label className="stack gap-0">
               <span className="muted small">Email</span>

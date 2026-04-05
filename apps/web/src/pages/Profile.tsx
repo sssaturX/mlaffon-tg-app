@@ -96,8 +96,11 @@ export default function Profile({
     } else showToast(formatApiError(r), "error");
   }
 
-  async function copyLink() {
-    const link = me?.referralLink ?? refs?.referralLink;
+  async function copyReferral(kind: "mini" | "web") {
+    const mini =
+      me?.referralLinkMiniApp ?? refs?.referralLinkMiniApp ?? me?.referralLink ?? refs?.referralLink;
+    const web = me?.referralLinkWeb ?? refs?.referralLinkWeb;
+    const link = kind === "mini" ? mini : web;
     if (!link) return;
     try {
       await navigator.clipboard.writeText(link);
@@ -446,17 +449,46 @@ export default function Profile({
       </div>
 
       <div className="card stack">
-        <h2 className="profile-section-title">Реферальная ссылка</h2>
+        <h2 className="profile-section-title">Реферальные ссылки</h2>
         <p className="muted m-0 text-body">
-          За каждого приглашённого — бонус по правилам бота.
+          Разные ссылки для мини-приложения и для сайта — бонусы по правилам сервиса.
         </p>
         <div className="warning-box">
           У реферала должен быть публичный @username в Telegram, если это
-          требуется для квалификации.
+          требуется для квалификации. Регистрации с сайта с одного IP с реф-кодом
+          ограничены, чтобы снизить накрутку.
         </div>
+        <p className="muted small m-0 text-caption">Мини-приложение (Telegram)</p>
         <div className="referral-field">
-          <input readOnly value={me.referralLink ?? refs?.referralLink ?? ""} />
-          <button type="button" onClick={() => void copyLink()} aria-label="Копировать">
+          <input
+            readOnly
+            value={
+              me.referralLinkMiniApp ??
+              refs?.referralLinkMiniApp ??
+              me.referralLink ??
+              refs?.referralLink ??
+              ""
+            }
+          />
+          <button
+            type="button"
+            onClick={() => void copyReferral("mini")}
+            aria-label="Копировать ссылку для мини-приложения"
+          >
+            <Copy size={20} aria-hidden />
+          </button>
+        </div>
+        <p className="muted small m-0 text-caption">Сайт (браузер)</p>
+        <div className="referral-field">
+          <input
+            readOnly
+            value={me.referralLinkWeb ?? refs?.referralLinkWeb ?? ""}
+          />
+          <button
+            type="button"
+            onClick={() => void copyReferral("web")}
+            aria-label="Копировать ссылку для сайта"
+          >
             <Copy size={20} aria-hidden />
           </button>
         </div>

@@ -248,6 +248,8 @@ app.post("/api/v1/auth/telegram", async (req, reply) => {
 const webAuthBody = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+  /** Код приглашения с сайта (тот же, что в профиле; 10 символов). */
+  referralCode: z.string().max(32).optional(),
 });
 
 app.post("/api/v1/auth/register", async (req, reply) => {
@@ -261,7 +263,11 @@ app.post("/api/v1/auth/register", async (req, reply) => {
       },
     });
   }
-  const r = await registerWithEmail(parsed.data.email, parsed.data.password);
+  const refRaw = parsed.data.referralCode?.trim();
+  const r = await registerWithEmail(parsed.data.email, parsed.data.password, {
+    referralCode: refRaw && refRaw.length > 0 ? refRaw : undefined,
+    clientIp: req.ip,
+  });
   if (!r.ok) {
     if (r.code === "email_taken") {
       return reply.status(409).send({
@@ -671,6 +677,8 @@ app.get("/api/v1/referrals", async (req, reply) => {
 
   return {
     referralLink: me.referralLink,
+    referralLinkMiniApp: me.referralLinkMiniApp,
+    referralLinkWeb: me.referralLinkWeb,
     totalInvited: invited.length,
     qualifiedCount,
     invited,

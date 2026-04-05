@@ -77,6 +77,11 @@ export interface MeResponse {
   /** Дней подряд с заходом на стрим Kick (UTC). */
   streakKick: number;
   referralCode: string;
+  /** Мини-приложение: `t.me/...?startapp=ref_*` */
+  referralLinkMiniApp: string;
+  /** Сайт: главная с `?ref=` для регистрации в браузере */
+  referralLinkWeb: string;
+  /** Совместимость: то же, что referralLinkMiniApp */
   referralLink: string;
   referralCount: number;
   platforms: {
@@ -140,6 +145,8 @@ export interface ReferralRow {
 
 export interface ReferralsResponse {
   referralLink: string;
+  referralLinkMiniApp: string;
+  referralLinkWeb: string;
   totalInvited: number;
   qualifiedCount: number;
   invited: ReferralRow[];

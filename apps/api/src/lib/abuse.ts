@@ -32,3 +32,14 @@ export async function assertOAuthCallbackRate(ip: string | undefined): Promise<b
   const max = Number(process.env.ABUSE_OAUTH_CALLBACK_PER_IP_PER_MIN ?? 60);
   return n <= max;
 }
+
+/** Лимит регистраций с реф-кодом с одного IP за сутки (бонус рефералу). */
+export async function tryWebReferralRegisterByIp(ip: string): Promise<boolean> {
+  if (!ip || ip === "unknown") return true;
+  const r = getRedis();
+  const key = `ab:webref:ip:${ip}`;
+  const n = await r.incr(key);
+  if (n === 1) await r.expire(key, 86_400);
+  const max = Number(process.env.ABUSE_WEB_REF_REGISTER_PER_IP_PER_DAY ?? 10);
+  return n <= max;
+}

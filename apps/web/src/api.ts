@@ -109,10 +109,20 @@ export async function authDev(telegramId: number, username?: string) {
   });
 }
 
-export async function authRegister(email: string, password: string) {
+export async function authRegister(
+  email: string,
+  password: string,
+  referralCode?: string | null
+) {
+  const body: { email: string; password: string; referralCode?: string } = {
+    email,
+    password,
+  };
+  const c = referralCode?.trim();
+  if (c) body.referralCode = c;
   return api<{ token: string; userId: string }>("/api/v1/auth/register", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(body),
   });
 }
 

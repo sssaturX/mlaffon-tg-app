@@ -14,6 +14,34 @@ import { linkTelegramFromToken } from "./accountLink.js";
 import { applyCreditSplit } from "./economy.js";
 import { gameConfig } from "../config.js";
 
+const REFERRAL_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+/** Нормализованный 10-символьный код или null. */
+export function parseReferralCodeInput(raw: string | undefined | null): string | null {
+  const t = (raw ?? "").trim().toUpperCase();
+  if (t.length !== 10) return null;
+  for (let i = 0; i < t.length; i++) {
+    if (!REFERRAL_CODE_ALPHABET.includes(t[i]!)) return null;
+  }
+  return t;
+}
+
+/**
+ * Реферер для регистрации с сайта: валидный код, существующий пользователь,
+ * не тот же email что у пригласившего (анти self-ref).
+ */
+export async function resolveWebSignupReferrerId(
+  codeRaw: string | undefined | null,
+  refereeEmailNormalized: string
+): Promise<string | null> {
+  const code = parseReferralCodeInput(codeRaw);
+  if (!code) return null;
+  const refUser = await findByReferralCode(code);
+  if (!refUser) return null;
+  if (refUser.email && refUser.email === refereeEmailNormalized) return null;
+  return refUser.id;
+}
+
 export async function findByReferralCode(code: string) {
   const [u] = await db
     .select()
@@ -58,10 +86,12 @@ export async function ensureUserFromTelegram(
 
   let referredById: string | null = null;
   if (startParam?.startsWith("ref_")) {
-    const code = startParam.slice(4);
-    const refUser = await findByReferralCode(code);
-    if (refUser && refUser.telegramId !== telegramId) {
-      referredById = refUser.id;
+    const code = parseReferralCodeInput(startParam.slice(4));
+    if (code) {
+      const refUser = await findByReferralCode(code);
+      if (refUser && refUser.telegramId !== telegramId) {
+        referredById = refUser.id;
+      }
     }
   }
 
@@ -119,7 +149,7 @@ export async function applyReferralFromStartParam(
   startParam: string | null
 ): Promise<void> {
   if (!startParam?.startsWith("ref_")) return;
-  const code = startParam.slice(4);
+  const code = parseReferralCodeInput(startParam.slice(4));
   if (!code) return;
 
   const refUser = await findByReferralCode(code);

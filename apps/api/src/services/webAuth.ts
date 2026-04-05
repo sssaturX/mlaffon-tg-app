@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "../db/index.js";
 import {
+  referrals,
   userBalances,
   userStreaks,
   userStreamStreaks,
@@ -9,6 +10,10 @@ import {
 } from "../db/schema.js";
 import { referralCode as genReferralCode } from "../lib/nanoid.js";
 import { signSession } from "../lib/jwt.js";
+import { tryWebReferralRegisterByIp } from "../lib/abuse.js";
+import { gameConfig } from "../config.js";
+import { applyCreditSplit } from "./economy.js";
+import { resolveWebSignupReferrerId } from "./users.js";
 
 const SALT_ROUNDS = 11;
 
@@ -18,7 +23,8 @@ function normalizeEmail(email: string): string {
 
 export async function registerWithEmail(
   emailRaw: string,
-  password: string
+  password: string,
+  opts?: { referralCode?: string | null; clientIp?: string }
 ): Promise<
   | { ok: true; token: string; userId: string }
   | { ok: false; code: "email_taken" | "weak_password" }
@@ -27,6 +33,11 @@ export async function registerWithEmail(
     return { ok: false, code: "weak_password" };
   }
   const email = normalizeEmail(emailRaw);
+
+  const referredByIdCandidate = await resolveWebSignupReferrerId(
+    opts?.referralCode ?? undefined,
+    email
+  );
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
   const code = genReferralCode();
@@ -42,6 +53,7 @@ export async function registerWithEmail(
         username: localPart.slice(0, 32),
         firstName: localPart.slice(0, 64),
         referralCode: code,
+        referredById: referredByIdCandidate,
       })
       .returning({ id: users.id });
 
@@ -53,6 +65,36 @@ export async function registerWithEmail(
       twitchCurrent: 0,
       kickCurrent: 0,
     });
+
+    let referredById = referredByIdCandidate;
+    if (referredById) {
+      const ip = opts?.clientIp;
+      const ipOk =
+        !ip || ip === "unknown" ? true : await tryWebReferralRegisterByIp(ip);
+      if (!ipOk) {
+        referredById = null;
+        await db
+          .update(users)
+          .set({ referredById: null, updatedAt: sql`now()` })
+          .where(eq(users.id, userId));
+      }
+    }
+
+    if (referredById) {
+      await db.insert(referrals).values({
+        referrerId: referredById,
+        refereeId: userId,
+      });
+      const idem = `referral_referee_join:${userId}`;
+      await applyCreditSplit({
+        userId,
+        amount: gameConfig.referral.refereeBonus,
+        idempotencyKey: idem,
+        kind: "referral_referee",
+        referenceType: "referrer",
+        referenceId: referredById,
+      });
+    }
 
     const token = signSession(userId, null);
     return { ok: true, token, userId };

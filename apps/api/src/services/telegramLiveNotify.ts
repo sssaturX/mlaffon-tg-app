@@ -1,5 +1,6 @@
 /**
- * Уведомление в Telegram при старте эфира (канал/группа или указанный chat_id).
+ * Уведомление при старте эфира: тот же бот, что и `TELEGRAM_BOT_TOKEN`, шлёт в чат
+ * `TELEGRAM_LIVE_NOTIFY_CHAT_ID` (канал/группа, куда бот добавлен, или другой chat_id).
  * Кнопка открывает мини-приложение (HTTPS URL из BotFather).
  */
 export async function notifyTelegramLiveStarted(params: {
