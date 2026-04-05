@@ -724,6 +724,20 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  app.patch("/api/admin/tasks/:id/toggle", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const body = req.body as { active?: boolean } | undefined;
+    const active = body?.active !== false;
+    const ok = await setTaskActive(id, active);
+    if (!ok) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Задание не найдено" },
+      });
+    }
+    return { ok: true, active };
+  });
+
   app.get("/api/admin/ban-appeals", async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     return { appeals: await listBanAppealsAdmin() };

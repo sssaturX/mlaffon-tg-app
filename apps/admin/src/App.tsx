@@ -2034,13 +2034,15 @@ export function App() {
               {tasksLoading ? <p className="muted admin-refreshing">Обновляем задания…</p> : null}
               <ul className="list">
               {adminTasks.map((row) => (
-                <li key={row.id}>
+                <li key={row.id} style={row.active ? undefined : { opacity: 0.55 }}>
                   <div className="admin-gw-row">
                     <div className="admin-gw-main">
                       <strong>{row.title}</strong>{" "}
                       <span className="muted">
                         <code>{row.id}</code> · {row.platform} · {row.type} · {row.validationType} ·{" "}
-                        {row.active ? "вкл" : "выкл"}
+                        <span style={row.active ? { color: "#4ade80" } : { color: "#f87171", fontWeight: 700 }}>
+                          {row.active ? "вкл" : "выкл"}
+                        </span>
                       </span>
                       <div className="muted admin-muted-gap">
                         Награда {row.reward} · {row.description.slice(0, 120)}
@@ -2108,28 +2110,30 @@ export function App() {
                       <button
                         type="button"
                         className="secondary"
-                        disabled={loading || !row.active}
+                        disabled={loading}
+                        style={row.active ? undefined : { borderColor: "#4ade80", color: "#4ade80" }}
                         onClick={async () => {
-                          if (!token || !row.active) return;
-                          if (!window.confirm(`Скрыть задание «${row.id}»?`)) return;
+                          if (!token) return;
+                          const newActive = !row.active;
+                          const msg = newActive
+                            ? `Включить задание «${row.id}»?`
+                            : `Скрыть задание «${row.id}»?`;
+                          if (!window.confirm(msg)) return;
                           setLoading(true);
                           setErr(null);
                           try {
                             const r = await fetch(
-                              `${apiBase()}/api/admin/tasks/${encodeURIComponent(row.id)}`,
-                              { method: "DELETE", headers: authHeaders() }
+                              `${apiBase()}/api/admin/tasks/${encodeURIComponent(row.id)}/toggle`,
+                              {
+                                method: "PATCH",
+                                headers: authHeaders(true),
+                                body: JSON.stringify({ active: newActive }),
+                              }
                             );
                             const j = (await r.json()) as { error?: { message?: string } };
                             if (!r.ok) {
                               setErr(j.error?.message ?? `Ошибка ${r.status}`);
                               return;
-                            }
-                            if (taskEditingId === row.id) {
-                              setTaskEditingId(null);
-                              setTaskFormId("");
-                              setTaskFormTitle("");
-                              setTaskFormDescription("");
-                              setTaskFormMetaJson("{}");
                             }
                             await loadAdminTasks();
                           } catch {
@@ -2139,7 +2143,7 @@ export function App() {
                           }
                         }}
                       >
-                        Скрыть
+                        {row.active ? "Скрыть" : "Включить"}
                       </button>
                     </div>
                   </div>
