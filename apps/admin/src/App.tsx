@@ -2034,7 +2034,7 @@ export function App() {
               {tasksLoading ? <p className="muted admin-refreshing">Обновляем задания…</p> : null}
               <ul className="list">
               {adminTasks.map((row) => (
-                <li key={row.id} style={row.active ? undefined : { opacity: 0.55 }}>
+                <li key={row.id} style={row.active ? undefined : { background: "rgba(248,113,113,0.06)", borderRadius: 8, padding: "2px 0" }}>
                   <div className="admin-gw-row">
                     <div className="admin-gw-main">
                       <strong>{row.title}</strong>{" "}
