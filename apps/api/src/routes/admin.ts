@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   giveaways,
   appSettings,
   pointPlatforms,
+  platformAccounts,
   promoCodes,
   users,
   userBalances,
@@ -171,6 +172,36 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       if (r.referrerId) refMap.set(r.referrerId, r.c ?? 0);
     }
 
+    const userIds = rows.map((r) => r.id);
+    type Plat = { linked: boolean; displayName: string | null };
+    const platByUser = new Map<string, { twitch: Plat; kick: Plat }>();
+    for (const id of userIds) {
+      platByUser.set(id, {
+        twitch: { linked: false, displayName: null },
+        kick: { linked: false, displayName: null },
+      });
+    }
+    if (userIds.length > 0) {
+      const paRows = await db
+        .select({
+          userId: platformAccounts.userId,
+          platform: platformAccounts.platform,
+          displayName: platformAccounts.displayName,
+        })
+        .from(platformAccounts)
+        .where(inArray(platformAccounts.userId, userIds));
+      for (const p of paRows) {
+        const slot = platByUser.get(p.userId);
+        if (!slot) continue;
+        const name = p.displayName?.trim() || null;
+        if (p.platform === "twitch") {
+          slot.twitch = { linked: true, displayName: name };
+        } else if (p.platform === "kick") {
+          slot.kick = { linked: true, displayName: name };
+        }
+      }
+    }
+
     return {
       total: total ?? 0,
       limit,
@@ -190,6 +221,10 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         referralCount: refMap.get(u.id) ?? 0,
         banned: u.banned,
         banReason: u.banReason,
+        platforms: platByUser.get(u.id) ?? {
+          twitch: { linked: false, displayName: null },
+          kick: { linked: false, displayName: null },
+        },
       })),
     };
   });

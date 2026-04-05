@@ -58,6 +58,8 @@ type PromoRow = {
   createdAt: string;
 };
 
+type AdminUserPlatform = { linked: boolean; displayName: string | null };
+
 type AdminUserRow = {
   id: string;
   telegramId: string;
@@ -74,6 +76,10 @@ type AdminUserRow = {
   referralCount: number;
   banned?: boolean;
   banReason?: string | null;
+  platforms?: {
+    twitch: AdminUserPlatform;
+    kick: AdminUserPlatform;
+  };
 };
 
 type GiveawayParticipant = {
@@ -1387,6 +1393,7 @@ export function App() {
                     <tr>
                       <th>Пользователь</th>
                       <th>TG ID</th>
+                      <th>Платформы</th>
                       <th>Текущий баланс</th>
                       <th>Рефералов</th>
                       <th>Регистрация</th>
@@ -1407,6 +1414,31 @@ export function App() {
                           ) : null}
                         </td>
                         <td className="mono">{u.telegramId}</td>
+                        <td className="admin-user-platforms">
+                          {(() => {
+                            const p = u.platforms;
+                            const tw = p?.twitch;
+                            const ki = p?.kick;
+                            const twLabel = tw?.linked
+                              ? tw.displayName ?? "без ника"
+                              : "—";
+                            const kiLabel = ki?.linked
+                              ? ki.displayName ?? "без ника"
+                              : "—";
+                            return (
+                              <>
+                                <span className="admin-user-platforms__row">
+                                  <span className="admin-user-platforms__tag">TW</span>
+                                  {twLabel}
+                                </span>
+                                <span className="admin-user-platforms__row">
+                                  <span className="admin-user-platforms__tag">Kick</span>
+                                  {kiLabel}
+                                </span>
+                              </>
+                            );
+                          })()}
+                        </td>
                         <td>{u.coins.toLocaleString("ru-RU")}</td>
                         <td>{u.referralCount}</td>
                         <td className="muted admin-table-nowrap">

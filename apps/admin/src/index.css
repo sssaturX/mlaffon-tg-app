@@ -277,6 +277,28 @@ button:disabled {
   background: rgba(255, 255, 255, 0.03);
 }
 
+.admin-user-platforms {
+  white-space: normal;
+  max-width: 220px;
+  line-height: 1.35;
+  vertical-align: top;
+}
+
+.admin-user-platforms__row {
+  display: block;
+  font-size: 12px;
+}
+
+.admin-user-platforms__tag {
+  display: inline-block;
+  min-width: 2.5rem;
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #9aa0a6;
+  letter-spacing: 0.04em;
+}
+
 .admin-users-table .mono {
   font-family: ui-monospace, monospace;
   font-size: 12px;
