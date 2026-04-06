@@ -21,6 +21,8 @@
 #   DEPLOY_SYSTEMD_DAEMON_RELOAD=1  # перед restart выполнить daemon-reload
 #
 # Web Push: после npm ci скрипт дописывает VAPID_* в apps/api/.env.
+# Telegram: при отсутствии непустого TELEGRAM_WEBHOOK_SECRET генерирует hex и дописывает в apps/api/.env
+# (если уже есть в .env или в deploy.env — не меняет). После первой генерации обновите setWebhook.
 #
 
 set -euo pipefail
@@ -174,6 +176,41 @@ ensure_vapid_in_api_env() {
   log "обновлены VAPID_* в $envf"
 }
 
+ensure_telegram_webhook_secret_in_api_env() {
+  local envf="$REPO/apps/api/.env"
+  local sec="${TELEGRAM_WEBHOOK_SECRET:-}"
+  local generated=0
+
+  if [[ -z "$sec" ]]; then
+    local existing
+    existing="$(sed -n 's/^TELEGRAM_WEBHOOK_SECRET=//p' "$envf" 2>/dev/null | sed -n '1p' | tr -d '\r')"
+    if [[ -n "${existing// /}" ]]; then
+      sec="$existing"
+      log "TELEGRAM_WEBHOOK_SECRET уже задан в $envf"
+    else
+      log "генерация TELEGRAM_WEBHOOK_SECRET (вебхук бота)"
+      sec="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
+      generated=1
+    fi
+  else
+    log "TELEGRAM_WEBHOOK_SECRET взят из окружения (deploy.env)"
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  sed '/^TELEGRAM_WEBHOOK_SECRET=/d' "$envf" >"$tmp" || true
+  {
+    cat "$tmp"
+    echo "TELEGRAM_WEBHOOK_SECRET=${sec}"
+  } >"${envf}.new"
+  mv "${envf}.new" "$envf"
+  rm -f "$tmp"
+  log "записан TELEGRAM_WEBHOOK_SECRET в $envf"
+  if [[ "$generated" == "1" ]]; then
+    log "Telegram: выполните setWebhook с тем же secret_token (см. .env.example)"
+  fi
+}
+
 reload_caddy_if_requested() {
   if [[ "${DEPLOY_CADDY:-0}" != "1" ]]; then
     return 0
@@ -248,6 +285,7 @@ main() {
   npm ci
 
   ensure_vapid_in_api_env
+  ensure_telegram_webhook_secret_in_api_env
 
   log "npm run build (api + web + admin)"
   npm run build
