@@ -95,6 +95,9 @@ type AdminUserReferralRow = {
   createdAt: string;
 };
 
+/** `silent: true` — фоновый авто-рефреш без «Обновляем…», чтобы таблицы не прыгали. */
+type AdminFetchOpts = { silent?: boolean };
+
 type GiveawayParticipant = {
   userId: string;
   username: string;
@@ -436,242 +439,279 @@ export function App() {
     [token, authHeaders]
   );
 
-  const loadStats = useCallback(async () => {
+  const loadStats = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
-    setStatsLoading(true);
-    setErr(null);
-    const r = await fetch(`${apiBase()}/api/admin/stats`, { headers: authHeaders() });
-    const j = (await r.json()) as AdminStats & { error?: { message?: string } };
-    if (!r.ok) {
-      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-      if (r.status === 401) setToken(null);
-      setStatsLoading(false);
-      return;
-    }
-    setStats({
-      usersCount: j.usersCount,
-      coinsEarnedTotal: j.coinsEarnedTotal,
-      activeGiveaways: j.activeGiveaways,
-      giveawayEntriesTotal: j.giveawayEntriesTotal,
-    });
-    setStatsLoading(false);
-  }, [token, authHeaders]);
-
-  const loadGiveaways = useCallback(async () => {
-    if (!token) return;
-    setGiveawaysLoading(true);
-    setErr(null);
-    const r = await fetch(`${apiBase()}/api/admin/giveaways`, { headers: authHeaders() });
-    const j = (await r.json()) as { giveaways?: GiveawayRow[]; error?: { message?: string } };
-    if (!r.ok) {
-      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-      if (r.status === 401) setToken(null);
-      setGiveawaysLoading(false);
-      return;
-    }
-    setGiveaways(j.giveaways ?? []);
-    setGiveawaysLoading(false);
-  }, [token, authHeaders]);
-
-  const loadPromos = useCallback(async () => {
-    if (!token) return;
-    setPromosLoading(true);
-    setErr(null);
-    const r = await fetch(`${apiBase()}/api/admin/promos`, { headers: authHeaders() });
-    const j = (await r.json()) as { promos?: PromoRow[]; error?: { message?: string } };
-    if (!r.ok) {
-      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-      if (r.status === 401) setToken(null);
-      setPromosLoading(false);
-      return;
-    }
-    setPromos(j.promos ?? []);
-    setPromosLoading(false);
-  }, [token, authHeaders]);
-
-  const loadAdminUsers = useCallback(
-    async (offset: number) => {
-      if (!token) return;
-      setUsersLoading(true);
-      setErr(null);
-      const r = await fetch(
-        `${apiBase()}/api/admin/users?limit=${USERS_PAGE}&offset=${offset}`,
-        { headers: authHeaders() }
-      );
-      const j = (await r.json()) as {
-        users?: AdminUserRow[];
-        total?: number;
-        error?: { message?: string };
-      };
+    const silent = opts?.silent === true;
+    if (!silent) setStatsLoading(true);
+    if (!silent) setErr(null);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/stats`, { headers: authHeaders() });
+      const j = (await r.json()) as AdminStats & { error?: { message?: string } };
       if (!r.ok) {
         setErr(j.error?.message ?? `Ошибка ${r.status}`);
         if (r.status === 401) setToken(null);
-        setUsersLoading(false);
         return;
       }
-      setAdminUsers(j.users ?? []);
-      setUsersTotal(j.total ?? 0);
-      setUsersLoading(false);
+      setStats({
+        usersCount: j.usersCount,
+        coinsEarnedTotal: j.coinsEarnedTotal,
+        activeGiveaways: j.activeGiveaways,
+        giveawayEntriesTotal: j.giveawayEntriesTotal,
+      });
+    } finally {
+      if (!silent) setStatsLoading(false);
+    }
+  }, [token, authHeaders]);
+
+  const loadGiveaways = useCallback(async (opts?: AdminFetchOpts) => {
+    if (!token) return;
+    const silent = opts?.silent === true;
+    if (!silent) setGiveawaysLoading(true);
+    if (!silent) setErr(null);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/giveaways`, { headers: authHeaders() });
+      const j = (await r.json()) as { giveaways?: GiveawayRow[]; error?: { message?: string } };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setGiveaways(j.giveaways ?? []);
+    } finally {
+      if (!silent) setGiveawaysLoading(false);
+    }
+  }, [token, authHeaders]);
+
+  const loadPromos = useCallback(async (opts?: AdminFetchOpts) => {
+    if (!token) return;
+    const silent = opts?.silent === true;
+    if (!silent) setPromosLoading(true);
+    if (!silent) setErr(null);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/promos`, { headers: authHeaders() });
+      const j = (await r.json()) as { promos?: PromoRow[]; error?: { message?: string } };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setPromos(j.promos ?? []);
+    } finally {
+      if (!silent) setPromosLoading(false);
+    }
+  }, [token, authHeaders]);
+
+  const loadAdminUsers = useCallback(
+    async (offset: number, opts?: AdminFetchOpts) => {
+      if (!token) return;
+      const silent = opts?.silent === true;
+      if (!silent) setUsersLoading(true);
+      if (!silent) setErr(null);
+      try {
+        const r = await fetch(
+          `${apiBase()}/api/admin/users?limit=${USERS_PAGE}&offset=${offset}`,
+          { headers: authHeaders() }
+        );
+        const j = (await r.json()) as {
+          users?: AdminUserRow[];
+          total?: number;
+          error?: { message?: string };
+        };
+        if (!r.ok) {
+          setErr(j.error?.message ?? `Ошибка ${r.status}`);
+          if (r.status === 401) setToken(null);
+          return;
+        }
+        setAdminUsers(j.users ?? []);
+        setUsersTotal(j.total ?? 0);
+      } finally {
+        if (!silent) setUsersLoading(false);
+      }
     },
     [token, authHeaders]
   );
 
   const loadGiveawayDetail = useCallback(
-    async (id: string) => {
+    async (id: string, opts?: AdminFetchOpts) => {
       if (!token) return;
-      setDetailLoading(true);
-      setErr(null);
-      const r = await fetch(`${apiBase()}/api/admin/giveaways/${id}`, {
-        headers: authHeaders(),
-      });
-      const j = (await r.json()) as GiveawayDetailResponse & { error?: { message?: string } };
-      setDetailLoading(false);
-      if (!r.ok) {
-        setErr(j.error?.message ?? `Ошибка ${r.status}`);
-        return;
+      const silent = opts?.silent === true;
+      if (!silent) setDetailLoading(true);
+      if (!silent) setErr(null);
+      try {
+        const r = await fetch(`${apiBase()}/api/admin/giveaways/${id}`, {
+          headers: authHeaders(),
+        });
+        const j = (await r.json()) as GiveawayDetailResponse & { error?: { message?: string } };
+        if (!r.ok) {
+          setErr(j.error?.message ?? `Ошибка ${r.status}`);
+          return;
+        }
+        setDetail(j);
+      } finally {
+        if (!silent) setDetailLoading(false);
       }
-      setDetail(j);
     },
     [token, authHeaders]
   );
 
-  const loadDropStatus = useCallback(async () => {
+  const loadDropStatus = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
-    setDropStatusLoading(true);
-    setErr(null);
-    const r = await fetch(`${apiBase()}/api/admin/drops`, { headers: authHeaders() });
-    const j = (await r.json()) as AdminDropStatus & { error?: { message?: string } };
-    if (!r.ok) {
-      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-      if (r.status === 401) setToken(null);
-      setDropStatusLoading(false);
-      return;
+    const silent = opts?.silent === true;
+    if (!silent) setDropStatusLoading(true);
+    if (!silent) setErr(null);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/drops`, { headers: authHeaders() });
+      const j = (await r.json()) as AdminDropStatus & { error?: { message?: string } };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setDropStatus({ active: j.active, drop: j.drop ?? null, userStats: j.userStats ?? [] });
+    } finally {
+      if (!silent) setDropStatusLoading(false);
     }
-    setDropStatus({ active: j.active, drop: j.drop ?? null, userStats: j.userStats ?? [] });
-    setDropStatusLoading(false);
   }, [token, authHeaders]);
 
-  const loadDropHistory = useCallback(async () => {
+  const loadDropHistory = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
-    setDropHistoryLoading(true);
-    const r = await fetch(`${apiBase()}/api/admin/drops/history?limit=60&offset=0`, {
-      headers: authHeaders(),
-    });
-    const j = (await r.json()) as {
-      drops?: DropHistoryRow[];
-      total?: number;
-      error?: { message?: string };
-    };
-    if (!r.ok) {
-      if (r.status === 401) setToken(null);
-      setDropHistoryLoading(false);
-      return;
+    const silent = opts?.silent === true;
+    if (!silent) setDropHistoryLoading(true);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/drops/history?limit=60&offset=0`, {
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as {
+        drops?: DropHistoryRow[];
+        total?: number;
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setDropHistory(j.drops ?? []);
+      setDropHistoryTotal(j.total ?? 0);
+    } finally {
+      if (!silent) setDropHistoryLoading(false);
     }
-    setDropHistory(j.drops ?? []);
-    setDropHistoryTotal(j.total ?? 0);
-    setDropHistoryLoading(false);
   }, [token, authHeaders]);
 
-  const loadLiveBroadcast = useCallback(async () => {
+  const loadLiveBroadcast = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
-    setLiveLoading(true);
-    setErr(null);
-    const r = await fetch(`${apiBase()}/api/admin/live-broadcast`, {
-      headers: authHeaders(),
-    });
-    const j = (await r.json()) as AdminLiveBroadcast & {
-      error?: { message?: string };
-    };
-    if (!r.ok) {
-      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-      if (r.status === 401) setToken(null);
-      setLiveLoading(false);
-      return;
+    const silent = opts?.silent === true;
+    if (!silent) setLiveLoading(true);
+    if (!silent) setErr(null);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/live-broadcast`, {
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as AdminLiveBroadcast & {
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setLiveBroadcastStatus(j.active ? j : { active: false });
+    } finally {
+      if (!silent) setLiveLoading(false);
     }
-    setLiveBroadcastStatus(j.active ? j : { active: false });
-    setLiveLoading(false);
   }, [token, authHeaders]);
 
-  const loadAdminTasks = useCallback(async () => {
+  const loadAdminTasks = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
-    setTasksLoading(true);
-    setErr(null);
-    const r = await fetch(`${apiBase()}/api/admin/tasks`, { headers: authHeaders() });
-    const j = (await r.json()) as {
-      tasks?: AdminTaskRow[];
-      error?: { message?: string };
-    };
-    if (!r.ok) {
-      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-      if (r.status === 401) setToken(null);
-      setTasksLoading(false);
-      return;
+    const silent = opts?.silent === true;
+    if (!silent) setTasksLoading(true);
+    if (!silent) setErr(null);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/tasks`, { headers: authHeaders() });
+      const j = (await r.json()) as {
+        tasks?: AdminTaskRow[];
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setAdminTasks(j.tasks ?? []);
+    } finally {
+      if (!silent) setTasksLoading(false);
     }
-    setAdminTasks(j.tasks ?? []);
-    setTasksLoading(false);
   }, [token, authHeaders]);
 
-  const loadTaskEvidence = useCallback(async () => {
+  const loadTaskEvidence = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
-    setTaskEvidenceLoading(true);
-    const r = await fetch(`${apiBase()}/api/admin/tasks/evidence?status=submitted`, {
-      headers: authHeaders(),
-    });
-    const j = (await r.json()) as {
-      evidence?: AdminTaskEvidenceRow[];
-      error?: { message?: string };
-    };
-    if (!r.ok) {
-      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-      if (r.status === 401) setToken(null);
-      setTaskEvidenceLoading(false);
-      return;
+    const silent = opts?.silent === true;
+    if (!silent) setTaskEvidenceLoading(true);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/tasks/evidence?status=submitted`, {
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as {
+        evidence?: AdminTaskEvidenceRow[];
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setTaskEvidenceRows(j.evidence ?? []);
+    } finally {
+      if (!silent) setTaskEvidenceLoading(false);
     }
-    setTaskEvidenceRows(j.evidence ?? []);
-    setTaskEvidenceLoading(false);
   }, [token, authHeaders]);
 
-  const loadPredictionPlatforms = useCallback(async () => {
+  const loadPredictionPlatforms = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
-    setPredictionPlatformsLoading(true);
-    const r = await fetch(`${apiBase()}/api/admin/predictions/platforms`, {
-      headers: authHeaders(),
-    });
-    const j = (await r.json()) as {
-      platforms?: PredictionPlatformRow[];
-      error?: { message?: string };
-    };
-    if (!r.ok) {
-      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-      if (r.status === 401) setToken(null);
-      setPredictionPlatformsLoading(false);
-      return;
+    const silent = opts?.silent === true;
+    if (!silent) setPredictionPlatformsLoading(true);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/predictions/platforms`, {
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as {
+        platforms?: PredictionPlatformRow[];
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setPredictionPlatforms(j.platforms ?? []);
+      if ((j.platforms ?? []).length > 0 && !predictionPlatformType) {
+        setPredictionPlatformType((j.platforms ?? [])[0]!.type);
+      }
+    } finally {
+      if (!silent) setPredictionPlatformsLoading(false);
     }
-    setPredictionPlatforms(j.platforms ?? []);
-    if ((j.platforms ?? []).length > 0 && !predictionPlatformType) {
-      setPredictionPlatformType((j.platforms ?? [])[0]!.type);
-    }
-    setPredictionPlatformsLoading(false);
   }, [token, authHeaders, predictionPlatformType]);
 
-  const loadPredictions = useCallback(async () => {
+  const loadPredictions = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
-    setPredictionsLoading(true);
-    const r = await fetch(`${apiBase()}/api/admin/predictions`, {
-      headers: authHeaders(),
-    });
-    const j = (await r.json()) as {
-      predictions?: PredictionRow[];
-      error?: { message?: string };
-    };
-    if (!r.ok) {
-      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-      if (r.status === 401) setToken(null);
-      setPredictionsLoading(false);
-      return;
+    const silent = opts?.silent === true;
+    if (!silent) setPredictionsLoading(true);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/predictions`, {
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as {
+        predictions?: PredictionRow[];
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setPredictions(j.predictions ?? []);
+    } finally {
+      if (!silent) setPredictionsLoading(false);
     }
-    setPredictions(j.predictions ?? []);
-    setPredictionsLoading(false);
   }, [token, authHeaders]);
 
   useEffect(() => {
@@ -711,23 +751,26 @@ export function App() {
     }
   }, [token, tab, loadPredictionPlatforms, loadPredictions]);
 
-  const loadBanAppeals = useCallback(async () => {
+  const loadBanAppeals = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
-    setAppealsLoading(true);
-    setErr(null);
-    const r = await fetch(`${apiBase()}/api/admin/ban-appeals`, { headers: authHeaders() });
-    const j = (await r.json()) as {
-      appeals?: BanAppealRow[];
-      error?: { message?: string };
-    };
-    if (!r.ok) {
-      setErr(j.error?.message ?? `Ошибка ${r.status}`);
-      if (r.status === 401) setToken(null);
-      setAppealsLoading(false);
-      return;
+    const silent = opts?.silent === true;
+    if (!silent) setAppealsLoading(true);
+    if (!silent) setErr(null);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/ban-appeals`, { headers: authHeaders() });
+      const j = (await r.json()) as {
+        appeals?: BanAppealRow[];
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setBanAppeals(j.appeals ?? []);
+    } finally {
+      if (!silent) setAppealsLoading(false);
     }
-    setBanAppeals(j.appeals ?? []);
-    setAppealsLoading(false);
   }, [token, authHeaders]);
 
   useEffect(() => {
@@ -746,38 +789,39 @@ export function App() {
       if (autoRefreshRunningRef.current) return;
       autoRefreshRunningRef.current = true;
       try {
-        await loadStats();
+        const s = { silent: true } as const;
+        await loadStats(s);
         if (tab === "giveaways") {
-          await loadGiveaways();
-          if (expandedId) await loadGiveawayDetail(expandedId);
+          await loadGiveaways(s);
+          if (expandedId) await loadGiveawayDetail(expandedId, s);
           return;
         }
         if (tab === "promos") {
-          await loadPromos();
+          await loadPromos(s);
           return;
         }
         if (tab === "users") {
-          await loadAdminUsers(usersOffset);
+          await loadAdminUsers(usersOffset, s);
           return;
         }
         if (tab === "drops") {
-          await Promise.all([loadDropStatus(), loadDropHistory()]);
+          await Promise.all([loadDropStatus(s), loadDropHistory(s)]);
           return;
         }
         if (tab === "live") {
-          await loadLiveBroadcast();
+          await loadLiveBroadcast(s);
           return;
         }
         if (tab === "tasks") {
-          await Promise.all([loadAdminTasks(), loadTaskEvidence()]);
+          await Promise.all([loadAdminTasks(s), loadTaskEvidence(s)]);
           return;
         }
         if (tab === "appeals") {
-          await loadBanAppeals();
+          await loadBanAppeals(s);
           return;
         }
         if (tab === "predictions") {
-          await Promise.all([loadPredictionPlatforms(), loadPredictions()]);
+          await Promise.all([loadPredictionPlatforms(s), loadPredictions(s)]);
         }
       } finally {
         autoRefreshRunningRef.current = false;
