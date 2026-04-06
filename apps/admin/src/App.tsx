@@ -76,10 +76,23 @@ type AdminUserRow = {
   referralCount: number;
   banned?: boolean;
   banReason?: string | null;
+  streakTwitch?: number;
+  streakKick?: number;
+  dropsActivatedCount?: number;
+  predictionsJoinedCount?: number;
   platforms?: {
     twitch: AdminUserPlatform;
     kick: AdminUserPlatform;
   };
+};
+
+type AdminUserReferralRow = {
+  refereeId: string;
+  username: string | null;
+  firstName: string | null;
+  telegramId: string | null;
+  qualified: boolean;
+  createdAt: string;
 };
 
 type GiveawayParticipant = {
@@ -130,6 +143,26 @@ type AdminDropStatus = {
     firstName: string | null;
     dropsWon: number;
   }>;
+};
+
+type DropHistoryRow = {
+  id: string;
+  platform: string;
+  code: string;
+  rewardMin: number;
+  rewardMax: number;
+  maxWinners: number;
+  winnersCount: number;
+  startedAt: string;
+  endsAt: string;
+  active: boolean;
+};
+
+type DropClaimantRow = {
+  userId: string;
+  rewardCoins: number;
+  username: string | null;
+  firstName: string | null;
 };
 
 type BanAppealRow = {
@@ -267,6 +300,12 @@ export function App() {
   const USERS_PAGE = 50;
 
   const [dropStatus, setDropStatus] = useState<AdminDropStatus | null>(null);
+  const [dropHistory, setDropHistory] = useState<DropHistoryRow[] | null>(null);
+  const [dropHistoryTotal, setDropHistoryTotal] = useState(0);
+  const [dropHistoryLoading, setDropHistoryLoading] = useState(false);
+  const [dropClaimantsDropId, setDropClaimantsDropId] = useState<string | null>(null);
+  const [dropClaimants, setDropClaimants] = useState<DropClaimantRow[] | null>(null);
+  const [dropClaimantsLoading, setDropClaimantsLoading] = useState(false);
   const [dropCode, setDropCode] = useState("4821");
   const [dropDurationSec, setDropDurationSec] = useState(120);
   const [dropMaxWinners, setDropMaxWinners] = useState(100);
@@ -333,6 +372,13 @@ export function App() {
   const [giveawaysLoading, setGiveawaysLoading] = useState(false);
   const [promosLoading, setPromosLoading] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
+  const [userManageModal, setUserManageModal] = useState<AdminUserRow | null>(null);
+  const [userManageRefs, setUserManageRefs] = useState<AdminUserReferralRow[] | null>(
+    null
+  );
+  const [userManageRefsLoading, setUserManageRefsLoading] = useState(false);
+  const [userManageTwDelta, setUserManageTwDelta] = useState("");
+  const [userManageKiDelta, setUserManageKiDelta] = useState("");
   const [dropStatusLoading, setDropStatusLoading] = useState(false);
   const [liveLoading, setLiveLoading] = useState(false);
   const [tasksLoading, setTasksLoading] = useState(false);
@@ -362,6 +408,33 @@ export function App() {
     if (includeJsonContentType) h["Content-Type"] = "application/json";
     return h;
   }, [token]);
+
+  const openUserManage = useCallback(
+    async (u: AdminUserRow) => {
+      setUserManageModal(u);
+      setUserManageRefs(null);
+      setUserManageTwDelta("");
+      setUserManageKiDelta("");
+      setUserManageRefsLoading(true);
+      if (!token) {
+        setUserManageRefsLoading(false);
+        return;
+      }
+      try {
+        const r = await fetch(
+          `${apiBase()}/api/admin/users/${encodeURIComponent(u.id)}/referrals`,
+          { headers: authHeaders() }
+        );
+        const j = (await r.json()) as { referrals?: AdminUserReferralRow[] };
+        setUserManageRefs(j.referrals ?? []);
+      } catch {
+        setUserManageRefs([]);
+      } finally {
+        setUserManageRefsLoading(false);
+      }
+    },
+    [token, authHeaders]
+  );
 
   const loadStats = useCallback(async () => {
     if (!token) return;
@@ -476,6 +549,27 @@ export function App() {
     }
     setDropStatus({ active: j.active, drop: j.drop ?? null, userStats: j.userStats ?? [] });
     setDropStatusLoading(false);
+  }, [token, authHeaders]);
+
+  const loadDropHistory = useCallback(async () => {
+    if (!token) return;
+    setDropHistoryLoading(true);
+    const r = await fetch(`${apiBase()}/api/admin/drops/history?limit=60&offset=0`, {
+      headers: authHeaders(),
+    });
+    const j = (await r.json()) as {
+      drops?: DropHistoryRow[];
+      total?: number;
+      error?: { message?: string };
+    };
+    if (!r.ok) {
+      if (r.status === 401) setToken(null);
+      setDropHistoryLoading(false);
+      return;
+    }
+    setDropHistory(j.drops ?? []);
+    setDropHistoryTotal(j.total ?? 0);
+    setDropHistoryLoading(false);
   }, [token, authHeaders]);
 
   const loadLiveBroadcast = useCallback(async () => {
@@ -593,8 +687,11 @@ export function App() {
   }, [token, tab, usersOffset, loadAdminUsers]);
 
   useEffect(() => {
-    if (token && tab === "drops") void loadDropStatus();
-  }, [token, tab, loadDropStatus]);
+    if (token && tab === "drops") {
+      void loadDropStatus();
+      void loadDropHistory();
+    }
+  }, [token, tab, loadDropStatus, loadDropHistory]);
 
   useEffect(() => {
     if (token && tab === "live") void loadLiveBroadcast();
@@ -664,7 +761,7 @@ export function App() {
           return;
         }
         if (tab === "drops") {
-          await loadDropStatus();
+          await Promise.all([loadDropStatus(), loadDropHistory()]);
           return;
         }
         if (tab === "live") {
@@ -705,6 +802,7 @@ export function App() {
     loadPromos,
     loadAdminUsers,
     loadDropStatus,
+    loadDropHistory,
     loadLiveBroadcast,
     loadAdminTasks,
     loadTaskEvidence,
@@ -1394,9 +1492,14 @@ export function App() {
                       <th>Пользователь</th>
                       <th>TG ID</th>
                       <th>Платформы</th>
+                      <th>Стрик TW</th>
+                      <th>Стрик Kick</th>
+                      <th>Дропы</th>
+                      <th>Предикты</th>
                       <th>Текущий баланс</th>
                       <th>Рефералов</th>
                       <th>Регистрация</th>
+                      <th>Управление</th>
                       <th>Бан</th>
                     </tr>
                   </thead>
@@ -1439,10 +1542,24 @@ export function App() {
                             );
                           })()}
                         </td>
+                        <td>{u.streakTwitch ?? 0}</td>
+                        <td>{u.streakKick ?? 0}</td>
+                        <td>{u.dropsActivatedCount ?? 0}</td>
+                        <td>{u.predictionsJoinedCount ?? 0}</td>
                         <td>{u.coins.toLocaleString("ru-RU")}</td>
                         <td>{u.referralCount}</td>
                         <td className="muted admin-table-nowrap">
                           {new Date(u.createdAt).toLocaleString("ru-RU")}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={loading}
+                            onClick={() => void openUserManage(u)}
+                          >
+                            Открыть
+                          </button>
+                        </td>
                         <td>
                           {u.banned === true ? (
                             <button
@@ -2621,22 +2738,104 @@ export function App() {
               </div>
               <div className="card stack">
                 <p className="admin-m-0">
-                  <strong>Пользователи по дропам</strong>
+                  <strong>История дропов</strong>{" "}
+                  <span className="muted">
+                    (всего в базе: {dropHistoryTotal}) — нажмите строку, чтобы увидеть
+                    получивших монеты
+                  </span>
                 </p>
-                {dropStatus.userStats.length === 0 ? (
-                  <p className="muted admin-m-0">Пока нет победителей дропов.</p>
+                {dropHistoryLoading ? (
+                  <p className="muted admin-m-0">Загрузка…</p>
+                ) : !dropHistory || dropHistory.length === 0 ? (
+                  <p className="muted admin-m-0">Пока нет записей дропов.</p>
                 ) : (
-                  <ul className="list">
-                    {dropStatus.userStats.map((u) => (
-                      <li key={u.userId}>
-                        <strong>
-                          {u.username ? `@${u.username}` : u.firstName || `${u.userId.slice(0, 8)}…`}
-                        </strong>{" "}
-                        · дропов получено: {u.dropsWon}
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="admin-users-wrap">
+                    <table className="admin-users-table">
+                      <thead>
+                        <tr>
+                          <th>Код</th>
+                          <th>Платформа</th>
+                          <th>Победители</th>
+                          <th>Награда</th>
+                          <th>Старт</th>
+                          <th>Статус</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dropHistory.map((d) => (
+                          <tr
+                            key={d.id}
+                            style={{
+                              cursor: "pointer",
+                              background:
+                                dropClaimantsDropId === d.id
+                                  ? "rgba(34, 197, 94, 0.08)"
+                                  : undefined,
+                            }}
+                            onClick={() => {
+                              setDropClaimantsDropId(d.id);
+                              setDropClaimants(null);
+                              setDropClaimantsLoading(true);
+                              void (async () => {
+                                try {
+                                  const r = await fetch(
+                                    `${apiBase()}/api/admin/drops/${encodeURIComponent(d.id)}/claimants`,
+                                    { headers: authHeaders() }
+                                  );
+                                  const j = (await r.json()) as {
+                                    claimants?: DropClaimantRow[];
+                                  };
+                                  if (r.ok) setDropClaimants(j.claimants ?? []);
+                                } finally {
+                                  setDropClaimantsLoading(false);
+                                }
+                              })();
+                            }}
+                          >
+                            <td className="mono">{d.code}</td>
+                            <td>{d.platform}</td>
+                            <td>
+                              {d.winnersCount} / {d.maxWinners}
+                            </td>
+                            <td>
+                              {d.rewardMin}–{d.rewardMax}
+                            </td>
+                            <td className="muted admin-table-nowrap">
+                              {new Date(d.startedAt).toLocaleString("ru-RU")}
+                            </td>
+                            <td>{d.active ? "активен" : "завершён"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
+                {dropClaimantsDropId ? (
+                  <div className="admin-drop-claimants">
+                    <p className="admin-m-0">
+                      <strong>Получили монеты</strong>{" "}
+                      <span className="muted">(дроп {dropClaimantsDropId.slice(0, 8)}…)</span>
+                    </p>
+                    {dropClaimantsLoading ? (
+                      <p className="muted admin-m-0">Загрузка…</p>
+                    ) : !dropClaimants || dropClaimants.length === 0 ? (
+                      <p className="muted admin-m-0">Никто не получил награду в этом дропе.</p>
+                    ) : (
+                      <ul className="list">
+                        {dropClaimants.map((c) => (
+                          <li key={c.userId}>
+                            <strong>
+                              {c.username
+                                ? `@${c.username}`
+                                : c.firstName || `${c.userId.slice(0, 8)}…`}
+                            </strong>
+                            : +{c.rewardCoins} монет
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
               </div>
             </>
           )}
@@ -2666,6 +2865,7 @@ export function App() {
                   return;
                 }
                 await loadDropStatus();
+                await loadDropHistory();
               } catch {
                 setErr("Сеть недоступна");
               } finally {
@@ -2880,6 +3080,249 @@ export function App() {
             </form>
           )}
         </>
+      ) : null}
+
+      {userManageModal ? (
+        <div
+          className="admin-modal-backdrop"
+          role="presentation"
+          onClick={() => setUserManageModal(null)}
+        >
+          <div
+            className="admin-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-user-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="admin-modal__head">
+              <h2 id="admin-user-modal-title" className="admin-modal__title">
+                Пользователь{" "}
+                {userManageModal.username
+                  ? `@${userManageModal.username}`
+                  : userManageModal.firstName ?? userManageModal.id.slice(0, 8)}
+              </h2>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setUserManageModal(null)}
+              >
+                Закрыть
+              </button>
+            </div>
+            <p className="muted mono">id: {userManageModal.id}</p>
+
+            <h3 className="admin-modal__h3">Дерево рефералов (прямые)</h3>
+            {userManageRefsLoading ? (
+              <p className="muted">Загрузка…</p>
+            ) : userManageRefs && userManageRefs.length === 0 ? (
+              <p className="muted">Нет приглашённых.</p>
+            ) : (
+              <div className="admin-users-wrap">
+                <table className="admin-users-table">
+                  <thead>
+                    <tr>
+                      <th>Имя / ник</th>
+                      <th>TG</th>
+                      <th>Статус</th>
+                      <th>Дата</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(userManageRefs ?? []).map((ref) => (
+                      <tr key={ref.refereeId}>
+                        <td>
+                          {ref.username
+                            ? `@${ref.username}`
+                            : ref.firstName ?? ref.refereeId.slice(0, 8)}
+                        </td>
+                        <td className="mono">{ref.telegramId ?? "—"}</td>
+                        <td>{ref.qualified ? "квал." : "ожидает"}</td>
+                        <td className="muted admin-table-nowrap">
+                          {new Date(ref.createdAt).toLocaleString("ru-RU")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <h3 className="admin-modal__h3">Корректировка баланса</h3>
+            <p className="muted">
+              Целые монеты Twitch / Kick (отрицательное число — списание). Суммарный баланс в
+              таблице обновится после сохранения.
+            </p>
+            <div className="row">
+              <div>
+                <label htmlFor="admTwD">Δ Twitch</label>
+                <input
+                  id="admTwD"
+                  type="number"
+                  value={userManageTwDelta}
+                  onChange={(e) => setUserManageTwDelta(e.target.value)}
+                />
+              </div>
+              <div>
+                <label htmlFor="admKiD">Δ Kick</label>
+                <input
+                  id="admKiD"
+                  type="number"
+                  value={userManageKiDelta}
+                  onChange={(e) => setUserManageKiDelta(e.target.value)}
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              className="primary"
+              disabled={loading || !token}
+              onClick={async () => {
+                if (!token || !userManageModal) return;
+                const twitchDelta = Number.parseInt(userManageTwDelta, 10);
+                const kickDelta = Number.parseInt(userManageKiDelta, 10);
+                if (!Number.isFinite(twitchDelta) || !Number.isFinite(kickDelta)) {
+                  setErr("Введите целые числа для дельт");
+                  return;
+                }
+                if (twitchDelta === 0 && kickDelta === 0) {
+                  setErr("Укажите ненулевую корректировку");
+                  return;
+                }
+                setLoading(true);
+                setErr(null);
+                try {
+                  const r = await fetch(
+                    `${apiBase()}/api/admin/users/${encodeURIComponent(userManageModal.id)}/balance`,
+                    {
+                      method: "POST",
+                      headers: authHeaders(true),
+                      body: JSON.stringify({ twitchDelta, kickDelta }),
+                    }
+                  );
+                  const j = (await r.json()) as { error?: { message?: string } };
+                  if (!r.ok) {
+                    setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                    return;
+                  }
+                  setUserManageTwDelta("");
+                  setUserManageKiDelta("");
+                  await loadAdminUsers(usersOffset);
+                  setUserManageModal(null);
+                } catch {
+                  setErr("Сеть недоступна");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            >
+              Применить баланс
+            </button>
+
+            <h3 className="admin-modal__h3">Платформы</h3>
+            <div className="row">
+              <button
+                type="button"
+                className="secondary"
+                disabled={loading || !token}
+                onClick={async () => {
+                  if (!token || !userManageModal) return;
+                  if (!window.confirm("Снять привязку Twitch?")) return;
+                  setLoading(true);
+                  setErr(null);
+                  try {
+                    const r = await fetch(
+                      `${apiBase()}/api/admin/users/${encodeURIComponent(userManageModal.id)}/platforms/twitch`,
+                      { method: "DELETE", headers: authHeaders() }
+                    );
+                    const j = (await r.json()) as { error?: { message?: string } };
+                    if (!r.ok) {
+                      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                      return;
+                    }
+                    await loadAdminUsers(usersOffset);
+                    setUserManageModal(null);
+                  } catch {
+                    setErr("Сеть недоступна");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
+                Отвязать Twitch
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={loading || !token}
+                onClick={async () => {
+                  if (!token || !userManageModal) return;
+                  if (!window.confirm("Снять привязку Kick?")) return;
+                  setLoading(true);
+                  setErr(null);
+                  try {
+                    const r = await fetch(
+                      `${apiBase()}/api/admin/users/${encodeURIComponent(userManageModal.id)}/platforms/kick`,
+                      { method: "DELETE", headers: authHeaders() }
+                    );
+                    const j = (await r.json()) as { error?: { message?: string } };
+                    if (!r.ok) {
+                      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                      return;
+                    }
+                    await loadAdminUsers(usersOffset);
+                    setUserManageModal(null);
+                  } catch {
+                    setErr("Сеть недоступна");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
+                Отвязать Kick
+              </button>
+            </div>
+
+            <h3 className="admin-modal__h3">Удаление</h3>
+            <button
+              type="button"
+              className="secondary"
+              style={{ borderColor: "#b45309", color: "#fdba74" }}
+              disabled={loading || !token}
+              onClick={async () => {
+                if (!token || !userManageModal) return;
+                if (
+                  !window.confirm(
+                    "Удалить пользователя и все связанные данные? Действие необратимо."
+                  )
+                ) {
+                  return;
+                }
+                setLoading(true);
+                setErr(null);
+                try {
+                  const r = await fetch(
+                    `${apiBase()}/api/admin/users/${encodeURIComponent(userManageModal.id)}`,
+                    { method: "DELETE", headers: authHeaders() }
+                  );
+                  const j = (await r.json()) as { error?: { message?: string } };
+                  if (!r.ok) {
+                    setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                    return;
+                  }
+                  setUserManageModal(null);
+                  await loadAdminUsers(usersOffset);
+                } catch {
+                  setErr("Сеть недоступна");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            >
+              Удалить аккаунт
+            </button>
+          </div>
+        </div>
       ) : null}
     </>
   );

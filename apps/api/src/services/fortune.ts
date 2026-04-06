@@ -13,10 +13,22 @@ import {
   type EconomyPlatform,
 } from "./economy.js";
 import { utcDateString } from "./streak.js";
+import {
+  addInventoryItem,
+  STREAK_PLUS_ITEM_ID,
+  STREAK_SAVE_ITEM_ID,
+} from "./inventory.js";
+
+export type FortuneOutcomeType =
+  | "coins"
+  | "boost"
+  | "nothing"
+  | "streak_save"
+  | "streak_plus";
 
 export type FortuneSegmentPublic = {
   index: number;
-  type: "coins" | "boost" | "nothing";
+  type: FortuneOutcomeType;
   value?: number;
   label: string;
 };
@@ -26,6 +38,8 @@ function labelForOutcome(
 ): string {
   if (o.type === "coins") return `${o.value ?? 0} монет`;
   if (o.type === "boost") return "Буст ×2";
+  if (o.type === "streak_save") return "Сейв стрика";
+  if (o.type === "streak_plus") return "+1 к стрику";
   return "Пусто";
 }
 
@@ -86,7 +100,7 @@ export async function spinFortuneWheel(
 ): Promise<
   | {
       ok: true;
-      outcome: "coins" | "boost" | "nothing";
+      outcome: FortuneOutcomeType;
       /** Индекс сектора на колесе (0..n-1), совпадает с GET /games/fortune segments. */
       segmentIndex: number;
       amount?: number;
@@ -175,6 +189,13 @@ export async function spinFortuneWheel(
           updatedAt: sql`now()`,
         },
       });
+  }
+
+  if (outcome.type === "streak_save") {
+    await addInventoryItem(userId, STREAK_SAVE_ITEM_ID, 1);
+  }
+  if (outcome.type === "streak_plus") {
+    await addInventoryItem(userId, STREAK_PLUS_ITEM_ID, 1);
   }
 
   if (mode === "free" && row) {

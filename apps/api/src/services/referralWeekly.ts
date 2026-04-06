@@ -115,3 +115,86 @@ export async function runWeeklyReferralPayout(): Promise<{
 
   return { weekKey, payouts };
 }
+
+/**
+ * Та же логика, что и в cron за прошлую полную неделю UTC, но только для реферера `referrerId`.
+ * Идемпотентность через те же idempotency keys — повторный вызов не удвоит выплаты.
+ */
+export async function syncWeeklyReferralPayoutForReferrer(referrerId: string): Promise<{
+  weekKey: string;
+  payouts: number;
+}> {
+  const { start, endExclusive, weekKey } = getLastCompletedWeekUtc();
+  const { weeklyPercentL1, weeklyPercentL2 } = gameConfig.referral;
+
+  const refs = await db
+    .select({
+      refereeId: referrals.refereeId,
+      eligibleForPercentAt: referrals.eligibleForPercentAt,
+    })
+    .from(referrals)
+    .where(eq(referrals.referrerId, referrerId));
+
+  const [referrerRow] = await db
+    .select({ referredById: users.referredById })
+    .from(users)
+    .where(eq(users.id, referrerId))
+    .limit(1);
+  const grandReferrerId = referrerRow?.referredById ?? null;
+
+  let payouts = 0;
+
+  for (const ref of refs) {
+    if (!ref.eligibleForPercentAt) continue;
+
+    const [sumRow] = await db
+      .select({
+        total: sql<number>`coalesce(sum(${transactions.amount}), 0)::int`,
+      })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, ref.refereeId),
+          gte(transactions.createdAt, start),
+          lt(transactions.createdAt, endExclusive),
+          sql`${transactions.amount} > 0`,
+          notInArray(transactions.kind, [...EXCLUDED_FROM_WEEKLY_BASE])
+        )
+      );
+
+    const weeklySum = sumRow?.total ?? 0;
+    if (weeklySum <= 0) continue;
+
+    const l1 = Math.floor(weeklySum * weeklyPercentL1);
+    if (l1 > 0) {
+      const idem = `referral_weekly_l1:${weekKey}:${ref.refereeId}`;
+      const r = await applyCreditSplit({
+        userId: referrerId,
+        amount: l1,
+        idempotencyKey: idem,
+        kind: "referral_weekly_l1",
+        referenceType: "referee",
+        referenceId: ref.refereeId,
+        meta: { weekKey, weeklySum, manualSync: true },
+      });
+      if (r.ok) payouts += 1;
+    }
+
+    const l2Amount = Math.floor(weeklySum * weeklyPercentL2);
+    if (l2Amount <= 0 || !grandReferrerId) continue;
+
+    const idem2 = `referral_weekly_l2:${weekKey}:${ref.refereeId}`;
+    const r2 = await applyCreditSplit({
+      userId: grandReferrerId,
+      amount: l2Amount,
+      idempotencyKey: idem2,
+      kind: "referral_weekly_l2",
+      referenceType: "referee",
+      referenceId: ref.refereeId,
+      meta: { weekKey, weeklySum, manualSync: true },
+    });
+    if (r2.ok) payouts += 1;
+  }
+
+  return { weekKey, payouts };
+}

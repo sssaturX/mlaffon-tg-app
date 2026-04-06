@@ -17,6 +17,21 @@ const WHEEL_COLORS = [
   "#c4b5fd",
 ];
 
+function fillForSegment(type: string, index: number): string {
+  switch (type) {
+    case "boost":
+      return "#d97706";
+    case "nothing":
+      return "#475569";
+    case "streak_save":
+      return "#0284c7";
+    case "streak_plus":
+      return "#059669";
+    default:
+      return WHEEL_COLORS[index % WHEEL_COLORS.length];
+  }
+}
+
 function polar(cx: number, cy: number, r: number, angleDeg: number) {
   const a = (angleDeg * Math.PI) / 180;
   return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
@@ -59,7 +74,7 @@ export const FortuneWheel = memo(function FortuneWheel({
       const startDeg = -90 + i * slice;
       const endDeg = -90 + (i + 1) * slice;
       const midDeg = (startDeg + endDeg) / 2;
-      const color = WHEEL_COLORS[i % WHEEL_COLORS.length];
+      const color = fillForSegment(seg.type, i);
       const labelR = 56;
       const lp = polar(0, 0, labelR, midDeg);
       const textRot = midDeg + 90 + (midDeg > 90 && midDeg < 270 ? 180 : 0);

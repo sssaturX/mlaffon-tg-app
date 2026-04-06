@@ -7,12 +7,15 @@ import {
   appSettings,
   pointPlatforms,
   platformAccounts,
+  predictionBets,
   promoCodes,
   users,
   userBalances,
   giveawayParticipants,
   taskEvidence,
   tasks,
+  dropUserStates,
+  userStreamStreaks,
 } from "../db/schema.js";
 import {
   drawGiveawayWinners,
@@ -20,7 +23,12 @@ import {
   getParticipantCountsForGiveawayIds,
   listGiveawayParticipantsWithUsernames,
 } from "../services/giveaways.js";
-import { getAdminDropStatus, startDrop } from "../services/drops.js";
+import {
+  getAdminDropStatus,
+  getDropClaimantsAdmin,
+  listDropsHistory,
+  startDrop,
+} from "../services/drops.js";
 import {
   createTaskAdmin,
   listTasksAdmin,
@@ -49,6 +57,12 @@ import {
   resolvePrediction,
   startPrediction,
 } from "../services/predictions.js";
+import {
+  adminAdjustBalance,
+  adminDeleteUser,
+  adminListUserReferrals,
+  adminUnlinkPlatform,
+} from "../services/adminUserActions.js";
 
 function parseBearer(req: { headers: { authorization?: string } }): string | null {
   const h = req.headers.authorization;
@@ -151,9 +165,12 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         lifetimeEarned: sql<number>`coalesce(${userBalances.lifetimeEarned}, 0)`,
         twitchLifetimeEarned: sql<number>`coalesce(${userBalances.twitchLifetimeEarned}, 0)`,
         kickLifetimeEarned: sql<number>`coalesce(${userBalances.kickLifetimeEarned}, 0)`,
+        streakTwitch: sql<number>`coalesce(${userStreamStreaks.twitchCurrent}, 0)`,
+        streakKick: sql<number>`coalesce(${userStreamStreaks.kickCurrent}, 0)`,
       })
       .from(users)
       .leftJoin(userBalances, eq(users.id, userBalances.userId))
+      .leftJoin(userStreamStreaks, eq(users.id, userStreamStreaks.userId))
       .orderBy(desc(users.createdAt))
       .limit(limit)
       .offset(offset);
@@ -202,6 +219,35 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       }
     }
 
+    const dropCountMap = new Map<string, number>();
+    const predCountMap = new Map<string, number>();
+    if (userIds.length > 0) {
+      const dc = await db
+        .select({
+          userId: dropUserStates.userId,
+          c: sql<number>`count(*)::int`,
+        })
+        .from(dropUserStates)
+        .where(
+          and(
+            inArray(dropUserStates.userId, userIds),
+            eq(dropUserStates.won, true)
+          )
+        )
+        .groupBy(dropUserStates.userId);
+      for (const r of dc) dropCountMap.set(r.userId, r.c ?? 0);
+
+      const pc = await db
+        .select({
+          userId: predictionBets.userId,
+          c: sql<number>`count(*)::int`,
+        })
+        .from(predictionBets)
+        .where(inArray(predictionBets.userId, userIds))
+        .groupBy(predictionBets.userId);
+      for (const r of pc) predCountMap.set(r.userId, r.c ?? 0);
+    }
+
     return {
       total: total ?? 0,
       limit,
@@ -221,6 +267,10 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         referralCount: refMap.get(u.id) ?? 0,
         banned: u.banned,
         banReason: u.banReason,
+        streakTwitch: u.streakTwitch,
+        streakKick: u.streakKick,
+        dropsActivatedCount: dropCountMap.get(u.id) ?? 0,
+        predictionsJoinedCount: predCountMap.get(u.id) ?? 0,
         platforms: platByUser.get(u.id) ?? {
           twitch: { linked: false, displayName: null },
           kick: { linked: false, displayName: null },
@@ -266,6 +316,97 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       });
     }
     return { ok: true };
+  });
+
+  app.delete("/api/admin/users/:id", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const [u] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
+    if (!u) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Пользователь не найден" },
+      });
+    }
+    await adminDeleteUser(id);
+    return { ok: true };
+  });
+
+  const adjustBalanceBody = z.object({
+    twitchDelta: z.number().int(),
+    kickDelta: z.number().int(),
+  });
+
+  app.post("/api/admin/users/:id/balance", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const parsed = adjustBalanceBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const [u] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
+    if (!u) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Пользователь не найден" },
+      });
+    }
+    const r = await adminAdjustBalance({
+      targetUserId: id,
+      twitchDelta: parsed.data.twitchDelta,
+      kickDelta: parsed.data.kickDelta,
+    });
+    if (!r.ok) {
+      const code = r.code === "insufficient" ? "insufficient_balance" : "no_change";
+      const status = r.code === "insufficient" ? 400 : 400;
+      return reply.status(status).send({
+        error: {
+          code,
+          message:
+            r.code === "insufficient"
+              ? "Недостаточно монет на счёте для списания"
+              : "Укажите ненулевую корректировку",
+        },
+      });
+    }
+    return { ok: true };
+  });
+
+  app.delete("/api/admin/users/:id/platforms/:platform", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const platform = (req.params as { platform: string }).platform;
+    if (platform !== "twitch" && platform !== "kick") {
+      return reply.status(400).send({
+        error: { code: "bad_platform", message: "Только twitch или kick" },
+      });
+    }
+    const [u] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
+    if (!u) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Пользователь не найден" },
+      });
+    }
+    const removed = await adminUnlinkPlatform(id, platform);
+    if (!removed) {
+      return reply.status(404).send({
+        error: { code: "platform_not_linked", message: "Платформа не была привязана" },
+      });
+    }
+    return { ok: true };
+  });
+
+  app.get("/api/admin/users/:id/referrals", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const [u] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
+    if (!u) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Пользователь не найден" },
+      });
+    }
+    const referralsList = await adminListUserReferrals(id);
+    return { referrals: referralsList };
   });
 
   app.get("/api/admin/giveaways", async (req, reply) => {
@@ -521,6 +662,26 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       }
       throw e;
     }
+  });
+
+  app.get("/api/admin/drops/history", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const q = req.query as { limit?: string; offset?: string };
+    const lim = Math.min(200, Math.max(1, Number.parseInt(q.limit ?? "40", 10) || 40));
+    const off = Math.max(0, Number.parseInt(q.offset ?? "0", 10) || 0);
+    return listDropsHistory(lim, off);
+  });
+
+  app.get("/api/admin/drops/:id/claimants", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const data = await getDropClaimantsAdmin(id);
+    if (!data) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Дроп не найден" },
+      });
+    }
+    return data;
   });
 
   app.get("/api/admin/drops", async (req, reply) => {

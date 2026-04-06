@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Calendar,
   ChevronRight,
@@ -20,6 +20,7 @@ import {
 } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
+import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { useOAuthLink } from "../hooks/useOAuthLink";
 import { PushNotificationsRow } from "../components/PushNotificationsRow";
@@ -33,6 +34,7 @@ export default function Profile({
 }) {
   const { showToast } = useToast();
   const { refreshMe } = useMeEconomySync();
+  const { activePlatform } = useActivePlatform();
   const { startOAuth, connectStub, stub } = useOAuthLink();
   const [refs, setRefs] = useState<ReferralsResponse | null>(null);
   const [tgLinkBusy, setTgLinkBusy] = useState(false);
@@ -41,16 +43,33 @@ export default function Profile({
   const [webPassword, setWebPassword] = useState("");
   const [webPassword2, setWebPassword2] = useState("");
   const [webCredBusy, setWebCredBusy] = useState(false);
+  const [inventory, setInventory] = useState<Record<string, number>>({});
+  const [profileExtrasReady, setProfileExtrasReady] = useState(false);
+  const profileExtrasGen = useRef(0);
+  const [syncWeeklyBusy, setSyncWeeklyBusy] = useState(false);
+  const [streakPlusBusy, setStreakPlusBusy] = useState<"twitch" | "kick" | null>(
+    null
+  );
 
-  const loadRefs = useCallback(async () => {
-    const r = await api<ReferralsResponse>("/api/v1/referrals");
-    if (r.ok) setRefs(r.data);
-    else if (!r.networkError) showToast(formatApiError(r), "error");
+  const fetchProfileExtras = useCallback(async (): Promise<void> => {
+    const gen = ++profileExtrasGen.current;
+    const [refsRes, invRes] = await Promise.all([
+      api<ReferralsResponse>("/api/v1/referrals"),
+      api<{ items: Record<string, number> }>("/api/v1/inventory"),
+    ]);
+    if (gen !== profileExtrasGen.current) return;
+    if (refsRes.ok) setRefs(refsRes.data);
+    else if (!refsRes.networkError) showToast(formatApiError(refsRes), "error");
+    if (invRes.ok) setInventory(invRes.data.items);
+    else setInventory({});
+    setProfileExtrasReady(true);
   }, [showToast]);
 
   useEffect(() => {
-    void loadRefs();
-  }, [loadRefs]);
+    if (!me) return;
+    setProfileExtrasReady(false);
+    void fetchProfileExtras();
+  }, [me?.id, fetchProfileExtras]);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
@@ -62,7 +81,7 @@ export default function Profile({
 
     void (async () => {
       await refreshMe();
-      await loadRefs();
+      await fetchProfileExtras();
       if (ok) {
         showToast(
           ok === "twitch"
@@ -86,14 +105,47 @@ export default function Profile({
         }
       }
     })();
-  }, [refreshMe, loadRefs, showToast]);
+  }, [refreshMe, fetchProfileExtras, showToast]);
 
-  async function disconnect(platform: string) {
-    const r = await api(`/api/v1/platforms/${platform}`, { method: "DELETE" });
-    if (r.ok) {
-      showToast("Отключено", "info");
-      void refreshMe();
-    } else showToast(formatApiError(r), "error");
+  async function syncWeeklyReferrals() {
+    setSyncWeeklyBusy(true);
+    try {
+      const r = await api<{ weekKey: string; payouts: number }>(
+        "/api/v1/referrals/sync-weekly",
+        { method: "POST" }
+      );
+      if (r.ok) {
+        showToast(
+          `Неделя ${r.data.weekKey}: зачтено начислений ${r.data.payouts}`,
+          "success",
+          { durationMs: 4500 }
+        );
+        await refreshMe();
+        await fetchProfileExtras();
+      } else showToast(formatApiError(r), "error");
+    } finally {
+      setSyncWeeklyBusy(false);
+    }
+  }
+
+  async function applyStreakPlus(platform: "twitch" | "kick") {
+    setStreakPlusBusy(platform);
+    try {
+      const r = await api<{ streak: number }>("/api/v1/stream-streak/apply-plus", {
+        method: "POST",
+        body: JSON.stringify({ platform }),
+      });
+      if (r.ok) {
+        showToast(
+          `${platform === "twitch" ? "Twitch" : "Kick"}: стрик ${r.data.streak}`,
+          "success"
+        );
+        await refreshMe();
+        await fetchProfileExtras();
+      } else showToast(formatApiError(r), "error");
+    } finally {
+      setStreakPlusBusy(null);
+    }
   }
 
   async function copyReferral(kind: "mini" | "web") {
@@ -282,22 +334,87 @@ export default function Profile({
         </div>
       )}
 
+      <div className="card stack card--pad-sm profile-inventory-section">
+        <h3 className="profile-section-title">Инвентарь</h3>
+        {!profileExtrasReady ? (
+          <p className="muted m-0 profile-inventory-placeholder">Загрузка…</p>
+        ) : Object.keys(inventory).length === 0 ? (
+          <p className="muted m-0 profile-inventory-placeholder">Пока нет предметов</p>
+        ) : (
+          <>
+            <ul className="list profile-inventory-list">
+              {Object.entries(inventory).map(([id, qty]) => (
+                <li key={id}>
+                  <span className="label-strong">
+                    {id === "streak_save"
+                      ? "Сейв стрика"
+                      : id === "streak_plus"
+                        ? "+1 к стрим-стрику"
+                        : id === "boost_x2"
+                          ? "Буст ×2"
+                          : id === "extra_spin"
+                            ? "Спин колеса"
+                            : id}
+                  </span>
+                  <span className="muted">×{qty}</span>
+                </li>
+              ))}
+            </ul>
+            {(inventory.streak_plus ?? 0) > 0 ? (
+              <div className="row profile-inventory-actions">
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={streakPlusBusy !== null}
+                  onClick={() => void applyStreakPlus("twitch")}
+                >
+                  {streakPlusBusy === "twitch" ? "…" : "Применить +1 · Twitch"}
+                </button>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={streakPlusBusy !== null}
+                  onClick={() => void applyStreakPlus("kick")}
+                >
+                  {streakPlusBusy === "kick" ? "…" : "Применить +1 · Kick"}
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
+        <p className="muted text-caption m-0">
+          Сейв стрика тратится автоматически, если пропущен день эфира (по одному на платформу).
+          Сейчас выбрана платформа магазина:{" "}
+          <strong>{activePlatform === "twitch" ? "Twitch" : "Kick"}</strong>.
+        </p>
+      </div>
+
       <div className="card stack card--pad-sm profile-stats-row">
         <div className="profile-stat-cell">
-          <p className="muted text-caption">Уровень</p>
-          <p className="label-strong">{me.level}</p>
+          <p className="muted text-caption">Ранг</p>
+          <p className="label-strong">
+            {me.rankTierEmoji} {me.level}
+          </p>
+          <p className="muted text-caption m-0">{me.rankTierLabel}</p>
         </div>
         <div className="profile-stat-cell">
-          <p className="muted text-caption">Ранг (монеты)</p>
+          <p className="muted text-caption">До след. ранга</p>
+          <p className="label-strong">
+            {me.rankLifetimeToNext != null
+              ? `${me.rankLifetimeToNext.toLocaleString("ru-RU")} lifetime`
+              : "Макс."}
+          </p>
+          <p className="muted text-caption m-0">
+            Прогресс {me.rankProgressPercent.toFixed(0)}%
+          </p>
+        </div>
+        <div className="profile-stat-cell">
+          <p className="muted text-caption">Топ монет</p>
           <p className="label-strong">
             {me.leaderboardRankCoins != null
               ? `#${me.leaderboardRankCoins}`
               : "—"}
           </p>
-        </div>
-        <div className="profile-stat-cell">
-          <p className="muted text-caption">Множитель</p>
-          <p className="label-strong">×{me.rewardMultiplier.toFixed(2)}</p>
         </div>
       </div>
 
@@ -337,9 +454,7 @@ export default function Profile({
               Подключить
             </button>
           ) : (
-            <button type="button" onClick={() => void disconnect("twitch")}>
-              Отключить
-            </button>
+            <span className="muted text-caption">Смена Twitch — через поддержку</span>
           )}
         </div>
 
@@ -378,9 +493,7 @@ export default function Profile({
               Подключить
             </button>
           ) : (
-            <button type="button" onClick={() => void disconnect("kick")}>
-              Отключить
-            </button>
+            <span className="muted text-caption">Смена Kick — через поддержку</span>
           )}
         </div>
 
@@ -458,6 +571,18 @@ export default function Profile({
           требуется для квалификации. Регистрации с сайта с одного IP с реф-кодом
           ограничены, чтобы снизить накрутку.
         </div>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={syncWeeklyBusy}
+          onClick={() => void syncWeeklyReferrals()}
+        >
+          {syncWeeklyBusy ? "…" : "Забрать % за прошлую неделю"}
+        </button>
+        <p className="muted text-caption m-0">
+          Те же правила, что и автоматическое начисление по понедельникам; повторный запрос не
+          удвоит выплату.
+        </p>
         <p className="muted small m-0 text-caption">Мини-приложение (Telegram)</p>
         <div className="referral-field">
           <input

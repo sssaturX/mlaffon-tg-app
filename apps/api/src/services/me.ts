@@ -7,6 +7,11 @@ import {
   users,
 } from "../db/schema.js";
 import { computeLevel, computeRewardMultiplier } from "../config.js";
+import {
+  rankProgress,
+  rankTierEmoji,
+  rankTierLabelRu,
+} from "../rankTable.js";
 import { ensureStreamStreakRow } from "./streamStreak.js";
 import { hasPendingBanAppeal } from "./banAppeals.js";
 import { getCoinRankAll } from "./leaderboard.js";
@@ -26,6 +31,10 @@ export async function buildMeResponse(userId: string): Promise<{
   lifetimeKick: number;
   level: number;
   rewardMultiplier: number;
+  rankTierEmoji: string;
+  rankTierLabel: string;
+  rankProgressPercent: number;
+  rankLifetimeToNext: number | null;
   /** Макс. из двух платформенных стриков (для совместимости и топа). */
   streak: number;
   streakTwitch: number;
@@ -116,6 +125,11 @@ export async function buildMeResponse(userId: string): Promise<{
   const lifetimeEarned = lifetimeTwitch + lifetimeKick;
   const coins = coinsTwitch + coinsKick;
   const level = computeLevel(lifetimeEarned);
+  const rp = rankProgress(lifetimeEarned);
+  const rankLifetimeToNext =
+    rp.nextThreshold != null
+      ? Math.max(0, Math.ceil(rp.nextThreshold - lifetimeEarned))
+      : null;
 
   const streakTwitch = streamStreak.twitch;
   const streakKick = streamStreak.kick;
@@ -141,6 +155,10 @@ export async function buildMeResponse(userId: string): Promise<{
     lifetimeKick,
     level,
     rewardMultiplier: computeRewardMultiplier(level),
+    rankTierEmoji: rankTierEmoji(level),
+    rankTierLabel: rankTierLabelRu(level),
+    rankProgressPercent: rp.progressPercent,
+    rankLifetimeToNext,
     streak,
     streakTwitch,
     streakKick,
@@ -170,6 +188,10 @@ export type MeEconomyPatch = {
   lifetimeKick: number;
   level: number;
   rewardMultiplier: number;
+  rankTierEmoji: string;
+  rankTierLabel: string;
+  rankProgressPercent: number;
+  rankLifetimeToNext: number | null;
 };
 
 export async function buildMeEconomyPatch(userId: string): Promise<MeEconomyPatch> {
@@ -186,6 +208,11 @@ export async function buildMeEconomyPatch(userId: string): Promise<MeEconomyPatc
   const lifetimeEarned = lifetimeTwitch + lifetimeKick;
   const coins = coinsTwitch + coinsKick;
   const level = computeLevel(lifetimeEarned);
+  const rp = rankProgress(lifetimeEarned);
+  const rankLifetimeToNext =
+    rp.nextThreshold != null
+      ? Math.max(0, Math.ceil(rp.nextThreshold - lifetimeEarned))
+      : null;
   return {
     coins,
     coinsTwitch,
@@ -195,5 +222,9 @@ export async function buildMeEconomyPatch(userId: string): Promise<MeEconomyPatc
     lifetimeKick,
     level,
     rewardMultiplier: computeRewardMultiplier(level),
+    rankTierEmoji: rankTierEmoji(level),
+    rankTierLabel: rankTierLabelRu(level),
+    rankProgressPercent: rp.progressPercent,
+    rankLifetimeToNext,
   };
 }

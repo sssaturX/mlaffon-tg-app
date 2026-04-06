@@ -1,65 +1,152 @@
-import { memo } from "react";
-import { Crown, Gamepad2, Shield, Gift, Star, ShoppingBag, Sparkles } from "lucide-react";
+import { memo, useCallback, useEffect, useState } from "react";
+import { ShoppingBag, Sparkles } from "lucide-react";
 import { useActivePlatform } from "../context/PlatformContext";
+import { api, formatApiError } from "../api";
+import { useToast } from "../context/ToastContext";
+import { useMeEconomySync } from "../context/MeEconomySyncContext";
 
-type PlaceholderItem = {
+type ShopItemRow = {
   id: string;
   title: string;
-  icon: React.ReactNode;
-  accent: string;
+  kind: string;
+  priceCoins: number;
+  meta: Record<string, unknown> | null;
 };
 
-const twitchPlaceholders: PlaceholderItem[] = [
-  { id: "tw_vip", title: "VIP в чате", icon: <Crown size={22} />, accent: "#a855f7" },
-  { id: "tw_bp", title: "Battle Pass", icon: <Gamepad2 size={22} />, accent: "#c084fc" },
-  { id: "tw_steam", title: "Пополнение Steam", icon: <Gift size={22} />, accent: "#818cf8" },
-  { id: "tw_vpn", title: "VPN / прокси", icon: <Shield size={22} />, accent: "#7c3aed" },
-];
+function itemPlatform(meta: Record<string, unknown> | null): string | null {
+  const p = meta?.platform;
+  return typeof p === "string" ? p : null;
+}
 
-const kickPlaceholders: PlaceholderItem[] = [
-  { id: "ki_vip", title: "VIP в чате", icon: <Crown size={22} />, accent: "#53fc18" },
-  { id: "ki_bonus", title: "Бонуска за ??", icon: <Star size={22} />, accent: "#4ade80" },
-];
-
-const PlaceholderCard = memo(function PlaceholderCard({ item }: { item: PlaceholderItem }) {
+const ShopItemCard = memo(function ShopItemCard({
+  item,
+  busy,
+  onBuy,
+}: {
+  item: ShopItemRow;
+  busy: boolean;
+  onBuy: (id: string) => void;
+}) {
+  const note =
+    typeof item.meta?.fulfillmentNote === "string"
+      ? item.meta.fulfillmentNote
+      : null;
   return (
-    <div className="shop-placeholder-card">
-      <div className="shop-placeholder-card__icon" style={{ color: item.accent, background: `${item.accent}18` }}>
-        {item.icon}
+    <div className="shop-item-card">
+      <div className="shop-item-card__body">
+        <h3 className="shop-item-card__title">{item.title}</h3>
+        {note ? <p className="muted text-caption m-0">{note}</p> : null}
+        <p className="shop-item-card__price">
+          {item.priceCoins.toLocaleString("ru-RU")}{" "}
+          <span className="muted">монет</span>
+        </p>
       </div>
-      <span className="shop-placeholder-card__title">{item.title}</span>
-      <span className="shop-placeholder-card__badge">Скоро</span>
+      <button
+        type="button"
+        className="primary shop-item-card__btn"
+        disabled={busy}
+        onClick={() => onBuy(item.id)}
+      >
+        Купить
+      </button>
     </div>
   );
 });
 
 export default function Shop() {
   const { activePlatform } = useActivePlatform();
+  const { showToast } = useToast();
+  const { patchMe } = useMeEconomySync();
+  const [items, setItems] = useState<ShopItemRow[] | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [purchasingId, setPurchasingId] = useState<string | null>(null);
 
-  const isTwitch = activePlatform === "twitch";
-  const placeholders = isTwitch ? twitchPlaceholders : kickPlaceholders;
-  const platformName = isTwitch ? "Twitch" : "Kick";
+  const load = useCallback(async () => {
+    const r = await api<{ items: ShopItemRow[] }>("/api/v1/shop/items");
+    if (r.ok) {
+      setItems(r.data.items);
+      setLoadErr(null);
+    } else {
+      setLoadErr(formatApiError(r));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const visible =
+    items?.filter((it) => {
+      const p = itemPlatform(it.meta);
+      if (!p) return true;
+      return p === activePlatform;
+    }) ?? [];
+
+  const platformName = activePlatform === "twitch" ? "Twitch" : "Kick";
+
+  async function buy(itemId: string) {
+    setPurchasingId(itemId);
+    try {
+      const r = await api<{
+        coins: number;
+        coinsTwitch: number;
+        coinsKick: number;
+      }>("/api/v1/shop/purchase", {
+        method: "POST",
+        body: JSON.stringify({ itemId, platform: activePlatform }),
+      });
+      if (!r.ok) {
+        showToast(formatApiError(r), "error");
+        return;
+      }
+      patchMe(() => ({
+        coins: r.data.coins,
+        coinsTwitch: r.data.coinsTwitch,
+        coinsKick: r.data.coinsKick,
+      }));
+      showToast("Покупка оформлена — поддержка свяжется для выдачи, если нужно", "success", {
+        durationMs: 5000,
+      });
+      void load();
+    } finally {
+      setPurchasingId(null);
+    }
+  }
 
   return (
     <div className="shop-page">
       <div className="shop-page__content fade-in-soft">
-        {/* Platform showcase */}
         <div className="shop-section">
           <div className="shop-section__head">
             <Sparkles size={16} className="shop-section__head-icon" />
-            <span>{platformName} магазин</span>
+            <span>Магазин · {platformName}</span>
           </div>
-          <div className="shop-placeholder-grid">
-            {placeholders.map((p) => (
-              <PlaceholderCard key={p.id} item={p} />
-            ))}
-          </div>
+          {loadErr ? (
+            <p className="err">{loadErr}</p>
+          ) : items === null ? (
+            <p className="muted">Загрузка…</p>
+          ) : visible.length === 0 ? (
+            <p className="muted">Для этой платформы пока нет товаров.</p>
+          ) : (
+            <div className="shop-items-grid">
+              {visible.map((it) => (
+                <ShopItemCard
+                  key={it.id}
+                  item={it}
+                  busy={purchasingId === it.id}
+                  onBuy={(id) => void buy(id)}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Assortment notice */}
         <div className="shop-notice">
           <ShoppingBag size={18} className="shop-notice__icon" />
-          <span>Ассортимент магазина будет пополняться</span>
+          <span>
+            VIP, батлпасс и Steam — оплата монетами в приложении; активация призов может быть
+            вручную через поддержку.
+          </span>
         </div>
       </div>
     </div>

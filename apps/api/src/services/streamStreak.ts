@@ -4,6 +4,11 @@ import { userStreamStreaks, users } from "../db/schema.js";
 import { gameConfig } from "../config.js";
 import { applyCredit } from "./economy.js";
 import { utcDateString } from "./streak.js";
+import {
+  STREAK_PLUS_ITEM_ID,
+  STREAK_SAVE_ITEM_ID,
+  tryConsumeInventoryItem,
+} from "./inventory.js";
 
 function addDays(isoDate: string, days: number): string {
   const [y, m, day] = isoDate.split("-").map(Number);
@@ -53,12 +58,36 @@ export async function ensureStreamStreakRow(
   let changed = false;
 
   if (twitchLast && twitchLast !== today && twitchLast !== yesterday && twitchCurrent !== 0) {
-    twitchCurrent = 0;
-    changed = true;
+    const usedSave = await tryConsumeInventoryItem(userId, STREAK_SAVE_ITEM_ID, 1);
+    if (usedSave) {
+      twitchLast = yesterday;
+      await db
+        .update(userStreamStreaks)
+        .set({
+          twitchLastUtcDate: yesterday,
+        })
+        .where(eq(userStreamStreaks.userId, userId));
+      changed = true;
+    } else {
+      twitchCurrent = 0;
+      changed = true;
+    }
   }
   if (kickLast && kickLast !== today && kickLast !== yesterday && kickCurrent !== 0) {
-    kickCurrent = 0;
-    changed = true;
+    const usedSave = await tryConsumeInventoryItem(userId, STREAK_SAVE_ITEM_ID, 1);
+    if (usedSave) {
+      kickLast = yesterday;
+      await db
+        .update(userStreamStreaks)
+        .set({
+          kickLastUtcDate: yesterday,
+        })
+        .where(eq(userStreamStreaks.userId, userId));
+      changed = true;
+    } else {
+      kickCurrent = 0;
+      changed = true;
+    }
   }
   if (changed) {
     await db
@@ -78,23 +107,18 @@ export async function ensureStreamStreakRow(
   };
 }
 
-async function maybeStreamStreakBonus(
+export async function maybeStreamStreakBonus(
   userId: string,
   platform: "twitch" | "kick",
   newStreak: number
 ): Promise<number> {
-  const cfg = gameConfig.streamStreak;
-  if (
-    cfg.bonusEveryStreams <= 0 ||
-    newStreak <= 0 ||
-    newStreak % cfg.bonusEveryStreams !== 0
-  ) {
-    return 0;
-  }
-  const idem = `stream_streak_bonus:${platform}:${userId}:${newStreak}`;
+  const milestones = gameConfig.streamStreak.milestones ?? [];
+  const hit = milestones.find((m) => m.streams === newStreak);
+  if (!hit || hit.coins <= 0) return 0;
+  const idem = `stream_streak_ms:${platform}:${userId}:${newStreak}`;
   const res = await applyCredit({
     userId,
-    amount: cfg.bonusCoins,
+    amount: hit.coins,
     idempotencyKey: idem,
     kind: "streak_bonus",
     platform,
@@ -183,4 +207,55 @@ export async function applyStreamStreakBroadcastWatch(
     newStreak
   );
   return { ok: true, streak: newStreak, utcDate: today, bonusCoinsAwarded };
+}
+
+/**
+ * Списывает `streak_plus` из инвентаря и добавляет +1 к счётчику стрим-стрика платформы.
+ */
+export async function applyStreamStreakPlusFromInventory(
+  userId: string,
+  platform: "twitch" | "kick"
+): Promise<
+  { ok: true; streak: number } | { ok: false; code: "no_item" | "no_account" }
+> {
+  const consumed = await tryConsumeInventoryItem(
+    userId,
+    STREAK_PLUS_ITEM_ID,
+    1
+  );
+  if (!consumed) return { ok: false, code: "no_item" };
+
+  const [exists] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!exists) return { ok: false, code: "no_account" };
+
+  const state = await ensureStreamStreakRow(userId);
+  const today = utcDateString();
+
+  if (platform === "twitch") {
+    const next = state.twitch + 1;
+    await db
+      .update(userStreamStreaks)
+      .set({
+        twitchCurrent: next,
+        twitchLastUtcDate: today,
+      })
+      .where(eq(userStreamStreaks.userId, userId));
+    await maybeStreamStreakBonus(userId, "twitch", next);
+    return { ok: true, streak: next };
+  }
+
+  const next = state.kick + 1;
+  await db
+    .update(userStreamStreaks)
+    .set({
+      kickCurrent: next,
+      kickLastUtcDate: today,
+    })
+    .where(eq(userStreamStreaks.userId, userId));
+  await maybeStreamStreakBonus(userId, "kick", next);
+  return { ok: true, streak: next };
 }

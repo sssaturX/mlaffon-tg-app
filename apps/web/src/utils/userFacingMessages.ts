@@ -42,6 +42,8 @@ const API_ERROR_BY_CODE: Record<string, string> = {
     "Проверка подписки сейчас недоступна. Попробуйте позже.",
   platform_not_allowed:
     "Этот розыгрыш для другой платформы — переключите платформу в шапке",
+  platform_unlink_forbidden:
+    "Отвязка Twitch/Kick недоступна. Чтобы сменить аккаунт, напишите в поддержку.",
 };
 
 function looksTechnicalMessage(msg: string): boolean {

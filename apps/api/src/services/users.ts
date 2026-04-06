@@ -193,5 +193,9 @@ export async function applyReferralFromStartParam(
 }
 
 export async function deleteUserAccount(userId: string) {
+  await db
+    .update(users)
+    .set({ referredById: null, updatedAt: sql`now()` })
+    .where(eq(users.referredById, userId));
   await db.delete(users).where(eq(users.id, userId));
 }

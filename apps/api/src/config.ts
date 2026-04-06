@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { computeRankFromLifetime } from "./rankTable.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -16,10 +17,9 @@ export interface GameConfig {
     bonusEveryDays: number;
     bonusCoins: number;
   };
-  /** Бонус за N стримов подряд на Twitch или Kick (отдельно от ежедневного стрика захода в приложение). */
+  /** Бонусы на конкретном счётчике стримов подряд (сессии) на Twitch/Kick. */
   streamStreak: {
-    bonusEveryStreams: number;
-    bonusCoins: number;
+    milestones: { streams: number; coins: number }[];
   };
   referral: {
     referrerReward: number;
@@ -31,7 +31,11 @@ export interface GameConfig {
   };
   fortune: {
     paidSpinCost: number;
-    outcomes: { type: "coins" | "boost" | "nothing"; weight: number; value?: number }[];
+    outcomes: {
+      type: "coins" | "boost" | "nothing" | "streak_save" | "streak_plus";
+      weight: number;
+      value?: number;
+    }[];
   };
   platforms: {
     twitchEnabled: boolean;
@@ -49,6 +53,8 @@ export interface GameConfig {
     giveawayBoost: { max: number; timeWindowMs: number };
     predictionBet: { max: number; timeWindowMs: number };
     fortuneSpin: { max: number; timeWindowMs: number };
+    /** Ручная синхронизация недельных % рефералов (отдельный бакет, не глобальный). */
+    referralWeeklySync: { max: number; timeWindowMs: number };
   };
   /** Множитель к наградам при заряде в инвентаре (см. inventoryItemId). Не выше maxMultiplier. */
   boost: {
@@ -67,8 +73,17 @@ const defaultConfig: GameConfig = {
     bonusCoins: 50,
   },
   streamStreak: {
-    bonusEveryStreams: 7,
-    bonusCoins: 500,
+    milestones: [
+      { streams: 3, coins: 300 },
+      { streams: 5, coins: 500 },
+      { streams: 7, coins: 800 },
+      { streams: 10, coins: 1300 },
+      { streams: 15, coins: 2000 },
+      { streams: 21, coins: 3200 },
+      { streams: 30, coins: 5000 },
+      { streams: 50, coins: 12_000 },
+      { streams: 100, coins: 35_000 },
+    ],
   },
   referral: {
     referrerReward: 0,
@@ -83,8 +98,10 @@ const defaultConfig: GameConfig = {
       { type: "coins", weight: 35, value: 10 },
       { type: "coins", weight: 25, value: 25 },
       { type: "coins", weight: 10, value: 50 },
-      { type: "boost", weight: 15, value: 1 },
-      { type: "nothing", weight: 15 },
+      { type: "boost", weight: 12, value: 1 },
+      { type: "streak_save", weight: 5 },
+      { type: "streak_plus", weight: 5 },
+      { type: "nothing", weight: 13 },
     ],
   },
   platforms: {
@@ -102,6 +119,7 @@ const defaultConfig: GameConfig = {
     giveawayBoost: { max: 20, timeWindowMs: 60_000 },
     predictionBet: { max: 12, timeWindowMs: 60_000 },
     fortuneSpin: { max: 25, timeWindowMs: 60_000 },
+    referralWeeklySync: { max: 30, timeWindowMs: 60_000 },
   },
   boost: {
     maxMultiplier: 2,
@@ -161,11 +179,12 @@ function loadConfig(): GameConfig {
 
 export const gameConfig = loadConfig();
 
+/** Ранг 1–40 по суммарному lifetime (таблица заказчика). */
 export function computeLevel(lifetimeEarned: number): number {
-  const u = gameConfig.level.coinsPerLevelUnit;
-  return Math.floor(Math.sqrt(Math.max(0, lifetimeEarned) / u));
+  return computeRankFromLifetime(lifetimeEarned);
 }
 
 export function computeRewardMultiplier(level: number): number {
-  return 1 + level * gameConfig.level.rewardMultiplierPerLevel;
+  const r = Math.max(1, level);
+  return 1 + (r - 1) * gameConfig.level.rewardMultiplierPerLevel;
 }

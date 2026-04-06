@@ -32,6 +32,7 @@ import {
 } from "../store/liveBroadcastStore";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { usePredictionStore } from "../store/predictionStore";
+import { useLiveBroadcastStore } from "../store/liveBroadcastStore";
 
 const STREAK_TARGET = 7;
 
@@ -371,9 +372,32 @@ export default function Home({
       return;
     }
     const platRu = live.platform === "kick" ? "Kick" : "Twitch";
+    const broadcastId = live.id;
     /** Сразу открываем ссылку (до любого await), иначе Telegram блокирует openLink. */
     openExternal(url);
     setWatchingLive(true);
+    showToast(
+      "Окно стрима открыто. Стрик засчитается через 15 секунд — не закрывайте мини-приложение.",
+      "info",
+      { durationMs: 5500 }
+    );
+    await new Promise<void>((resolve) => {
+      window.setTimeout(() => resolve(), 15_000);
+    });
+    const cur = useLiveBroadcastStore.getState().broadcast;
+    if (
+      !cur ||
+      !("active" in cur) ||
+      !cur.active ||
+      cur.id !== broadcastId
+    ) {
+      showToast(
+        "Эфир уже не активен или сменился — обновите главную и нажмите снова.",
+        "info"
+      );
+      setWatchingLive(false);
+      return;
+    }
     try {
       const r = await api<{
         ok: boolean;
@@ -716,8 +740,14 @@ export default function Home({
             <p className="home-hero__greet">Добро пожаловать,</p>
             <p className="home-hero__name">{tgDisplayName}</p>
             <p className="muted home-hero__sub">
-              Режим: {activePlatform === "twitch" ? "Twitch" : "Kick"} · уровень{" "}
-              {me.level} · ×{me.rewardMultiplier.toFixed(2)}
+              {activePlatform === "twitch" ? "Twitch" : "Kick"}:{" "}
+              {(activePlatform === "twitch" ? me.coinsTwitch : me.coinsKick).toLocaleString(
+                "ru-RU"
+              )}{" "}
+              монет · {me.rankTierEmoji} ранг {me.level} ({me.rankTierLabel})
+              {me.rankLifetimeToNext != null
+                ? ` · до след. ${me.rankLifetimeToNext.toLocaleString("ru-RU")} lifetime`
+                : ""}
             </p>
           </div>
         </div>

@@ -476,20 +476,6 @@ export async function getAdminDropStatus(): Promise<{
     dropsWon: number;
   }>;
 }> {
-  const userStatsRows = await db
-    .select({
-      userId: dropUserStates.userId,
-      username: users.username,
-      firstName: users.firstName,
-      dropsWon: sql<number>`count(*)::int`,
-    })
-    .from(dropUserStates)
-    .innerJoin(users, eq(users.id, dropUserStates.userId))
-    .where(eq(dropUserStates.won, true))
-    .groupBy(dropUserStates.userId, users.username, users.firstName)
-    .orderBy(sql`count(*) desc`)
-    .limit(30);
-
   const now = new Date();
   const [d] = await db
     .select()
@@ -502,12 +488,7 @@ export async function getAdminDropStatus(): Promise<{
     return {
       active: false,
       drop: null,
-      userStats: userStatsRows.map((r) => ({
-        userId: r.userId,
-        username: r.username ?? null,
-        firstName: r.firstName ?? null,
-        dropsWon: r.dropsWon ?? 0,
-      })),
+      userStats: [],
     };
   }
 
@@ -524,11 +505,75 @@ export async function getAdminDropStatus(): Promise<{
       startedAt: d.startedAt.toISOString(),
       endsAt: d.endsAt.toISOString(),
     },
-    userStats: userStatsRows.map((r) => ({
+    userStats: [],
+  };
+}
+
+export async function listDropsHistory(limit: number, offset: number) {
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(drops);
+  const rows = await db
+    .select()
+    .from(drops)
+    .orderBy(desc(drops.startedAt))
+    .limit(limit)
+    .offset(offset);
+  return {
+    total: total ?? 0,
+    limit,
+    offset,
+    drops: rows.map((d) => ({
+      id: d.id,
+      platform: d.platform ?? "both",
+      code: d.code,
+      rewardMin: d.rewardMin,
+      rewardMax: d.rewardMax,
+      maxWinners: d.maxWinners,
+      winnersCount: d.winnersCount,
+      startedAt: d.startedAt.toISOString(),
+      endsAt: d.endsAt.toISOString(),
+      active: d.active,
+    })),
+  };
+}
+
+export async function getDropClaimantsAdmin(dropId: string): Promise<
+  | {
+      dropId: string;
+      claimants: Array<{
+        userId: string;
+        rewardCoins: number;
+        username: string | null;
+        firstName: string | null;
+      }>;
+    }
+  | null
+> {
+  const [d] = await db
+    .select({ id: drops.id })
+    .from(drops)
+    .where(eq(drops.id, dropId))
+    .limit(1);
+  if (!d) return null;
+  const rows = await db
+    .select({
+      userId: dropUserStates.userId,
+      rewardCoins: dropUserStates.rewardCoins,
+      username: users.username,
+      firstName: users.firstName,
+    })
+    .from(dropUserStates)
+    .innerJoin(users, eq(users.id, dropUserStates.userId))
+    .where(and(eq(dropUserStates.dropId, dropId), eq(dropUserStates.won, true)))
+    .orderBy(desc(dropUserStates.rewardCoins));
+  return {
+    dropId,
+    claimants: rows.map((r) => ({
       userId: r.userId,
-      username: r.username ?? null,
-      firstName: r.firstName ?? null,
-      dropsWon: r.dropsWon ?? 0,
+      rewardCoins: r.rewardCoins ?? 0,
+      username: r.username,
+      firstName: r.firstName,
     })),
   };
 }

@@ -41,7 +41,9 @@ export async function purchaseItem(
     return { ok: false, error: "duplicate" };
   }
 
-  if (item.kind === "extra_spin") {
+  if (item.kind === "manual_fulfillment") {
+    /* только списание монет; выдача VIP / батлпасса / Steam — вручную поддержкой */
+  } else if (item.kind === "extra_spin") {
     const qty = (item.meta as { spins?: number } | null)?.spins ?? 1;
     await db
       .insert(userInventory)

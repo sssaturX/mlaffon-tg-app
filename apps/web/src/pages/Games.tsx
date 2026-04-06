@@ -22,7 +22,7 @@ type FortuneStatus = {
 };
 
 type SpinReveal = {
-  outcome: "coins" | "boost" | "nothing";
+  outcome: "coins" | "boost" | "nothing" | "streak_save" | "streak_plus";
   amount?: number;
   segmentLabel: string;
 };
@@ -49,6 +49,28 @@ function SpinResultCard({ result }: { result: SpinReveal }) {
         <p className="games-win-card__eyebrow">В инвентарь</p>
         <p className="games-win-card__value">Буст ×2</p>
         <p className="games-win-card__hint">{result.segmentLabel}</p>
+      </div>
+    );
+  }
+  if (result.outcome === "streak_save") {
+    return (
+      <div className="games-win-card games-win-card--streak" role="status">
+        <Sparkles className="games-win-card__icon" aria-hidden size={28} strokeWidth={2} />
+        <p className="games-win-card__eyebrow">В инвентарь</p>
+        <p className="games-win-card__value">Сейв стрика</p>
+        <p className="games-win-card__hint">
+          Автоматически удержит стрим-стрик при пропуске дня
+        </p>
+      </div>
+    );
+  }
+  if (result.outcome === "streak_plus") {
+    return (
+      <div className="games-win-card games-win-card--streak" role="status">
+        <Gift className="games-win-card__icon" aria-hidden size={28} strokeWidth={2} />
+        <p className="games-win-card__eyebrow">В инвентарь</p>
+        <p className="games-win-card__value">+1 к стрику</p>
+        <p className="games-win-card__hint">Примените в профиле для выбранной платформы</p>
       </div>
     );
   }
@@ -102,7 +124,7 @@ export default function Games() {
 
     const r = await api<{
       segmentIndex: number;
-      outcome: "coins" | "boost" | "nothing";
+      outcome: SpinReveal["outcome"];
       amount?: number;
       coins: number;
       coinsTwitch: number;
