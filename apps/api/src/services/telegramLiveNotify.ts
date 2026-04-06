@@ -1,4 +1,5 @@
 import { telegramBotApi } from "./telegramApi.js";
+import { buildMiniAppInlineKeyboard } from "./telegramKeyboards.js";
 import {
   deactivateLiveNotifyByChatId,
   listActiveLiveNotifyChatIds,
@@ -14,40 +15,12 @@ function buildLiveStartedHtml(params: {
 }): string {
   const platLabel = params.platform === "kick" ? "Kick" : "Twitch";
   const href = escapeHtmlHref(params.streamUrl.trim());
+  const circle = params.platform === "kick" ? "🟢" : "🟣";
   return (
-    "🔴 <b>Эфир начался!</b>\n\n" +
+    `${circle} <b>Эфир начался!</b>\n\n` +
     "Заходите на стрим: откройте приложение и нажмите «Смотреть стрим», чтобы засчитался стрик.\n\n" +
-    `📺 <a href="${href}">Смотреть на ${platLabel}</a>`
+    `<a href="${href}">Смотреть на ${platLabel}</a>`
   );
-}
-
-function buildInlineKeyboard(): Array<
-  Array<{ text: string; web_app?: { url: string }; url?: string }>
-> {
-  const botUser = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "").trim();
-  const miniAppUrl = (
-    process.env.MINI_APP_WEB_URL?.trim() ||
-    process.env.PUBLIC_WEB_URL?.trim() ||
-    ""
-  ).replace(/\/$/, "");
-
-  const keyboard: Array<
-    Array<{ text: string; web_app?: { url: string }; url?: string }>
-  > = [];
-
-  if (miniAppUrl.startsWith("https://")) {
-    keyboard.push([
-      { text: "Открыть приложение", web_app: { url: miniAppUrl } },
-    ]);
-  } else if (botUser) {
-    keyboard.push([
-      {
-        text: "Открыть бота",
-        url: `https://t.me/${botUser}`,
-      },
-    ]);
-  }
-  return keyboard;
 }
 
 async function sendLiveStartedToChat(params: {
@@ -56,7 +29,7 @@ async function sendLiveStartedToChat(params: {
   streamUrl: string;
 }): Promise<{ ok: true } | { ok: false; blocked?: boolean }> {
   const text = buildLiveStartedHtml(params);
-  const keyboard = buildInlineKeyboard();
+  const keyboard = buildMiniAppInlineKeyboard();
 
   const body: Record<string, unknown> = {
     chat_id: typeof params.chatId === "bigint" ? String(params.chatId) : params.chatId,

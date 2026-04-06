@@ -4,6 +4,7 @@ import { liveBroadcasts, liveBroadcastViews } from "../db/schema.js";
 import {
   applyStreamStreakBroadcastWatch,
   ensureStreamStreakRow,
+  resetStreamStreakForMissedBroadcastTx,
 } from "./streamStreak.js";
 import { publishBroadcastEvent } from "./realtimePublish.js";
 import { deactivateActiveDropsOnStreamEnd } from "./drops.js";
@@ -85,10 +86,18 @@ export async function endLiveBroadcast(): Promise<
   if (!active) {
     return { ok: false, code: "not_live" };
   }
-  await db
-    .update(liveBroadcasts)
-    .set({ endedAt: new Date() })
-    .where(eq(liveBroadcasts.id, active.id));
+  const platform: LivePlatform =
+    active.platform === "twitch" ? "twitch" : "kick";
+  const broadcastId = active.id;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(liveBroadcasts)
+      .set({ endedAt: new Date() })
+      .where(eq(liveBroadcasts.id, broadcastId));
+    await resetStreamStreakForMissedBroadcastTx(tx, broadcastId, platform);
+  });
+
   void publishBroadcastEvent({ type: "live_ended", v: 1 });
   await deactivateActiveDropsOnStreamEnd();
   return { ok: true };

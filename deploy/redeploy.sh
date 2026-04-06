@@ -338,6 +338,9 @@ main() {
   run_db_sync
 
   log "права на dist и .env"
+  if [[ -d "$REPO/apps/api/assets" ]]; then
+    $SUDO chmod -R o+rX "$REPO/apps/api/assets"
+  fi
   $SUDO chmod -R o+rX "$REPO/apps/api/dist" "$REPO/apps/web/dist" "$REPO/apps/admin/dist"
   $SUDO chown root:www-data "$REPO/apps/api/.env"
   $SUDO chmod 640 "$REPO/apps/api/.env"

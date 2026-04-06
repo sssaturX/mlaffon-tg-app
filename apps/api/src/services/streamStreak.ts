@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql, type SQLWrapper } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { userStreamStreaks, users } from "../db/schema.js";
 import { gameConfig } from "../config.js";
@@ -183,4 +183,43 @@ export async function applyStreamStreakBroadcastWatch(
     newStreak
   );
   return { ok: true, streak: newStreak, utcDate: today, bonusCoinsAwarded };
+}
+
+type TxExecute = {
+  execute: (query: string | SQLWrapper) => Promise<unknown>;
+};
+
+/**
+ * Завершение эфира: у кого был стрик по платформе, но нет отметки «смотрел этот эфир» — стрик обнуляется.
+ */
+export async function resetStreamStreakForMissedBroadcastTx(
+  tx: TxExecute,
+  broadcastId: string,
+  platform: "twitch" | "kick"
+): Promise<void> {
+  if (platform === "twitch") {
+    await tx.execute(sql`
+      UPDATE user_stream_streaks
+      SET twitch_current = 0,
+          twitch_last_utc_date = NULL
+      WHERE twitch_current > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM live_broadcast_views lbv
+          WHERE lbv.broadcast_id = ${broadcastId}
+            AND lbv.user_id = user_stream_streaks.user_id
+        )
+    `);
+    return;
+  }
+  await tx.execute(sql`
+    UPDATE user_stream_streaks
+    SET kick_current = 0,
+        kick_last_utc_date = NULL
+    WHERE kick_current > 0
+      AND NOT EXISTS (
+        SELECT 1 FROM live_broadcast_views lbv
+        WHERE lbv.broadcast_id = ${broadcastId}
+          AND lbv.user_id = user_stream_streaks.user_id
+      )
+  `);
 }
