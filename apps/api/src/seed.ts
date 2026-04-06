@@ -2,6 +2,7 @@ import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { db } from "./db/index.js";
 import { appSettings, giveaways, promoCodes, shopItems, tasks } from "./db/schema.js";
+import { invalidateActiveTasksCache } from "./services/taskCatalogCache.js";
 
 async function seed() {
   const taskSeeds = [
@@ -280,6 +281,7 @@ async function seed() {
       });
     }
   }
+  invalidateActiveTasksCache();
 
   const shopSeeds = [
     {

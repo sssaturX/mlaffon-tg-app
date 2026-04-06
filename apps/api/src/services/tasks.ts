@@ -1,4 +1,4 @@
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   platformAccounts,
@@ -21,6 +21,7 @@ import { getTaskVerifyQueue } from "../queue/bullmq.js";
 import type { TaskDto, UserTaskStatus } from "shared";
 import { extractTaskUiFields } from "./taskUiMeta.js";
 import { verifyPlatformTask } from "./taskVerifyLogic.js";
+import { getActiveTasksCached } from "./taskCatalogCache.js";
 
 function periodKeyForTask(task: { type: string }): string {
   if (task.type === "daily") return utcDateString();
@@ -90,37 +91,46 @@ function readProgress(
 }
 
 async function buildProgressSnapshot(userId: string): Promise<ProgressSnapshot> {
-  const [refRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(referrals)
-    .where(eq(referrals.referrerId, userId));
-  const [streak] = await db
-    .select({
-      twitchCurrent: userStreamStreaks.twitchCurrent,
-      kickCurrent: userStreamStreaks.kickCurrent,
-    })
-    .from(userStreamStreaks)
-    .where(eq(userStreamStreaks.userId, userId))
-    .limit(1);
-  const linked = await db
-    .select({ platform: platformAccounts.platform })
-    .from(platformAccounts)
-    .where(eq(platformAccounts.userId, userId));
-  const [twMsg] = await db
-    .select({ c: sql<number>`count(*)::int` })
-    .from(taskStreamMessages)
-    .where(
-      and(
-        eq(taskStreamMessages.userId, userId),
-        eq(taskStreamMessages.platform, "twitch")
-      )
-    );
-  const [kickMsg] = await db
-    .select({ c: sql<number>`count(*)::int` })
-    .from(taskStreamMessages)
-    .where(
-      and(eq(taskStreamMessages.userId, userId), eq(taskStreamMessages.platform, "kick"))
-    );
+  const [refRows, streakRows, linked, twRows, kickRows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(referrals)
+      .where(eq(referrals.referrerId, userId)),
+    db
+      .select({
+        twitchCurrent: userStreamStreaks.twitchCurrent,
+        kickCurrent: userStreamStreaks.kickCurrent,
+      })
+      .from(userStreamStreaks)
+      .where(eq(userStreamStreaks.userId, userId))
+      .limit(1),
+    db
+      .select({ platform: platformAccounts.platform })
+      .from(platformAccounts)
+      .where(eq(platformAccounts.userId, userId)),
+    db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(taskStreamMessages)
+      .where(
+        and(
+          eq(taskStreamMessages.userId, userId),
+          eq(taskStreamMessages.platform, "twitch")
+        )
+      ),
+    db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(taskStreamMessages)
+      .where(
+        and(
+          eq(taskStreamMessages.userId, userId),
+          eq(taskStreamMessages.platform, "kick")
+        )
+      ),
+  ]);
+  const refRow = refRows[0];
+  const streak = streakRows[0];
+  const twMsg = twRows[0];
+  const kickMsg = kickRows[0];
   const linkedSet = new Set(linked.map((r) => r.platform));
   return {
     referralsTotal: refRow?.count ?? 0,
@@ -131,6 +141,10 @@ async function buildProgressSnapshot(userId: string): Promise<ProgressSnapshot> 
     twitchMessages: twMsg?.c ?? 0,
     kickMessages: kickMsg?.c ?? 0,
   };
+}
+
+function userTaskMapKey(taskId: string, periodKey: string): string {
+  return `${taskId}\0${periodKey}`;
 }
 
 function rewardPlatformLabel(taskPlatform: string): "twitch" | "kick" | "split" {
@@ -230,14 +244,42 @@ async function enforceTaskRevocationIfNeeded(
 }
 
 export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
-  const all = await db.select().from(tasks).where(eq(tasks.active, true));
+  const all = await getActiveTasksCached();
+
   for (const t of all) {
+    if (toTaskMeta(t.meta).revokeOnUnsubscribe !== true) continue;
     const pk = periodKeyForTask(t);
     await enforceTaskRevocationIfNeeded(userId, t, pk);
   }
-  const progressSnapshot = await buildProgressSnapshot(userId);
-  const chainTasks = new Map<string, Array<typeof all[number]>>();
-  const standaloneTasks: Array<typeof all[number]> = [];
+
+  const todayPk = utcDateString();
+  const allTaskIds = [...new Set(all.map((x) => x.id))];
+  const [progressSnapshot, userTaskRows] = await Promise.all([
+    buildProgressSnapshot(userId),
+    allTaskIds.length === 0
+      ? Promise.resolve([] as (typeof userTasks.$inferSelect)[])
+      : db
+          .select()
+          .from(userTasks)
+          .where(
+            and(
+              eq(userTasks.userId, userId),
+              inArray(userTasks.taskId, allTaskIds),
+              or(eq(userTasks.periodKey, todayPk), eq(userTasks.periodKey, "once"))
+            )
+          ),
+  ]);
+
+  const utMap = new Map<string, typeof userTasks.$inferSelect>();
+  for (const r of userTaskRows) {
+    const pk = r.periodKey ?? "";
+    utMap.set(userTaskMapKey(r.taskId, pk), r);
+  }
+  const getUt = (taskId: string, periodKey: string) =>
+    utMap.get(userTaskMapKey(taskId, periodKey));
+
+  const chainTasks = new Map<string, Array<(typeof all)[number]>>();
+  const standaloneTasks: Array<(typeof all)[number]> = [];
   for (const t of all) {
     const meta = toTaskMeta(t.meta);
     const chainKey = asString(meta.chainKey);
@@ -249,7 +291,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     arr.push(t);
     chainTasks.set(chainKey, arr);
   }
-  const selectedTasks: Array<typeof all[number]> = [...standaloneTasks];
+  const selectedTasks: Array<(typeof all)[number]> = [...standaloneTasks];
   for (const [, group] of chainTasks) {
     const sorted = [...group].sort((a, b) => {
       const ma = toTaskMeta(a.meta);
@@ -264,17 +306,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     let chosen = sorted[sorted.length - 1]!;
     for (const stage of sorted) {
       const pk = periodKeyForTask(stage);
-      const [ut] = await db
-        .select()
-        .from(userTasks)
-        .where(
-          and(
-            eq(userTasks.userId, userId),
-            eq(userTasks.taskId, stage.id),
-            eq(userTasks.periodKey, pk)
-          )
-        )
-        .limit(1);
+      const ut = getUt(stage.id, pk);
       if (ut?.status !== "completed") {
         chosen = stage;
         break;
@@ -283,46 +315,54 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     selectedTasks.push(chosen);
   }
 
-  const rows: TaskDto[] = [];
-  for (const t of selectedTasks) {
-    const pk = periodKeyForTask(t);
-    const [ut] = await db
-      .select()
+  const oneTimeIds = selectedTasks
+    .filter((t) => t.type === "one-time")
+    .map((t) => t.id);
+  const completedOneTime = new Set<string>();
+  if (oneTimeIds.length > 0) {
+    const doneRows = await db
+      .select({ taskId: userTasks.taskId })
       .from(userTasks)
       .where(
         and(
           eq(userTasks.userId, userId),
-          eq(userTasks.taskId, t.id),
-          eq(userTasks.periodKey, pk)
+          inArray(userTasks.taskId, oneTimeIds),
+          eq(userTasks.status, "completed")
         )
-      )
-      .limit(1);
+      );
+    for (const d of doneRows) completedOneTime.add(d.taskId);
+  }
 
-    let userStatus: UserTaskStatus = "available";
-    if (ut?.status === "completed") userStatus = "completed";
-    else if (ut?.status === "pending") userStatus = "pending";
-    else if (t.type === "one-time") {
-      const [anyDone] = await db
-        .select()
-        .from(userTasks)
-        .where(
-          and(
-            eq(userTasks.userId, userId),
-            eq(userTasks.taskId, t.id),
-            eq(userTasks.status, "completed")
-          )
-        )
-        .limit(1);
-      if (anyDone) userStatus = "completed";
-    }
-
-    if (t.platform !== "global") {
-      const ok = await canCompletePlatformTask(userId, {
+  const platformGateMemo = new Map<string, Promise<boolean>>();
+  const gateFor = (t: (typeof all)[number]) => {
+    const key = `${t.platform}:${t.validationType}`;
+    let p = platformGateMemo.get(key);
+    if (!p) {
+      p = canCompletePlatformTask(userId, {
         id: t.id,
         platform: t.platform,
         validationType: t.validationType,
         meta: t.meta,
       });
+      platformGateMemo.set(key, p);
+    }
+    return p;
+  };
+
+  const rows: TaskDto[] = [];
+  for (const t of selectedTasks) {
+    const pk = periodKeyForTask(t);
+    const ut = getUt(t.id, pk);
+
+    let userStatus: UserTaskStatus = "available";
+    if (ut?.status === "completed") userStatus = "completed";
+    else if (ut?.status === "pending") userStatus = "pending";
+    else if (t.type === "one-time" && completedOneTime.has(t.id)) {
+      userStatus = "completed";
+    }
+
+    if (t.platform !== "global") {
+      const ok = await gateFor(t);
       if (!ok && userStatus !== "completed" && userStatus !== "pending") {
         userStatus = "locked";
       }

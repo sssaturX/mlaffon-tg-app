@@ -129,7 +129,6 @@ export default function Home({
   } | null>(null);
   const liveActivePrevRef = useRef<boolean | null>(null);
   const docVisible = useDocumentVisible();
-  const tabWasHiddenRef = useRef(false);
   const [pub, setPub] = useState<HomePublic | null>(null);
   const [promo, setPromo] = useState("");
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
@@ -168,10 +167,6 @@ export default function Home({
   useEffect(() => {
     void loadPublic();
   }, [loadPublic]);
-
-  useEffect(() => {
-    void hydratePrediction();
-  }, [hydratePrediction]);
 
   useEffect(() => {
     return () => {
@@ -290,18 +285,6 @@ export default function Home({
       setActivePlatform(live.platform);
     }
   }, [live, setActivePlatform]);
-
-  /** Синхронизация сразу после возврата во вкладку (без ожидания интервала). */
-  useEffect(() => {
-    if (!docVisible) {
-      tabWasHiddenRef.current = true;
-      return;
-    }
-    if (tabWasHiddenRef.current) {
-      tabWasHiddenRef.current = false;
-      void hydrateLive();
-    }
-  }, [docVisible, hydrateLive]);
 
   useEffect(() => {
     if (!docVisible) return;

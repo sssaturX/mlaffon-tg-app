@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import type { InferInsertModel } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { tasks } from "../db/schema.js";
+import { invalidateActiveTasksCache } from "./taskCatalogCache.js";
 
 export async function listTasksAdmin() {
   return db.select().from(tasks).orderBy(asc(tasks.id));
@@ -29,6 +30,7 @@ export async function createTaskAdmin(row: {
     meta: row.meta,
     active: row.active,
   });
+  invalidateActiveTasksCache();
 }
 
 export async function updateTaskAdmin(
@@ -61,6 +63,7 @@ export async function updateTaskAdmin(
     .set(set as Partial<InferInsertModel<typeof tasks>>)
     .where(eq(tasks.id, id))
     .returning({ id: tasks.id });
+  if (u != null) invalidateActiveTasksCache();
   return u != null;
 }
 
@@ -70,5 +73,6 @@ export async function setTaskActive(id: string, active: boolean) {
     .set({ active })
     .where(eq(tasks.id, id))
     .returning({ id: tasks.id });
+  if (u != null) invalidateActiveTasksCache();
   return u != null;
 }

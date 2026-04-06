@@ -304,7 +304,6 @@ function AppShell({
   const location = useLocation();
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const liveBroadcast = useLiveBroadcastStore((s) => s.broadcast);
-  const hydratePrediction = usePredictionStore((s) => s.hydrateFromApi);
 
   /** Пока идёт эфир — шапка и баланс строго по платформе стрима; без эфира переключатель свободен. */
   useEffect(() => {
@@ -335,6 +334,22 @@ function AppShell({
     loadDropInflight.current = p;
     try { await p; } finally { loadDropInflight.current = null; }
   }, []);
+
+  /** Один HTTP catch-up для дропа + эфира + предикта; без дублей mount + WS onOpen за одну сессию. */
+  const lastRealtimeHttpSyncMsRef = useRef(0);
+  const syncRealtimeFromHttp = useCallback(
+    (opts?: { force?: boolean }) => {
+      if (!getToken()) return;
+      const now = Date.now();
+      const minMs = 2500;
+      if (!opts?.force && now - lastRealtimeHttpSyncMsRef.current < minMs) return;
+      lastRealtimeHttpSyncMsRef.current = now;
+      void loadDrop();
+      void useLiveBroadcastStore.getState().hydrateFromApi();
+      void usePredictionStore.getState().hydrateFromApi();
+    },
+    [loadDrop]
+  );
 
   useEffect(() => {
     if (!me || onboardingOpen || needsPlatformLink) return;
@@ -393,9 +408,7 @@ function AppShell({
       },
       onOpen: () => {
         void refreshMeFromService();
-        void loadDrop();
-        void useLiveBroadcastStore.getState().hydrateFromApi();
-        void usePredictionStore.getState().hydrateFromApi();
+        syncRealtimeFromHttp();
       },
       onLegacyBalancePing: () => void refreshMe(),
     },
@@ -407,10 +420,9 @@ function AppShell({
   }, [realtimeConnected]);
 
   useEffect(() => {
-    if (needsPlatformLink) return;
-    void useLiveBroadcastStore.getState().hydrateFromApi();
-    void hydratePrediction();
-  }, [needsPlatformLink, hydratePrediction]);
+    if (!me || needsPlatformLink) return;
+    syncRealtimeFromHttp();
+  }, [me, needsPlatformLink, syncRealtimeFromHttp]);
 
   useEffect(() => {
     if (needsPlatformLink) return;
@@ -421,11 +433,9 @@ function AppShell({
     if (tabWasHiddenRef.current) {
       tabWasHiddenRef.current = false;
       void refreshMe();
-      void loadDrop();
-      void useLiveBroadcastStore.getState().hydrateFromApi();
-      void hydratePrediction();
+      syncRealtimeFromHttp({ force: true });
     }
-  }, [docVisible, needsPlatformLink, refreshMe, loadDrop, hydratePrediction]);
+  }, [docVisible, needsPlatformLink, refreshMe, syncRealtimeFromHttp]);
 
   /** Без WS — fallback-проверка каждые 2 мин чтобы не пропустить дроп. */
   useEffect(() => {
@@ -464,14 +474,6 @@ function AppShell({
       document.documentElement.removeAttribute("data-platform-theme");
     };
   }, [activePlatform]);
-
-  /** Initial fetch: один раз при появлении me (catch-up если дроп уже идёт). */
-  const dropInitialFetched = useRef(false);
-  useEffect(() => {
-    if (!me || dropInitialFetched.current) return;
-    dropInitialFetched.current = true;
-    void loadDrop();
-  }, [me, loadDrop]);
 
   const autoOpenedDropRef = useRef<string | null>(null);
   useEffect(() => {
