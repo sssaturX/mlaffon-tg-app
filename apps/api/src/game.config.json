@@ -8,36 +8,22 @@
     "bonusCoins": 50
   },
   "streamStreak": {
-    "milestones": [
-      { "streams": 3, "coins": 300 },
-      { "streams": 5, "coins": 500 },
-      { "streams": 7, "coins": 800 },
-      { "streams": 10, "coins": 1300 },
-      { "streams": 15, "coins": 2000 },
-      { "streams": 21, "coins": 3200 },
-      { "streams": 30, "coins": 5000 },
-      { "streams": 50, "coins": 12000 },
-      { "streams": 100, "coins": 35000 }
-    ]
+    "bonusEveryStreams": 7,
+    "bonusCoins": 500
   },
   "referral": {
     "referrerReward": 100,
     "refereeBonus": 25,
-    "qualifyMinLifetimeEarned": 1000
+    "qualifyMinLifetimeEarned": 50
   },
   "fortune": {
-    "paidSpinCost": 250,
+    "paidSpinCost": 20,
     "outcomes": [
-      { "type": "coins", "weight": 25, "value": 50 },
-      { "type": "coins", "weight": 20, "value": 100 },
-      { "type": "coins", "weight": 15, "value": 200 },
-      { "type": "coins", "weight": 10, "value": 300 },
-      { "type": "coins", "weight": 8, "value": 500 },
-      { "type": "boost", "weight": 6, "value": 1 },
-      { "type": "coins", "weight": 5, "value": 1000 },
-      { "type": "streak_save", "weight": 5 },
-      { "type": "streak_plus", "weight": 5 },
-      { "type": "nothing", "weight": 8 }
+      { "type": "coins", "weight": 35, "value": 10 },
+      { "type": "coins", "weight": 25, "value": 25 },
+      { "type": "coins", "weight": 10, "value": 50 },
+      { "type": "boost", "weight": 15, "value": 1 },
+      { "type": "nothing", "weight": 15 }
     ]
   },
   "platforms": {
@@ -52,8 +38,7 @@
     "dropsAttempt": { "max": 20, "timeWindowMs": 60000 },
     "promoApply": { "max": 15, "timeWindowMs": 60000 },
     "giveawayJoin": { "max": 30, "timeWindowMs": 60000 },
-    "fortuneSpin": { "max": 25, "timeWindowMs": 60000 },
-    "referralWeeklySync": { "max": 30, "timeWindowMs": 60000 }
+    "fortuneSpin": { "max": 25, "timeWindowMs": 60000 }
   },
   "boost": {
     "maxMultiplier": 2,

@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { platformAccounts, referrals, userBalances } from "../db/schema.js";
+import { referrals, userBalances } from "../db/schema.js";
 import { applyCreditSplit } from "./economy.js";
 import { gameConfig } from "../config.js";
 
@@ -11,13 +11,6 @@ export async function maybeQualifyReferral(refereeUserId: string): Promise<void>
     .where(eq(referrals.refereeId, refereeUserId))
     .limit(1);
   if (!ref || ref.qualifiedAt) return;
-
-  const [pa] = await db
-    .select({ id: platformAccounts.id })
-    .from(platformAccounts)
-    .where(eq(platformAccounts.userId, refereeUserId))
-    .limit(1);
-  if (!pa) return;
 
   const { qualifyMinLifetimeEarned, referrerReward } = gameConfig.referral;
 
@@ -34,8 +27,8 @@ export async function maybeQualifyReferral(refereeUserId: string): Promise<void>
 }
 
 /**
- * Квалификация реферала: привязана минимум одна платформа (Twitch/Kick) и
- * набран порог lifetime по конфигу (ЭКОНОМИКА: ~1k поинтов).
+ * Qualify referral immediately when referee links a platform (Twitch/Kick).
+ * No lifetime-earned check — platform link alone counts.
  */
 export async function qualifyReferralOnPlatformLink(refereeUserId: string): Promise<void> {
   const [ref] = await db
@@ -45,22 +38,7 @@ export async function qualifyReferralOnPlatformLink(refereeUserId: string): Prom
     .limit(1);
   if (!ref || ref.qualifiedAt) return;
 
-  const [pa] = await db
-    .select({ id: platformAccounts.id })
-    .from(platformAccounts)
-    .where(eq(platformAccounts.userId, refereeUserId))
-    .limit(1);
-  if (!pa) return;
-
-  const { qualifyMinLifetimeEarned, referrerReward } = gameConfig.referral;
-  const [b] = await db
-    .select({ le: userBalances.lifetimeEarned })
-    .from(userBalances)
-    .where(eq(userBalances.userId, refereeUserId))
-    .limit(1);
-  const le = b?.le ?? 0;
-  if (le < qualifyMinLifetimeEarned) return;
-
+  const { referrerReward } = gameConfig.referral;
   await qualifyReferralInternal(ref.id, ref.referrerId, referrerReward);
 }
 

@@ -3,7 +3,6 @@ import { db } from "../db/index.js";
 import { transactions, userBalances, userInventory } from "../db/schema.js";
 import { gameConfig } from "../config.js";
 import { publishBalanceUpdate } from "./realtimePublish.js";
-import { grantRankBonusesForLifetimeRange } from "./rankRewards.js";
 
 export type CreditReason =
   | "task_reward"
@@ -15,8 +14,7 @@ export type CreditReason =
   | "fortune_wheel"
   | "admin"
   | "promo_code"
-  | "drop_reward"
-  | "rank_up";
+  | "drop_reward";
 
 /** Куда зачислить / откуда списать монеты. */
 export type EconomyPlatform = "twitch" | "kick";
@@ -91,18 +89,6 @@ async function readBalances(tx: Tx, userId: string) {
     newTwitchCoins: row?.twitchCoins ?? 0,
     newKickCoins: row?.kickCoins ?? 0,
   };
-}
-
-async function readLifetimeSum(tx: Tx, userId: string): Promise<number> {
-  const [row] = await tx
-    .select({
-      tw: userBalances.twitchLifetimeEarned,
-      ki: userBalances.kickLifetimeEarned,
-    })
-    .from(userBalances)
-    .where(eq(userBalances.userId, userId))
-    .limit(1);
-  return Number(row?.tw ?? 0) + Number(row?.ki ?? 0);
 }
 
 async function insertCreditTx(
@@ -192,8 +178,6 @@ export async function applyCredit(params: {
   } = params;
   if (baseAmount <= 0) throw new Error("amount_must_be_positive");
 
-  let lifetimeBefore = 0;
-  let lifetimeAfter = 0;
   const result = await db.transaction(async (tx): Promise<
     | {
         ok: true;
@@ -210,8 +194,6 @@ export async function applyCredit(params: {
       .where(eq(transactions.idempotencyKey, idempotencyKey))
       .limit(1);
     if (existing) return { ok: false, reason: "duplicate" };
-
-    lifetimeBefore = await readLifetimeSum(tx, userId);
 
     const { finalAmount, boostApplied, multiplier } = await consumeBoostMultiply(
       tx,
@@ -240,7 +222,6 @@ export async function applyCredit(params: {
     });
 
     const balances = await readBalances(tx, userId);
-    lifetimeAfter = await readLifetimeSum(tx, userId);
     return {
       ok: true,
       ...balances,
@@ -248,17 +229,6 @@ export async function applyCredit(params: {
     };
   });
   if (result.ok) void publishBalanceUpdate(userId);
-  if (
-    result.ok &&
-    kind !== "rank_up" &&
-    lifetimeAfter > lifetimeBefore
-  ) {
-    void grantRankBonusesForLifetimeRange(
-      userId,
-      lifetimeBefore,
-      lifetimeAfter
-    ).catch((e) => console.error("[rankRewards]", e));
-  }
   return result;
 }
 
@@ -295,8 +265,6 @@ export async function applyCreditSplit(params: {
   const keyTw = `${idempotencyKey}:tw`;
   const keyKick = `${idempotencyKey}:kick`;
 
-  let splitLifetimeBefore = 0;
-  let splitLifetimeAfter = 0;
   const result = await db.transaction(async (tx): Promise<
     | {
         ok: true;
@@ -318,8 +286,6 @@ export async function applyCreditSplit(params: {
       .where(eq(transactions.idempotencyKey, keyKick))
       .limit(1);
     if (dupTw || dupKick) return { ok: false, reason: "duplicate" };
-
-    splitLifetimeBefore = await readLifetimeSum(tx, userId);
 
     const { finalAmount, boostApplied, multiplier } = await consumeBoostMultiply(
       tx,
@@ -361,7 +327,6 @@ export async function applyCreditSplit(params: {
     });
 
     const balances = await readBalances(tx, userId);
-    splitLifetimeAfter = await readLifetimeSum(tx, userId);
     return {
       ok: true,
       ...balances,
@@ -369,17 +334,6 @@ export async function applyCreditSplit(params: {
     };
   });
   if (result.ok) void publishBalanceUpdate(userId);
-  if (
-    result.ok &&
-    kind !== "rank_up" &&
-    splitLifetimeAfter > splitLifetimeBefore
-  ) {
-    void grantRankBonusesForLifetimeRange(
-      userId,
-      splitLifetimeBefore,
-      splitLifetimeAfter
-    ).catch((e) => console.error("[rankRewards]", e));
-  }
   return result;
 }
 

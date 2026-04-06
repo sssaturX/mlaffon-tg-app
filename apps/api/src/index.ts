@@ -51,9 +51,6 @@ import {
   watchLiveBroadcast,
 } from "./services/liveBroadcast.js";
 import { markReferralPercentEligible } from "./services/referralEligibility.js";
-import { syncWeeklyReferralPayoutForReferrer } from "./services/referralWeekly.js";
-import { getInventoryCounts } from "./services/inventory.js";
-import { applyStreamStreakPlusFromInventory } from "./services/streamStreak.js";
 import { handleRealtimeWsConnection } from "./services/realtimeWs.js";
 import { startRealtimeSubscriber } from "./services/realtimePublish.js";
 import { seedDefaultPointPlatforms } from "./services/platformBalances.js";
@@ -75,8 +72,6 @@ await app.register(rateLimit, {
   allowList: (req) => {
     const p = req.url.split("?")[0] ?? "";
     if (p === "/api/v1/ws" || p === "/health") return true;
-    /* Не делят общий лимит с частым GET /me — иначе при всплеске запросов возможны 429 и «прыжки» UI. */
-    if (p === "/api/v1/inventory" || p === "/api/v1/referrals") return true;
     return false;
   },
   keyGenerator: (req) => {
@@ -690,57 +685,6 @@ app.get("/api/v1/referrals", async (req, reply) => {
   };
 });
 
-app.post(
-  "/api/v1/referrals/sync-weekly",
-  {
-    config: {
-      rateLimit: {
-        max: gameConfig.routeRateLimits.referralWeeklySync.max,
-        timeWindow: gameConfig.routeRateLimits.referralWeeklySync.timeWindowMs,
-      },
-    },
-  },
-  async (req, reply) => {
-    const userId = authUser(req, reply);
-    if (!userId) return;
-    const r = await syncWeeklyReferralPayoutForReferrer(userId);
-    return { ok: true, weekKey: r.weekKey, payouts: r.payouts };
-  }
-);
-
-app.get("/api/v1/inventory", async (req, reply) => {
-  const userId = authUser(req, reply);
-  if (!userId) return;
-  const items = await getInventoryCounts(userId);
-  return { items };
-});
-
-const streamStreakPlusBody = z.object({
-  platform: z.enum(["twitch", "kick"]),
-});
-
-app.post("/api/v1/stream-streak/apply-plus", async (req, reply) => {
-  const userId = authUser(req, reply);
-  if (!userId) return;
-  const parsed = streamStreakPlusBody.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return reply.status(400).send({
-      error: { code: "bad_request", message: "Укажите platform: twitch или kick" },
-    });
-  }
-  const r = await applyStreamStreakPlusFromInventory(userId, parsed.data.platform);
-  if (!r.ok) {
-    const msg =
-      r.code === "no_item"
-        ? "Нет предмета «+1 к стрику» в инвентаре"
-        : "Аккаунт не найден";
-    return reply.status(400).send({
-      error: { code: r.code, message: msg },
-    });
-  }
-  return { ok: true, streak: r.streak, platform: parsed.data.platform };
-});
-
 if (allowDevAuthRoute) {
   app.post("/api/v1/platforms/:platform/connect", async (req, reply) => {
     const userId = authUser(req, reply);
@@ -776,17 +720,19 @@ if (allowDevAuthRoute) {
   });
 }
 
-app.delete("/api/v1/platforms/:platform", async (_req, reply) => {
-  const userId = authUser(_req, reply);
+app.delete("/api/v1/platforms/:platform", async (req, reply) => {
+  const userId = authUser(req, reply);
   if (!userId) return;
-  void (_req.params as { platform: string }).platform;
-  return reply.status(403).send({
-    error: {
-      code: "platform_unlink_forbidden",
-      message:
-        "Отвязка Twitch/Kick недоступна. Для смены привязки напишите в поддержку.",
-    },
-  });
+  const platform = (req.params as { platform: string }).platform;
+  await db
+    .delete(platformAccounts)
+    .where(
+      and(
+        eq(platformAccounts.userId, userId),
+        eq(platformAccounts.platform, platform)
+      )
+    );
+  return { ok: true };
 });
 
 app.get("/api/v1/games/fortune", async (req, reply) => {

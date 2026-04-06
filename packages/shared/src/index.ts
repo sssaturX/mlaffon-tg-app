@@ -70,10 +70,6 @@ export interface MeResponse {
   lifetimeKick: number;
   level: number;
   rewardMultiplier: number;
-  rankTierEmoji: string;
-  rankTierLabel: string;
-  rankProgressPercent: number;
-  rankLifetimeToNext: number | null;
   /** Максимум из streakTwitch и streakKick (топ по стрику). */
   streak: number;
   /** Дней подряд с заходом на стрим Twitch (UTC). */
@@ -123,10 +119,6 @@ export interface MeEconomyPatch {
   lifetimeKick: number;
   level: number;
   rewardMultiplier: number;
-  rankTierEmoji: string;
-  rankTierLabel: string;
-  rankProgressPercent: number;
-  rankLifetimeToNext: number | null;
 }
 
 export interface LeaderboardEntry {
