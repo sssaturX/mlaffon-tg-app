@@ -709,6 +709,26 @@ export const banAppeals = pgTable(
   (t) => [index("ban_appeals_user_status_idx").on(t.userId, t.status)]
 );
 
+/**
+ * Личные чаты с ботом: нажали /start — получают уведомление при старте эфира из админки.
+ * chat_id для лички совпадает с telegram user id.
+ */
+export const telegramLiveNotifySubscribers = pgTable(
+  "telegram_live_notify_subscribers",
+  {
+    telegramUserId: bigint("telegram_user_id", { mode: "bigint" }).primaryKey(),
+    chatId: bigint("chat_id", { mode: "bigint" }).notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("telegram_live_notify_subscribers_active_idx").on(t.active)]
+);
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   balance: one(userBalances, {
     fields: [users.id],

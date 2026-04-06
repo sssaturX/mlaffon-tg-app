@@ -1,29 +1,35 @@
-/**
- * Уведомление при старте эфира: тот же бот, что и `TELEGRAM_BOT_TOKEN`, шлёт в чат
- * `TELEGRAM_LIVE_NOTIFY_CHAT_ID` (канал/группа, куда бот добавлен, или другой chat_id).
- * Кнопка открывает мини-приложение (HTTPS URL из BotFather).
- */
-export async function notifyTelegramLiveStarted(params: {
+import { telegramBotApi } from "./telegramApi.js";
+import {
+  deactivateLiveNotifyByChatId,
+  listActiveLiveNotifyChatIds,
+} from "./telegramLiveSubscribers.js";
+
+function escapeHtmlHref(url: string): string {
+  return url.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+}
+
+function buildLiveStartedHtml(params: {
   platform: "twitch" | "kick";
   streamUrl: string;
-}): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  const chatId = process.env.TELEGRAM_LIVE_NOTIFY_CHAT_ID?.trim();
-  if (!token) return { ok: false, reason: "no_token" };
-  if (!chatId) return { ok: false, reason: "no_chat_id" };
+}): string {
+  const platLabel = params.platform === "kick" ? "Kick" : "Twitch";
+  const href = escapeHtmlHref(params.streamUrl.trim());
+  return (
+    "🔴 <b>Эфир начался!</b>\n\n" +
+    "Заходите на стрим: откройте приложение и нажмите «Смотреть стрим», чтобы засчитался стрик.\n\n" +
+    `📺 <a href="${href}">Смотреть на ${platLabel}</a>`
+  );
+}
 
+function buildInlineKeyboard(): Array<
+  Array<{ text: string; web_app?: { url: string }; url?: string }>
+> {
   const botUser = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "").trim();
   const miniAppUrl = (
     process.env.MINI_APP_WEB_URL?.trim() ||
     process.env.PUBLIC_WEB_URL?.trim() ||
     ""
   ).replace(/\/$/, "");
-
-  const plat = params.platform === "kick" ? "Kick" : "Twitch";
-  const text =
-    `🔴 Эфир начался (${plat})!\n\n` +
-    `Заходите в приложение и нажмите «Смотреть стрим», чтобы засчитать стрик.\n\n` +
-    `Ссылка: ${params.streamUrl}`;
 
   const keyboard: Array<
     Array<{ text: string; web_app?: { url: string }; url?: string }>
@@ -41,35 +47,89 @@ export async function notifyTelegramLiveStarted(params: {
       },
     ]);
   }
+  return keyboard;
+}
 
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+async function sendLiveStartedToChat(params: {
+  chatId: string | bigint;
+  platform: "twitch" | "kick";
+  streamUrl: string;
+}): Promise<{ ok: true } | { ok: false; blocked?: boolean }> {
+  const text = buildLiveStartedHtml(params);
+  const keyboard = buildInlineKeyboard();
+
   const body: Record<string, unknown> = {
-    chat_id: chatId,
+    chat_id: typeof params.chatId === "bigint" ? String(params.chatId) : params.chatId,
     text,
-    disable_web_page_preview: false,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
   };
   if (keyboard.length > 0) {
     body.reply_markup = { inline_keyboard: keyboard };
   }
 
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = (await res.json()) as { ok?: boolean; description?: string };
-    if (!res.ok || data.ok !== true) {
-      return {
-        ok: false,
-        reason: data.description ?? `http_${res.status}`,
-      };
-    }
-    return { ok: true };
-  } catch (e) {
-    return {
-      ok: false,
-      reason: e instanceof Error ? e.message : "fetch_failed",
-    };
+  const r = await telegramBotApi("sendMessage", body);
+  if (r.ok) return { ok: true };
+
+  if (r.errorCode === 403 && typeof params.chatId === "bigint") {
+    await deactivateLiveNotifyByChatId(params.chatId);
+    return { ok: false, blocked: true };
   }
+  return { ok: false };
+}
+
+const BROADCAST_DELAY_MS = 40;
+
+/**
+ * Уведомление при старте эфира из админки:
+ * — всем, кто нажал /start в личке с ботом (см. вебхук);
+ * — опционально в чат `TELEGRAM_LIVE_NOTIFY_CHAT_ID` (канал/группа).
+ */
+export async function notifyTelegramLiveStarted(params: {
+  platform: "twitch" | "kick";
+  streamUrl: string;
+}): Promise<
+  | { ok: true; sent: number; failed: number }
+  | { ok: false; reason: string }
+> {
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!token) return { ok: false, reason: "no_token" };
+
+  const channelId = process.env.TELEGRAM_LIVE_NOTIFY_CHAT_ID?.trim();
+  let subscriberChatIds: bigint[] = [];
+
+  try {
+    subscriberChatIds = await listActiveLiveNotifyChatIds();
+  } catch {
+    return { ok: false, reason: "db_subscribers" };
+  }
+
+  const privateTargets = [
+    ...new Set(subscriberChatIds.map((id) => id.toString())),
+  ].map((s) => BigInt(s));
+
+  const targets: Array<string | bigint> = [...privateTargets];
+  if (channelId) {
+    targets.push(channelId);
+  }
+
+  if (targets.length === 0) {
+    return { ok: false, reason: "no_recipients" };
+  }
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const chatId of targets) {
+    const r = await sendLiveStartedToChat({
+      chatId,
+      platform: params.platform,
+      streamUrl: params.streamUrl,
+    });
+    if (r.ok) sent += 1;
+    else failed += 1;
+    await new Promise((resolve) => setTimeout(resolve, BROADCAST_DELAY_MS));
+  }
+
+  return { ok: true, sent, failed };
 }

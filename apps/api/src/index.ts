@@ -43,6 +43,7 @@ import { registerGiveawayRoutes } from "./routes/giveaways.js";
 import { registerPredictionRoutes } from "./routes/predictions.js";
 import { registerDropRoutes } from "./routes/drops.js";
 import { registerPushRoutes } from "./routes/push.js";
+import { registerTelegramWebhookRoutes } from "./routes/telegramWebhook.js";
 import { buildHomePublicResponse } from "./services/homePublic.js";
 import { applyPromoForUser } from "./services/promo.js";
 import { assertClaimRateLimits } from "./lib/abuse.js";
@@ -71,7 +72,13 @@ await app.register(rateLimit, {
   timeWindow: gameConfig.rateLimit.timeWindowMs,
   allowList: (req) => {
     const p = req.url.split("?")[0] ?? "";
-    if (p === "/api/v1/ws" || p === "/health") return true;
+    if (
+      p === "/api/v1/ws" ||
+      p === "/health" ||
+      p === "/api/v1/telegram/webhook"
+    ) {
+      return true;
+    }
     return false;
   },
   keyGenerator: (req) => {
@@ -106,6 +113,7 @@ await registerGiveawayRoutes(app);
 await registerPredictionRoutes(app);
 await registerDropRoutes(app);
 await registerPushRoutes(app);
+await registerTelegramWebhookRoutes(app);
 
 app.get("/health", async () => ({ ok: true }));
 
