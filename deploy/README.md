@@ -6,7 +6,7 @@
 | [Caddyfile.manual-certs](Caddyfile.manual-certs) | Тот же сайт, но **свои** `fullchain.pem` / `privkey.pem` (уже выданные сертификаты) |
 | [mlaffon-api.service](mlaffon-api.service) | systemd: API |
 | [mlaffon-worker.service](mlaffon-worker.service) | systemd: BullMQ worker |
-| [redeploy.sh](redeploy.sh) | **Быстрый деплой на сервере**: `git pull`, `docker compose up -d postgres redis` + ожидание health, `npm ci`, **дописывает `VAPID_*` и при необходимости `TELEGRAM_WEBHOOK_SECRET` в `apps/api/.env`** (VAPID: subject по умолчанию `mailto:itoly569@gmail.com`, ключи из `deploy.env` или уже в `.env`, иначе генерация; секрет вебхука — из `deploy.env`/`.env` или однократная генерация 64 hex), сборка, `db:push` + `db:seed` (оба с retry), `chmod`, restart API/worker, smoke-check `/health` и `/api/v1/home/public` |
+| [redeploy.sh](redeploy.sh) | **Деплой**: `git pull`, `docker compose up -d postgres redis` + health, `npm ci`, **`VAPID_*` → `apps/api/.env`**, проверка **`TELEGRAM_BOT_TOKEN`**, **Telegram**: при `TELEGRAM_WEBHOOK_SECRET` в `deploy.env` или `DEPLOY_TELEGRAM_WEBHOOK_SECRET=1` — запись/генерация секрета в `.env` (вебхук); иначе при отсутствии секрета в `.env` — **long polling**. Сборка, `db:push` + `db:seed` (retry), `chmod`, restart API/worker, smoke `/health` и `/api/v1/home/public` |
 | [deploy.env.example](deploy.env.example) | Пример `deploy/deploy.env` для `VITE_*` при сборке |
 
 **Админка не логинится:** в `apps/api/.env` должны быть заданы `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PASSPHRASE` (без них API отвечает 503). После правки `.env`: `sudo systemctl restart mlaffon-api`. Сборка админки шлёт запросы на `/api` **того же хоста** `admin.…` (Caddy проксирует на API) — отдельный `VITE_API_ORIGIN` на проде для поддомена не обязателен.
@@ -65,3 +65,6 @@
 - `DEPLOY_DB_SEED_RETRIES=3` и `DEPLOY_DB_SEED_RETRY_DELAY=3` — retry для `db:seed`
 - `DEPLOY_CADDY=1` — обновить `/etc/caddy/Caddyfile` и reload Caddy
 - `DEPLOY_SYSTEMD_DAEMON_RELOAD=1` — выполнить `systemctl daemon-reload` перед restart сервисов
+- `DEPLOY_TELEGRAM_WEBHOOK_SECRET=1` — сгенерировать/записать `TELEGRAM_WEBHOOK_SECRET` в `apps/api/.env`, если его ещё нет (вебхук)
+- `TELEGRAM_WEBHOOK_SECRET` в `deploy/deploy.env` — тот же эффект: значение попадёт в `apps/api/.env` при каждом деплое
+- `DEPLOY_SKIP_TELEGRAM_CHECK=1` — не требовать непустой `TELEGRAM_BOT_TOKEN` в `apps/api/.env`

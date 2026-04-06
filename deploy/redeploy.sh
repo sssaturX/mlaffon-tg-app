@@ -19,10 +19,17 @@
 #   DEPLOY_DB_SEED_RETRIES=3   # retry для db:seed
 #   DEPLOY_DB_SEED_RETRY_DELAY=3
 #   DEPLOY_SYSTEMD_DAEMON_RELOAD=1  # перед restart выполнить daemon-reload
+#   DEPLOY_TELEGRAM_WEBHOOK_SECRET=1 # сгенерировать TELEGRAM_WEBHOOK_SECRET в apps/api/.env, если пусто
+#   TELEGRAM_WEBHOOK_SECRET=...      # в deploy.env — записать в apps/api/.env (вебхук)
+#   DEPLOY_SKIP_TELEGRAM_CHECK=1     # не проверять TELEGRAM_BOT_TOKEN в apps/api/.env
 #
 # Web Push: после npm ci скрипт дописывает VAPID_* в apps/api/.env.
-# Telegram: при отсутствии непустого TELEGRAM_WEBHOOK_SECRET генерирует hex и дописывает в apps/api/.env
-# (если уже есть в .env или в deploy.env — не меняет). После первой генерации обновите setWebhook.
+#
+# Telegram:
+#   — В apps/api/.env обязателен непустой TELEGRAM_BOT_TOKEN (отключить проверку: DEPLOY_SKIP_TELEGRAM_CHECK=1).
+#   — Long polling (по умолчанию): не задавайте TELEGRAM_WEBHOOK_SECRET в .env и не экспортируйте его из deploy.env.
+#   — Вебхук: задайте TELEGRAM_WEBHOOK_SECRET в deploy/deploy.env (export) ИЛИ DEPLOY_TELEGRAM_WEBHOOK_SECRET=1
+#     (тогда скрипт сгенерирует секрет и запишет в apps/api/.env, если строки ещё нет). Затем setWebhook.
 #
 
 set -euo pipefail
@@ -186,14 +193,14 @@ ensure_telegram_webhook_secret_in_api_env() {
     existing="$(sed -n 's/^TELEGRAM_WEBHOOK_SECRET=//p' "$envf" 2>/dev/null | sed -n '1p' | tr -d '\r')"
     if [[ -n "${existing// /}" ]]; then
       sec="$existing"
-      log "TELEGRAM_WEBHOOK_SECRET уже задан в $envf"
+      log "TELEGRAM_WEBHOOK_SECRET уже в $envf, оставляю"
     else
-      log "генерация TELEGRAM_WEBHOOK_SECRET (вебхук бота)"
+      log "генерация TELEGRAM_WEBHOOK_SECRET (64 hex)"
       sec="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
       generated=1
     fi
   else
-    log "TELEGRAM_WEBHOOK_SECRET взят из окружения (deploy.env)"
+    log "TELEGRAM_WEBHOOK_SECRET из окружения → запись в $envf"
   fi
 
   local tmp
@@ -205,9 +212,46 @@ ensure_telegram_webhook_secret_in_api_env() {
   } >"${envf}.new"
   mv "${envf}.new" "$envf"
   rm -f "$tmp"
-  log "записан TELEGRAM_WEBHOOK_SECRET в $envf"
+  log "TELEGRAM_WEBHOOK_SECRET записан в $envf"
   if [[ "$generated" == "1" ]]; then
-    log "Telegram: выполните setWebhook с тем же secret_token (см. .env.example)"
+    log "Telegram: один раз вызовите setWebhook с url=.../api/v1/telegram/webhook и этим secret_token"
+  fi
+}
+
+assert_telegram_bot_token_in_api_env() {
+  if [[ "${DEPLOY_SKIP_TELEGRAM_CHECK:-0}" == "1" ]]; then
+    return 0
+  fi
+  local envf="$REPO/apps/api/.env"
+  grep -qE '^TELEGRAM_BOT_TOKEN=' "$envf" || die "В $envf нет TELEGRAM_BOT_TOKEN (или DEPLOY_SKIP_TELEGRAM_CHECK=1)"
+  local tok
+  tok="$(sed -n 's/^TELEGRAM_BOT_TOKEN=//p' "$envf" | sed -n '1p' | tr -d '\r' | tr -d '[:space:]')"
+  [[ -n "$tok" ]] || die "В $envf TELEGRAM_BOT_TOKEN пустой"
+}
+
+# Вебхук: секрет из deploy.env или генерация по флагу. Иначе — long polling, строку TELEGRAM_WEBHOOK_SECRET в .env не трогаем.
+configure_telegram_for_deploy() {
+  local envf="$REPO/apps/api/.env"
+  local sync_secret=0
+  if [[ "${DEPLOY_TELEGRAM_WEBHOOK_SECRET:-0}" == "1" ]]; then
+    sync_secret=1
+  fi
+  if [[ -n "${TELEGRAM_WEBHOOK_SECRET:-}" ]]; then
+    sync_secret=1
+  fi
+
+  if [[ "$sync_secret" == "1" ]]; then
+    ensure_telegram_webhook_secret_in_api_env
+    log "Telegram: режим вебхука — при смене секрета обновите setWebhook"
+    return
+  fi
+
+  local existing
+  existing="$(sed -n 's/^TELEGRAM_WEBHOOK_SECRET=//p' "$envf" 2>/dev/null | sed -n '1p' | tr -d '\r')"
+  if [[ -n "${existing// /}" ]]; then
+    log "Telegram: в $envf задан TELEGRAM_WEBHOOK_SECRET — вебхук (API без long polling)"
+  else
+    log "Telegram: секрет вебхука не задан — long polling, setWebhook не нужен"
   fi
 }
 
@@ -276,6 +320,7 @@ main() {
 
   assert_required_env_vars
   assert_api_scripts
+  assert_telegram_bot_token_in_api_env
   ensure_infra
 
   log "git pull --ff-only"
@@ -285,7 +330,7 @@ main() {
   npm ci
 
   ensure_vapid_in_api_env
-  ensure_telegram_webhook_secret_in_api_env
+  configure_telegram_for_deploy
 
   log "npm run build (api + web + admin)"
   npm run build

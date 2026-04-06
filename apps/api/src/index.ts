@@ -44,6 +44,7 @@ import { registerPredictionRoutes } from "./routes/predictions.js";
 import { registerDropRoutes } from "./routes/drops.js";
 import { registerPushRoutes } from "./routes/push.js";
 import { registerTelegramWebhookRoutes } from "./routes/telegramWebhook.js";
+import { maybeStartTelegramLongPolling } from "./services/telegramPolling.js";
 import { buildHomePublicResponse } from "./services/homePublic.js";
 import { applyPromoForUser } from "./services/promo.js";
 import { assertClaimRateLimits } from "./lib/abuse.js";
@@ -968,7 +969,9 @@ try {
     });
   }, 1000);
   predictionTimerCloser.unref();
+  const telegramPollStop: { current?: () => void } = {};
   app.addHook("onClose", async () => {
+    telegramPollStop.current?.();
     if (predictionTimerCloser) {
       clearInterval(predictionTimerCloser);
       predictionTimerCloser = null;
@@ -976,6 +979,9 @@ try {
   });
   await app.listen({ port, host });
   app.log.info(`API http://${host}:${port}`);
+  maybeStartTelegramLongPolling(app.log, (stop) => {
+    telegramPollStop.current = stop;
+  });
 } catch (err) {
   app.log.error(err);
   process.exit(1);

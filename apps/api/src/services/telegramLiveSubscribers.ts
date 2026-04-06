@@ -5,18 +5,21 @@ import { telegramLiveNotifySubscribers } from "../db/schema.js";
 export async function upsertLiveNotifySubscriber(params: {
   telegramUserId: bigint;
   chatId: bigint;
+  telegramUsername?: string | null;
 }): Promise<void> {
   await db
     .insert(telegramLiveNotifySubscribers)
     .values({
       telegramUserId: params.telegramUserId,
       chatId: params.chatId,
+      telegramUsername: params.telegramUsername ?? null,
       active: true,
     })
     .onConflictDoUpdate({
       target: telegramLiveNotifySubscribers.telegramUserId,
       set: {
         chatId: params.chatId,
+        telegramUsername: params.telegramUsername ?? null,
         active: true,
         updatedAt: sql`now()`,
       },

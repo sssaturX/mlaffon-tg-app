@@ -718,6 +718,8 @@ export const telegramLiveNotifySubscribers = pgTable(
   {
     telegramUserId: bigint("telegram_user_id", { mode: "bigint" }).primaryKey(),
     chatId: bigint("chat_id", { mode: "bigint" }).notNull(),
+    /** @username без @, если пользователь задал username в Telegram */
+    telegramUsername: text("telegram_username"),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
