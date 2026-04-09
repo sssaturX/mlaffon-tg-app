@@ -427,10 +427,28 @@ function AppShell({
     useLiveBroadcastStore.getState().setWsConnected(realtimeConnected);
   }, [realtimeConnected]);
 
+  /**
+   * Раньше зависимость была `me` — любой патч профиля (в т.ч. после каждого `me_update` по WS)
+   * вызывал drops/active + live-broadcast + predictions/active. Достаточно привязать к `me.id`
+   * и не дублировать catch-up, пока живёт WebSocket (там initial_state + события).
+   */
   useEffect(() => {
-    if (!me || needsPlatformLink) return;
+    if (!me?.id || needsPlatformLink) return;
+    if (realtimeConnected) return;
+    if (!docVisible) return;
     syncRealtimeFromHttp();
-  }, [me, needsPlatformLink, syncRealtimeFromHttp]);
+    const id = window.setInterval(
+      () => void syncRealtimeFromHttp(),
+      90_000
+    );
+    return () => clearInterval(id);
+  }, [
+    me?.id,
+    needsPlatformLink,
+    realtimeConnected,
+    docVisible,
+    syncRealtimeFromHttp,
+  ]);
 
   useEffect(() => {
     if (needsPlatformLink) return;

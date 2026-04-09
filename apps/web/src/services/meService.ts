@@ -67,7 +67,10 @@ export function applyEconomyFromMutationResponse(patch: unknown): void {
   }
 }
 
-function applyMeUpdatePayload(data: unknown): void {
+function applyMeUpdatePayload(
+  data: unknown,
+  opts?: { fromWs?: boolean }
+): void {
   if (isMeEconomyPatch(data)) {
     useMeStore.getState().patchEconomy(data);
     return;
@@ -76,19 +79,23 @@ function applyMeUpdatePayload(data: unknown): void {
     const partial = pickPartialEconomyFields(data);
     if (partial) {
       useMeStore.getState().patchMe(() => partial);
-      if (!isMeEconomyPatch(partial)) {
+      if (!isMeEconomyPatch(partial) && !opts?.fromWs) {
         scheduleSmartRefresh(200);
       }
       return;
     }
   }
-  void refreshMe();
+  if (opts?.fromWs) {
+    scheduleSmartRefresh(1500);
+  } else {
+    void refreshMe();
+  }
 }
 
 /** Сразу в store (без rAF-батча — он давал пропуски кадров и «тишину» в UI). */
 export function handleMeUpdateFromWs(data: unknown): void {
   invalidateInflightMeRefresh();
-  applyMeUpdatePayload(data);
+  applyMeUpdatePayload(data, { fromWs: true });
 }
 
 /**
