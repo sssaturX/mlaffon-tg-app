@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+const ADMIN_NAV_ITEMS = [
+  { id: "giveaways" as const, label: "Розыгрыши" },
+  { id: "promos" as const, label: "Промокоды" },
+  { id: "drops" as const, label: "Дропы" },
+  { id: "live" as const, label: "Эфир" },
+  { id: "users" as const, label: "Пользователи" },
+  { id: "appeals" as const, label: "Апелляции" },
+  { id: "tasks" as const, label: "Задания" },
+  { id: "predictions" as const, label: "Предикты" },
+] as const;
+
+type AdminNavId = (typeof ADMIN_NAV_ITEMS)[number]["id"];
+
 const TOKEN_KEY = "mlaffon_admin_token";
 const ADMIN_AUTO_REFRESH_MS = {
   fast: 3000,
@@ -286,21 +299,19 @@ export function App() {
   const [promoMaxUses, setPromoMaxUses] = useState(100);
   const [promoCreditPlatform, setPromoCreditPlatform] = useState<"split" | "twitch" | "kick">("split");
 
-  const [tab, setTab] = useState<
-    | "giveaways"
-    | "promos"
-    | "users"
-    | "drops"
-    | "live"
-    | "tasks"
-    | "appeals"
-    | "predictions"
-  >("giveaways");
+  const [tab, setTab] = useState<AdminNavId>("giveaways");
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [banAppeals, setBanAppeals] = useState<BanAppealRow[] | null>(null);
   const [adminUsers, setAdminUsers] = useState<AdminUserRow[] | null>(null);
   const [usersTotal, setUsersTotal] = useState(0);
   const [usersOffset, setUsersOffset] = useState(0);
   const USERS_PAGE = 50;
+
+  const selectTab = useCallback((id: AdminNavId) => {
+    setNavDrawerOpen(false);
+    if (id === "users") setUsersOffset(0);
+    setTab(id);
+  }, []);
 
   const [dropStatus, setDropStatus] = useState<AdminDropStatus | null>(null);
   const [dropHistory, setDropHistory] = useState<DropHistoryRow[] | null>(null);
@@ -715,6 +726,20 @@ export function App() {
   }, [token, authHeaders]);
 
   useEffect(() => {
+    if (!navDrawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNavDrawerOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [navDrawerOpen]);
+
+  useEffect(() => {
     if (token) {
       void loadStats();
       void loadGiveaways();
@@ -1042,129 +1067,159 @@ export function App() {
 
   if (!token) {
     return (
-      <>
-        <h1>Админка Mlaffon</h1>
-        <p className="muted">Вход по email, паролю и passphrase (см. ADMIN_* в API).</p>
-        <form className="card stack admin-mt-4" onSubmit={login}>
-          <div>
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+      <div className="admin-login">
+        <div className="admin-login__glow" aria-hidden />
+        <div className="admin-login__inner">
+          <div className="admin-login__card card stack">
+            <div className="admin-login__brand">
+              <span className="admin-login__logo" aria-hidden>
+                M
+              </span>
+              <div>
+                <p className="admin-login__eyebrow">Mlaffon</p>
+                <h1 className="admin-login__title">Админка</h1>
+              </div>
+            </div>
+            <p className="muted admin-login__lead">
+              Вход по email, паролю и passphrase (см. ADMIN_* в API).
+            </p>
+            <form className="stack" onSubmit={login}>
+              <div>
+                <label htmlFor="email">Email</label>
+                <input
+                  id="email"
+                  type="email"
+                  autoComplete="username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="password">Пароль</label>
+                <input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="passphrase">Passphrase</label>
+                <input
+                  id="passphrase"
+                  type="password"
+                  autoComplete="off"
+                  value={passphrase}
+                  onChange={(e) => setPassphrase(e.target.value)}
+                  required
+                />
+              </div>
+              {err ? <p className="err">{err}</p> : null}
+              <button type="submit" className="primary" disabled={loading}>
+                {loading ? "…" : "Войти"}
+              </button>
+            </form>
           </div>
-          <div>
-            <label htmlFor="password">Пароль</label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="passphrase">Passphrase</label>
-            <input
-              id="passphrase"
-              type="password"
-              autoComplete="off"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              required
-            />
-          </div>
-          {err ? <p className="err">{err}</p> : null}
-          <button type="submit" className="primary" disabled={loading}>
-            {loading ? "…" : "Войти"}
-          </button>
-        </form>
-      </>
+        </div>
+      </div>
     );
   }
 
+  const navButtons = ADMIN_NAV_ITEMS.map((item) => (
+    <button
+      key={item.id}
+      type="button"
+      className={
+        tab === item.id ? "admin-nav-link admin-nav-link--active" : "admin-nav-link"
+      }
+      onClick={() => selectTab(item.id)}
+    >
+      {item.label}
+    </button>
+  ));
+
   return (
     <>
-      <div className="row admin-flex-between">
-        <h1 className="admin-h1-title">Админка</h1>
-        <button type="button" className="secondary" onClick={logout}>
-          Выйти
-        </button>
-      </div>
-      {err ? <p className="err">{err}</p> : null}
+      <div className="admin-app">
+        <header className="admin-topbar">
+          <div className="admin-topbar__left">
+            <button
+              type="button"
+              className="admin-icon-btn"
+              aria-label={navDrawerOpen ? "Закрыть меню" : "Открыть меню"}
+              aria-expanded={navDrawerOpen}
+              onClick={() => setNavDrawerOpen((o) => !o)}
+            >
+              <span className="admin-icon-btn__bars" aria-hidden />
+            </button>
+            <span className="admin-topbar__title">Mlaffon</span>
+          </div>
+          <button type="button" className="secondary admin-topbar__out" onClick={logout}>
+            Выйти
+          </button>
+        </header>
 
-      <p className="muted admin-tabs-hint">
-        Все разделы в ряд — при узком экране прокрутите вкладки вправо (Задания, Дропы, …).
-      </p>
+        <div
+          className={
+            navDrawerOpen ? "admin-scrim admin-scrim--visible" : "admin-scrim"
+          }
+          aria-hidden={!navDrawerOpen}
+          onClick={() => setNavDrawerOpen(false)}
+        />
 
-      <nav className="admin-tabs" aria-label="Разделы">
-        <button
-          type="button"
-          className={tab === "giveaways" ? "admin-tab admin-tab--active" : "admin-tab"}
-          onClick={() => setTab("giveaways")}
+        <aside
+          className={navDrawerOpen ? "admin-drawer admin-drawer--open" : "admin-drawer"}
+          aria-hidden={!navDrawerOpen}
         >
-          Розыгрыши
-        </button>
-        <button
-          type="button"
-          className={tab === "promos" ? "admin-tab admin-tab--active" : "admin-tab"}
-          onClick={() => setTab("promos")}
-        >
-          Промокоды
-        </button>
-        <button
-          type="button"
-          className={tab === "drops" ? "admin-tab admin-tab--active" : "admin-tab"}
-          onClick={() => setTab("drops")}
-        >
-          Дропы
-        </button>
-        <button
-          type="button"
-          className={tab === "live" ? "admin-tab admin-tab--active" : "admin-tab"}
-          onClick={() => setTab("live")}
-        >
-          Эфир
-        </button>
-        <button
-          type="button"
-          className={tab === "users" ? "admin-tab admin-tab--active" : "admin-tab"}
-          onClick={() => {
-            setTab("users");
-            setUsersOffset(0);
-          }}
-        >
-          Пользователи
-        </button>
-        <button
-          type="button"
-          className={tab === "appeals" ? "admin-tab admin-tab--active" : "admin-tab"}
-          onClick={() => setTab("appeals")}
-        >
-          Апелляции
-        </button>
-        <button
-          type="button"
-          className={tab === "tasks" ? "admin-tab admin-tab--active" : "admin-tab"}
-          onClick={() => setTab("tasks")}
-        >
-          Задания
-        </button>
-        <button
-          type="button"
-          className={tab === "predictions" ? "admin-tab admin-tab--active" : "admin-tab"}
-          onClick={() => setTab("predictions")}
-        >
-          Предикты
-        </button>
-      </nav>
+          <div className="admin-drawer__head">
+            <span className="admin-drawer__title">Разделы</span>
+            <button
+              type="button"
+              className="admin-icon-btn admin-icon-btn--ghost"
+              aria-label="Закрыть"
+              onClick={() => setNavDrawerOpen(false)}
+            >
+              ×
+            </button>
+          </div>
+          <nav className="admin-drawer__nav stack" aria-label="Разделы">
+            {navButtons}
+          </nav>
+        </aside>
 
-      <h2>Статистика</h2>
+        <div className="admin-layout">
+          <aside className="admin-sidebar" aria-label="Разделы">
+            <div className="admin-sidebar__brand">
+              <span className="admin-sidebar__logo">M</span>
+              <div className="admin-sidebar__titles">
+                <span className="admin-sidebar__name">Mlaffon</span>
+                <span className="admin-sidebar__role muted">Панель</span>
+              </div>
+            </div>
+            <nav className="admin-sidebar__nav">{navButtons}</nav>
+            <button
+              type="button"
+              className="secondary admin-sidebar__logout"
+              onClick={logout}
+            >
+              Выйти
+            </button>
+          </aside>
+
+          <main className="admin-main">
+            <div className="admin-main__head">
+              <h1 className="admin-page-title">
+                {ADMIN_NAV_ITEMS.find((i) => i.id === tab)?.label ?? "Админка"}
+              </h1>
+              <p className="muted admin-main__crumb">Статистика и данные ниже</p>
+            </div>
+
+            {err ? <p className="err admin-main__err">{err}</p> : null}
+
+            <h2 className="admin-section-title">Статистика</h2>
       {stats === null ? (
         <AdminSkeletonRows rows={4} />
       ) : (
@@ -3125,6 +3180,10 @@ export function App() {
           )}
         </>
       ) : null}
+
+          </main>
+        </div>
+      </div>
 
       {userManageModal ? (
         <div
