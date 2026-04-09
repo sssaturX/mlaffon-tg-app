@@ -1,25 +1,10 @@
 import { ChevronLeft } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { MeResponse } from "shared";
-import { api, formatApiError } from "../api";
-import { useToast } from "../context/ToastContext";
+import type { GiveawayListItemDto } from "../query/fetchers";
+import { useGiveawaysList } from "../hooks/queries/useGiveaways";
 import { PageSkeleton } from "../components/PageSkeleton";
-
-type GiveawayListItem = {
-  id: string;
-  title: string;
-  prizeText: string;
-  imageUrl: string | null;
-  endsAt: string;
-  platform: "twitch" | "kick" | "both";
-  winnerCount: number;
-  ticketPriceCoins: number;
-  participantCount: number;
-  drawnAt: string | null;
-  active: boolean;
-  status: "live" | "ended_awaiting_draw" | "completed";
-};
 
 function formatCountdown(iso: string): string {
   const end = new Date(iso).getTime();
@@ -30,40 +15,30 @@ function formatCountdown(iso: string): string {
   return `${d} дн. ${h} ч.`;
 }
 
-function statusLabel(s: GiveawayListItem["status"]): string {
+function statusLabel(s: GiveawayListItemDto["status"]): string {
   if (s === "completed") return "Завершён";
   if (s === "ended_awaiting_draw") return "Ожидает итогов";
   return "Активен";
 }
 
-function platformShort(p: GiveawayListItem["platform"]): string {
+function platformShort(p: GiveawayListItemDto["platform"]): string {
   if (p === "both") return "Twitch · Kick";
   return p === "twitch" ? "Twitch" : "Kick";
 }
 
 export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
-  const { showToast } = useToast();
-  const [items, setItems] = useState<GiveawayListItem[] | null>(null);
+  const { data: items, isPending, isError, refetch, isFetching } =
+    useGiveawaysList();
   const [tab, setTab] = useState<"active" | "done">("active");
 
-  const load = useCallback(async () => {
-    const r = await api<{ giveaways: GiveawayListItem[] }>("/api/v1/giveaways");
-    if (r.ok) setItems(r.data.giveaways);
-    else showToast(formatApiError(r), "error");
-  }, [showToast]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
   const filtered = useMemo(() => {
-    if (!items) return [];
+    const list = items ?? [];
     if (tab === "active") {
-      return items.filter(
+      return list.filter(
         (g) => g.status === "live" || g.status === "ended_awaiting_draw"
       );
     }
-    return items.filter((g) => g.status === "completed");
+    return list.filter((g) => g.status === "completed");
   }, [items, tab]);
 
   if (!me) {
@@ -94,22 +69,39 @@ export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
         </button>
       </div>
 
-      {items === null ? (
+      {isError ? (
+        <div className="card stack">
+          <p className="err">Не удалось загрузить список розыгрышей.</p>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void refetch()}
+          >
+            Повторить
+          </button>
+        </div>
+      ) : null}
+
+      {isPending ? (
         <PageSkeleton />
-      ) : filtered.length === 0 ? (
+      ) : isError ? null : filtered.length === 0 ? (
         <p className="muted">
           {tab === "active"
             ? "Нет активных розыгрышей."
             : "Пока нет завершённых розыгрышей."}
         </p>
       ) : (
-        <div
-          className={
-            filtered.length === 1
-              ? "giveaways-grid giveaways-grid--single"
-              : "giveaways-grid"
-          }
-        >
+        <>
+          {isFetching && !isPending ? (
+            <p className="muted">Обновляем список…</p>
+          ) : null}
+          <div
+            className={
+              filtered.length === 1
+                ? "giveaways-grid giveaways-grid--single"
+                : "giveaways-grid"
+            }
+          >
           {filtered.map((g) => (
             <Link
               key={g.id}
@@ -128,8 +120,7 @@ export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
                 <div className="giveaway-card__placeholder" aria-hidden />
               )}
               <div className="giveaway-card__body">
-                <p className="giveaway-card__prize">{g.prizeText}</p>
-                <p className="giveaway-card__title">{g.title}</p>
+                <p className="giveaway-card__headline">{g.prizeText}</p>
                 <p className="giveaway-card__meta muted">
                   {platformShort(g.platform)} ·{" "}
                   {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
@@ -156,7 +147,8 @@ export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
               </div>
             </Link>
           ))}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

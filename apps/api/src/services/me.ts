@@ -9,65 +9,13 @@ import {
 import { computeLevel, computeRewardMultiplier } from "../config.js";
 import { ensureStreamStreakRow } from "./streamStreak.js";
 import { hasPendingBanAppeal } from "./banAppeals.js";
-export async function buildMeResponse(userId: string): Promise<{
-  id: string;
-  telegramId: string | null;
-  email: string | null;
-  username: string | null;
-  firstName: string | null;
-  photoUrl: string | null;
-  coins: number;
-  coinsTwitch: number;
-  coinsKick: number;
-  lifetimeEarned: number;
-  lifetimeTwitch: number;
-  lifetimeKick: number;
-  level: number;
-  rewardMultiplier: number;
-  /** Макс. из двух платформенных стриков (для совместимости и топа). */
-  streak: number;
-  streakTwitch: number;
-  streakKick: number;
-  referralCode: string;
-  /** Ссылка для мини-приложения Telegram (`startapp=ref_*`). */
-  referralLinkMiniApp: string;
-  /** Ссылка для регистрации в браузере (`?ref=`). */
-  referralLinkWeb: string;
-  /** Дублирует referralLinkMiniApp (совместимость со старыми клиентами). */
-  referralLink: string;
-  referralCount: number;
-  platforms: {
-    twitch:
-      | { status: "not_connected" }
-      | {
-          status: "connected";
-          displayName: string | null;
-          avatarUrl: string | null;
-        };
-    kick:
-      | { status: "not_connected" }
-      | {
-          status: "connected";
-          displayName: string | null;
-          avatarUrl: string | null;
-        };
-  };
-  banned: boolean;
-  banReason: string | null;
-  banAppealPending: boolean;
-  /** Ранг по монетам; сейчас не считается (лидерборд в приложении отключён). */
-  leaderboardRankCoins: number | null;
-}> {
-  const streamStreak = await ensureStreamStreakRow(userId);
+import type { MeEconomyResponse, MeProfileResponse, MeResponse } from "shared";
 
+export async function buildMeProfileResponse(
+  userId: string
+): Promise<MeProfileResponse> {
   const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!u) throw new Error("user_not_found");
-
-  const [b] = await db
-    .select()
-    .from(userBalances)
-    .where(eq(userBalances.userId, userId))
-    .limit(1);
 
   const [{ c }] = await db
     .select({ c: count() })
@@ -107,18 +55,6 @@ export async function buildMeResponse(userId: string): Promise<{
   const referralLinkWeb = `${baseWeb}/?ref=${encodeURIComponent(u.referralCode)}`;
   const referralLink = referralLinkMiniApp;
 
-  const coinsTwitch = b?.twitchCoins ?? 0;
-  const coinsKick = b?.kickCoins ?? 0;
-  const lifetimeTwitch = b?.twitchLifetimeEarned ?? 0;
-  const lifetimeKick = b?.kickLifetimeEarned ?? 0;
-  const lifetimeEarned = lifetimeTwitch + lifetimeKick;
-  const coins = coinsTwitch + coinsKick;
-  const level = computeLevel(lifetimeEarned);
-
-  const streakTwitch = streamStreak.twitch;
-  const streakKick = streamStreak.kick;
-  const streak = Math.max(streakTwitch, streakKick);
-
   const banned = u.banned === true;
   const banAppealPending = banned ? await hasPendingBanAppeal(userId) : false;
 
@@ -129,17 +65,6 @@ export async function buildMeResponse(userId: string): Promise<{
     username: u.username,
     firstName: u.firstName,
     photoUrl: u.photoUrl,
-    coins,
-    coinsTwitch,
-    coinsKick,
-    lifetimeEarned,
-    lifetimeTwitch,
-    lifetimeKick,
-    level,
-    rewardMultiplier: computeRewardMultiplier(level),
-    streak,
-    streakTwitch,
-    streakKick,
     referralCode: u.referralCode,
     referralLinkMiniApp,
     referralLinkWeb,
@@ -154,6 +79,53 @@ export async function buildMeResponse(userId: string): Promise<{
     banAppealPending,
     leaderboardRankCoins: null,
   };
+}
+
+export async function buildMeEconomyResponse(
+  userId: string
+): Promise<MeEconomyResponse> {
+  const streamStreak = await ensureStreamStreakRow(userId);
+
+  const [b] = await db
+    .select()
+    .from(userBalances)
+    .where(eq(userBalances.userId, userId))
+    .limit(1);
+  if (!b) throw new Error("user_not_found");
+
+  const coinsTwitch = b.twitchCoins ?? 0;
+  const coinsKick = b.kickCoins ?? 0;
+  const lifetimeTwitch = b.twitchLifetimeEarned ?? 0;
+  const lifetimeKick = b.kickLifetimeEarned ?? 0;
+  const lifetimeEarned = lifetimeTwitch + lifetimeKick;
+  const coins = coinsTwitch + coinsKick;
+  const level = computeLevel(lifetimeEarned);
+
+  const streakTwitch = streamStreak.twitch;
+  const streakKick = streamStreak.kick;
+  const streak = Math.max(streakTwitch, streakKick);
+
+  return {
+    coins,
+    coinsTwitch,
+    coinsKick,
+    lifetimeEarned,
+    lifetimeTwitch,
+    lifetimeKick,
+    level,
+    rewardMultiplier: computeRewardMultiplier(level),
+    streak,
+    streakTwitch,
+    streakKick,
+  };
+}
+
+export async function buildMeResponse(userId: string): Promise<MeResponse> {
+  const [profile, economy] = await Promise.all([
+    buildMeProfileResponse(userId),
+    buildMeEconomyResponse(userId),
+  ]);
+  return { ...profile, ...economy };
 }
 
 /** Поля для WS `me_update` после экономики (без стриков/платформ). */

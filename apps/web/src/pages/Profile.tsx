@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Calendar,
   ChevronRight,
@@ -8,7 +10,7 @@ import {
   Tv,
   Users,
 } from "lucide-react";
-import type { MeResponse, ReferralsResponse } from "shared";
+import type { MeResponse } from "shared";
 import WebApp from "@twa-dev/sdk";
 import {
   api,
@@ -16,6 +18,7 @@ import {
   createTelegramLink,
   formatApiError,
   formatOAuthRedirectError,
+  getToken,
   setToken,
 } from "../api";
 import { useToast } from "../context/ToastContext";
@@ -23,6 +26,11 @@ import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { useOAuthLink } from "../hooks/useOAuthLink";
 import { PushNotificationsRow } from "../components/PushNotificationsRow";
+import {
+  useInvalidateReferrals,
+  useReferrals,
+} from "../hooks/queries/useReferrals";
+import { queryKeys } from "../query/queryKeys";
 
 export default function Profile({
   me,
@@ -32,9 +40,15 @@ export default function Profile({
   onShowOnboarding?: () => void;
 }) {
   const { showToast } = useToast();
-  const { refreshMe } = useMeEconomySync();
+  const { syncMeFromNetwork } = useMeEconomySync();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const oauthOk = searchParams.get("oauth_ok");
+  const oauthErr = searchParams.get("oauth_err");
   const { startOAuth, connectStub, stub } = useOAuthLink();
-  const [refs, setRefs] = useState<ReferralsResponse | null>(null);
+  const refsQ = useReferrals();
+  const invalidateReferrals = useInvalidateReferrals();
+  const refs = refsQ.data ?? null;
   const [tgLinkBusy, setTgLinkBusy] = useState(false);
   const [tgLinkUrl, setTgLinkUrl] = useState<string | null>(null);
   const [webEmail, setWebEmail] = useState("");
@@ -42,30 +56,15 @@ export default function Profile({
   const [webPassword2, setWebPassword2] = useState("");
   const [webCredBusy, setWebCredBusy] = useState(false);
 
-  const loadRefs = useCallback(async () => {
-    const r = await api<ReferralsResponse>("/api/v1/referrals");
-    if (r.ok) setRefs(r.data);
-    else if (!r.networkError) showToast(formatApiError(r), "error");
-  }, [showToast]);
-
-  useEffect(() => {
-    void loadRefs();
-  }, [loadRefs]);
-
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    const ok = q.get("oauth_ok");
-    const err = q.get("oauth_err");
-    if (!ok && !err) return;
-
-    window.history.replaceState({}, "", "/profile");
-
-    void (async () => {
-      await refreshMe();
-      await loadRefs();
-      if (ok) {
+  useQuery({
+    queryKey: queryKeys.sync.profileOAuth(oauthOk, oauthErr),
+    queryFn: async () => {
+      await syncMeFromNetwork();
+      invalidateReferrals();
+      navigate("/profile", { replace: true });
+      if (oauthOk) {
         showToast(
-          ok === "twitch"
+          oauthOk === "twitch"
             ? "Twitch подключён — стрик и задания для Twitch доступны."
             : "Kick подключён — стрик и задания для Kick доступны.",
           "success",
@@ -76,8 +75,8 @@ export default function Profile({
         } catch {
           /* ignore */
         }
-      } else if (err) {
-        const decoded = decodeURIComponent(err);
+      } else if (oauthErr) {
+        const decoded = decodeURIComponent(oauthErr);
         showToast(formatOAuthRedirectError(decoded), "error");
         try {
           WebApp.HapticFeedback.notificationOccurred("error");
@@ -85,14 +84,21 @@ export default function Profile({
           /* ignore */
         }
       }
-    })();
-  }, [refreshMe, loadRefs, showToast]);
+      return true;
+    },
+    enabled: Boolean(getToken() && (oauthOk || oauthErr)),
+    /** Повторный заход с теми же query-параметрами должен снова отработать после очистки URL. */
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  });
 
   async function disconnect(platform: string) {
     const r = await api(`/api/v1/platforms/${platform}`, { method: "DELETE" });
     if (r.ok) {
       showToast("Отключено", "info");
-      void refreshMe();
+      void syncMeFromNetwork();
+      invalidateReferrals();
     } else showToast(formatApiError(r), "error");
   }
 
@@ -170,7 +176,7 @@ export default function Profile({
         setWebEmail("");
         setWebPassword("");
         setWebPassword2("");
-        void refreshMe();
+        void syncMeFromNetwork();
       } else {
         showToast(formatApiError(r), "error");
       }

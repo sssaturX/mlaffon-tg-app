@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import WebApp from "@twa-dev/sdk";
 import { Sparkles, Ban } from "lucide-react";
 import { api, formatApiError } from "../api";
@@ -6,6 +6,12 @@ import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { scheduleSmartRefresh } from "../services/meService";
 import { useActivePlatform } from "../context/PlatformContext";
 import { AppLoadingSpinner } from "../components/AppLoadingSpinner";
+import {
+  useFortuneConfig,
+  useFortuneState,
+  useInvalidateFortuneState,
+} from "../hooks/queries/useFortuneQueries";
+import { ApiQueryError } from "../query/apiQueryError";
 import {
   FortuneWheel,
   nextRotationDeg,
@@ -55,12 +61,30 @@ function SpinResultCard({ result }: { result: SpinReveal }) {
 export default function Games() {
   const { patchMe, reconcileFromServer } = useMeEconomySync();
   const { activePlatform } = useActivePlatform();
-  const [status, setStatus] = useState<FortuneStatus | null>(null);
+  const fortuneConfigQ = useFortuneConfig();
+  const fortuneStateQ = useFortuneState();
+  const invalidateFortuneState = useInvalidateFortuneState();
+  const status = useMemo((): FortuneStatus | null => {
+    if (!fortuneConfigQ.data || !fortuneStateQ.data) return null;
+    return {
+      ...fortuneConfigQ.data,
+      ...fortuneStateQ.data,
+      segments: fortuneConfigQ.data.segments as FortuneSegment[],
+    };
+  }, [fortuneConfigQ.data, fortuneStateQ.data]);
+  const loadErr =
+    fortuneConfigQ.isError || fortuneStateQ.isError
+      ? (() => {
+          const e = fortuneConfigQ.error ?? fortuneStateQ.error;
+          return e instanceof ApiQueryError
+            ? formatApiError(e.apiErr)
+            : "Не удалось загрузить игру";
+        })()
+      : null;
   const [rotation, setRotation] = useState(0);
   const rotationRef = useRef(0);
   const [spinning, setSpinning] = useState(false);
   const [lastReveal, setLastReveal] = useState<SpinReveal | null>(null);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [spinErr, setSpinErr] = useState<string | null>(null);
   const pendingRevealRef = useRef<SpinReveal | null>(null);
   const spinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -70,18 +94,6 @@ export default function Games() {
       if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
     };
   }, []);
-
-  const load = useCallback(async () => {
-    const r = await api<FortuneStatus>("/api/v1/games/fortune");
-    if (r.ok) {
-      setStatus(r.data);
-      setLoadErr(null);
-    } else setLoadErr(formatApiError(r));
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   async function spin(mode: "free" | "paid") {
     if (spinning || !status?.segments.length) return;
@@ -134,7 +146,7 @@ export default function Games() {
     if (!Number.isFinite(next)) {
       setSpinning(false);
       setLastReveal(reveal);
-      void load();
+      invalidateFortuneState();
       return;
     }
     rotationRef.current = next;
@@ -157,7 +169,7 @@ export default function Games() {
           /* ignore */
         }
       }
-      void load();
+      invalidateFortuneState();
     }, SPIN_MS);
   }
 

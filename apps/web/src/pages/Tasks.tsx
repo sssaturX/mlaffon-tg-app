@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight, Coins, Lightbulb } from "lucide-react";
-import type { Platform, TaskDto } from "shared";
+import type { TaskDto } from "shared";
 import { api, formatApiError } from "../api";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { TaskDetailModal } from "../components/TaskDetailModal";
+import { useInvalidateTasks, useTasks } from "../hooks/queries/useTasks";
+import { ApiQueryError } from "../query/apiQueryError";
+import { queryClient } from "../query/queryClient";
+import { queryKeys } from "../query/queryKeys";
 function platformPillClass(p: Platform): string {
   if (p === "twitch") return "pill pill--twitch";
   if (p === "kick") return "pill pill--kick";
@@ -33,31 +37,27 @@ function TaskListSkeleton() {
 }
 
 export default function Tasks() {
-  const { patchMe, refreshMe, reconcileFromServer } = useMeEconomySync();
+  const { patchMe, syncMeFromNetwork, reconcileFromServer } =
+    useMeEconomySync();
   const { activePlatform } = useActivePlatform();
-  const [tasks, setTasks] = useState<TaskDto[]>([]);
+  const invalidateTasks = useInvalidateTasks(activePlatform);
+  const tasksQ = useTasks(activePlatform);
+  const tasks = tasksQ.data ?? [];
   const [msg, setMsg] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<TaskDto | null>(null);
   const [modalMsg, setModalMsg] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [evidenceUploading, setEvidenceUploading] = useState(false);
 
-  const load = useCallback(async (opts?: { silent?: boolean }) => {
-    if (!opts?.silent) setLoading(true);
-    const r = await api<{ tasks: TaskDto[] }>(
-      `/api/v1/tasks?platform=${activePlatform}`
-    );
-    if (r.ok) {
-      setTasks(r.data.tasks);
-      setMsg(null);
-    } else setMsg(formatApiError(r));
-    setLoading(false);
-  }, [activePlatform]);
-
+  const loading = tasksQ.isPending;
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (tasksQ.isError) {
+      const e = tasksQ.error;
+      setMsg(
+        e instanceof ApiQueryError ? formatApiError(e.apiErr) : "Ошибка загрузки"
+      );
+    } else if (tasksQ.isSuccess) setMsg(null);
+  }, [tasksQ.isError, tasksQ.isSuccess, tasksQ.error]);
 
   useEffect(() => {
     if (!selected) return;
@@ -84,14 +84,16 @@ export default function Tasks() {
           "Задание в очереди на проверку. Обновите через несколько секунд.";
         setModalMsg(m);
         setMsg(m);
-        await load({ silent: true });
-        void refreshMe();
+        invalidateTasks();
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.me.economy(),
+        });
         return;
       }
       const okMsg = `+${r.data.reward ?? 0} монет`;
       setModalMsg(okMsg);
       setMsg(okMsg);
-      await load({ silent: true });
+      invalidateTasks();
       if (
         typeof r.data.coins === "number" &&
         typeof r.data.coinsTwitch === "number" &&
@@ -104,7 +106,7 @@ export default function Tasks() {
         }));
         reconcileFromServer();
       } else {
-        void refreshMe();
+        void syncMeFromNetwork();
       }
     } else {
       const err = formatApiError(r);
@@ -124,7 +126,7 @@ export default function Tasks() {
     setEvidenceUploading(false);
     if (r.ok) {
       setModalMsg("Скрины загружены. Дождитесь проверки админом.");
-      await load({ silent: true });
+      invalidateTasks();
       return;
     }
     setModalMsg(formatApiError(r));

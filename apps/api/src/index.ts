@@ -27,7 +27,12 @@ import {
   ensureUserFromTelegram,
   deleteUserAccount,
 } from "./services/users.js";
-import { buildMeEconomyPatch, buildMeResponse } from "./services/me.js";
+import {
+  buildMeEconomyPatch,
+  buildMeEconomyResponse,
+  buildMeProfileResponse,
+  buildMeResponse,
+} from "./services/me.js";
 import { createBanAppeal } from "./services/banAppeals.js";
 import { listTasksForUser, claimTask } from "./services/tasks.js";
 import { registerStreamTaskMessage } from "./services/taskStreamMessages.js";
@@ -35,7 +40,12 @@ import { getLeaderboard, rankOfUser } from "./services/leaderboard.js";
 import { referrals, users } from "./db/schema.js";
 import { authUser, registerAuth } from "./plugins/auth.js";
 import { gameConfig } from "./config.js";
-import { getFortuneStatus, spinFortuneWheel } from "./services/fortune.js";
+import {
+  getFortuneConfigResponse,
+  getFortuneStateResponse,
+  getFortuneStatus,
+  spinFortuneWheel,
+} from "./services/fortune.js";
 import { listShopItems, purchaseItem } from "./services/shop.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerAdminRoutes } from "./routes/admin.js";
@@ -45,7 +55,11 @@ import { registerDropRoutes } from "./routes/drops.js";
 import { registerPushRoutes } from "./routes/push.js";
 import { registerTelegramWebhookRoutes } from "./routes/telegramWebhook.js";
 import { maybeStartTelegramLongPolling } from "./services/telegramPolling.js";
-import { buildHomePublicResponse } from "./services/homePublic.js";
+import {
+  buildHomeContentResponse,
+  buildHomeGiveawaysResponse,
+  buildHomePublicResponse,
+} from "./services/homePublic.js";
 import { applyPromoForUser } from "./services/promo.js";
 import { assertClaimRateLimits } from "./lib/abuse.js";
 import {
@@ -118,6 +132,22 @@ await registerTelegramWebhookRoutes(app);
 app.get("/health", async () => ({ ok: true }));
 
 app.get("/api/v1/home/public", async () => buildHomePublicResponse());
+
+app.get("/api/v1/home/content", async (_req, reply) => {
+  void reply.header(
+    "Cache-Control",
+    "public, max-age=300, stale-while-revalidate=3600"
+  );
+  return buildHomeContentResponse();
+});
+
+app.get("/api/v1/home/giveaways", async (_req, reply) => {
+  void reply.header(
+    "Cache-Control",
+    "public, max-age=30, stale-while-revalidate=120"
+  );
+  return buildHomeGiveawaysResponse();
+});
 
 const promoBody = z.object({
   code: z.string().min(1),
@@ -368,6 +398,26 @@ app.get("/api/v1/me", async (req, reply) => {
     "private, no-store, no-cache, must-revalidate"
   );
   return buildMeResponse(userId);
+});
+
+app.get("/api/v1/me/profile", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  void reply.header(
+    "Cache-Control",
+    "private, max-age=60, stale-while-revalidate=300"
+  );
+  return buildMeProfileResponse(userId);
+});
+
+app.get("/api/v1/me/economy", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  void reply.header(
+    "Cache-Control",
+    "private, no-store, no-cache, must-revalidate"
+  );
+  return buildMeEconomyResponse(userId);
 });
 
 const meWebCredentialsBody = z.object({
@@ -657,7 +707,7 @@ app.get("/api/v1/leaderboard", async (req, reply) => {
 app.get("/api/v1/referrals", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
-  const me = await buildMeResponse(userId);
+  const me = await buildMeProfileResponse(userId);
   const rows = await db
     .select({
       refereeId: referrals.refereeId,
@@ -755,6 +805,26 @@ app.get("/api/v1/games/fortune", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
   return getFortuneStatus(userId);
+});
+
+app.get("/api/v1/games/fortune/config", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  void reply.header(
+    "Cache-Control",
+    "public, max-age=3600, stale-while-revalidate=86400"
+  );
+  return getFortuneConfigResponse();
+});
+
+app.get("/api/v1/games/fortune/state", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  void reply.header(
+    "Cache-Control",
+    "private, no-store, no-cache, must-revalidate"
+  );
+  return getFortuneStateResponse(userId);
 });
 
 const fortuneSpinBody = z.object({

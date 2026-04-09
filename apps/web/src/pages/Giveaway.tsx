@@ -6,7 +6,8 @@ import {
   Trophy,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import WebApp from "@twa-dev/sdk";
 import type { MeEconomyPatch, MeResponse } from "shared";
@@ -15,27 +16,8 @@ import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
-
-type GiveawayDetail = {
-  id: string;
-  title: string;
-  prizeText: string;
-  description: string | null;
-  imageUrl: string | null;
-  endsAt: string;
-  platform: "twitch" | "kick" | "both";
-  active: boolean;
-  winnerCount: number;
-  ticketPriceCoins: number;
-  participantCount: number;
-  drawnAt: string | null;
-  winners: { rank: number; username: string }[];
-  isParticipant: boolean;
-  joinedAt: string | null;
-  requireChannelSubscription: boolean;
-  channelInviteUrl: string | null;
-  channelSubscriptionOk: boolean | null;
-};
+import { useGiveawayDetail } from "../hooks/queries/useGiveaways";
+import { queryKeys } from "../query/queryKeys";
 
 function formatCountdownFull(iso: string): string {
   const end = new Date(iso).getTime();
@@ -52,38 +34,17 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
   const { id } = useParams<{ id: string }>();
   const { showToast } = useToast();
   const { activePlatform } = useActivePlatform();
-  const [data, setData] = useState<GiveawayDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const queryClient = useQueryClient();
+  const {
+    data: g,
+    isPending,
+    isError,
+    isFetching,
+    refetch,
+  } = useGiveawayDetail(id);
   const [joining, setJoining] = useState(false);
   const [joinCooldown, setJoinCooldown] = useState(false);
   const joinCooldownTimerRef = useRef<number | null>(null);
-  const hasLoadedDataRef = useRef(false);
-
-  const load = useCallback(async (opts?: { silent?: boolean }) => {
-    if (!id) return;
-    if (!opts?.silent && !hasLoadedDataRef.current) setLoading(true);
-    if (hasLoadedDataRef.current) setRefreshing(true);
-    const r = await api<GiveawayDetail>(`/api/v1/giveaways/${id}`);
-    if (r.ok) {
-      setData(r.data);
-      hasLoadedDataRef.current = true;
-    }
-    else showToast(formatApiError(r), "error");
-    setLoading(false);
-    setRefreshing(false);
-  }, [id, showToast]);
-
-  useEffect(() => {
-    hasLoadedDataRef.current = false;
-    setData(null);
-    setLoading(true);
-    setRefreshing(false);
-  }, [id]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   useEffect(() => {
     return () => {
@@ -94,7 +55,7 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
   }, []);
 
   async function join() {
-    if (!id || !data || joinCooldown) return;
+    if (!id || !g || joinCooldown) return;
     setJoinCooldown(true);
     if (joinCooldownTimerRef.current != null) {
       window.clearTimeout(joinCooldownTimerRef.current);
@@ -119,17 +80,22 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     }
     patchEconomy(r.data.economy);
     showToast("Вы участвуете в розыгрыше", "success");
-    await load({ silent: true });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.giveaways.detail(id),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.giveaways.list(),
+    });
   }
 
   async function share() {
-    if (!data) return;
+    if (!g) return;
     const url =
       typeof window !== "undefined" ? window.location.href : "";
-    const text = `${data.title} — ${data.prizeText}`;
+    const text = `${g.title} — ${g.prizeText}`;
     try {
       if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ title: data.title, text, url });
+        await navigator.share({ title: g.title, text, url });
         return;
       }
     } catch {
@@ -157,23 +123,39 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     return <PageSkeleton />;
   }
 
-  if (!data) {
+  if (isPending && !g) {
     return (
       <div className="giveaway-detail">
         <Link to="/" className="giveaway-detail__back">
           <ChevronLeft size={22} />
           Назад
         </Link>
-        {loading ? (
-          <PageSkeleton />
-        ) : (
-          <p className="muted">Не найдено</p>
-        )}
+        <PageSkeleton />
       </div>
     );
   }
 
-  const g = data;
+  if (isError || !g) {
+    return (
+      <div className="giveaway-detail">
+        <Link to="/" className="giveaway-detail__back">
+          <ChevronLeft size={22} />
+          Назад
+        </Link>
+        <div className="card stack">
+          <p className="err">Не удалось загрузить розыгрыш.</p>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void refetch()}
+          >
+            Повторить
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const ended = new Date(g.endsAt) <= new Date();
   const completed = Boolean(g.drawnAt);
   const channelOk =
@@ -210,7 +192,9 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
 
   return (
     <div className="giveaway-detail">
-      {refreshing ? <p className="muted">Обновляем данные…</p> : null}
+      {isFetching && !isPending ? (
+        <p className="muted">Обновляем данные…</p>
+      ) : null}
       <div className="giveaway-detail__hero">
         <Link to="/" className="giveaway-detail__back" aria-label="Назад">
           <ChevronLeft size={22} />
@@ -331,7 +315,11 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
             <button
               type="button"
               className="link-like giveaway-detail__refresh-sub"
-              onClick={() => void load({ silent: true })}
+              onClick={() =>
+                void queryClient.invalidateQueries({
+                  queryKey: queryKeys.giveaways.detail(id!),
+                })
+              }
             >
               Обновить статус подписки
             </button>

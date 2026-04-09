@@ -2817,16 +2817,11 @@ button.primary.auth-submit:disabled {
   padding: 12px 14px 14px;
 }
 
-.giveaway-card__prize {
+/* Текст с карточки на главной / в списке (поле prizeText в API). */
+.giveaway-card__headline {
   margin: 0;
   font-weight: 700;
   font-size: 15px;
-}
-
-.giveaway-card__title {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--muted);
 }
 
 .giveaway-card__meta {

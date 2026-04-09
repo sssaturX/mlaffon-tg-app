@@ -1,7 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { Coins } from "lucide-react";
 import { useActivePlatform } from "../context/PlatformContext";
 import { useAnimatedNumber } from "../hooks/useAnimatedNumber";
-import { useLiveBroadcastStore } from "../store/liveBroadcastStore";
+import { fetchLiveBroadcast } from "../query/fetchers";
+import { queryKeys } from "../query/queryKeys";
 
 /** Всегда показываем число: animated ?? value (иначе при null из хука шапка «пустая»). */
 function BalanceWithAnimation({ value }: { value: number }) {
@@ -20,7 +22,12 @@ export function ScreenHeader({
   balance: number;
 }) {
   const { activePlatform, setActivePlatform } = useActivePlatform();
-  const broadcast = useLiveBroadcastStore((s) => s.broadcast);
+  const { data: broadcast } = useQuery({
+    queryKey: queryKeys.liveBroadcast.current(),
+    queryFn: fetchLiveBroadcast,
+    staleTime: Infinity,
+    enabled: false,
+  });
   const liveLocks =
     broadcast?.active === true ? broadcast.platform : null;
 

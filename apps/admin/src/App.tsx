@@ -1278,12 +1278,30 @@ export function App() {
       <h2>Розыгрыши</h2>
       <form className="card stack" onSubmit={createGiveaway}>
         <div>
-          <label htmlFor="gtitle">Заголовок</label>
-          <input id="gtitle" value={gwTitle} onChange={(e) => setGwTitle(e.target.value)} required />
+          <label htmlFor="gprize">Заголовок на карточке</label>
+          <input
+            id="gprize"
+            value={gwPrize}
+            onChange={(e) => setGwPrize(e.target.value)}
+            placeholder="Как на главной и в списке розыгрышей"
+            required
+          />
+          <p className="muted admin-m-0" style={{ fontSize: 12, marginTop: 6 }}>
+            Жирная строка на превью (одна строка без дубля под ней).
+          </p>
         </div>
         <div>
-          <label htmlFor="gprize">Кратко о призах (строка)</label>
-          <input id="gprize" value={gwPrize} onChange={(e) => setGwPrize(e.target.value)} required />
+          <label htmlFor="gtitle">Заголовок на странице розыгрыша</label>
+          <input
+            id="gtitle"
+            value={gwTitle}
+            onChange={(e) => setGwTitle(e.target.value)}
+            placeholder="Крупный заголовок под баннером"
+            required
+          />
+          <p className="muted admin-m-0" style={{ fontSize: 12, marginTop: 6 }}>
+            Отображается на экране «Розыгрыш» (h1), не дублируется на карточке.
+          </p>
         </div>
         <div>
           <label htmlFor="gplat">Платформа</label>
@@ -1303,12 +1321,12 @@ export function App() {
           </p>
         </div>
         <div>
-          <label htmlFor="gdesc">Описание / правила (необязательно)</label>
+          <label htmlFor="gdesc">Описание и правила (необязательно)</label>
           <textarea
             id="gdesc"
             value={gwDescription}
             onChange={(e) => setGwDescription(e.target.value)}
-            placeholder="Текст для карточки розыгрыша"
+            placeholder="Только на странице розыгрыша, под блоком с призом"
           />
         </div>
         <div className="row">
@@ -1409,8 +1427,8 @@ export function App() {
             <li key={g.id}>
               <div className="admin-gw-row">
                 <div className="admin-gw-main">
-                  <strong>{g.title}</strong>
-                  <div className="muted">{g.prizeText}</div>
+                  <strong>{g.prizeText}</strong>
+                  <div className="muted">Страница: {g.title}</div>
                   <div className="muted admin-muted-gap">
                     до {new Date(g.endsAt).toLocaleString("ru-RU")} ·{" "}
                     {g.active ? "активен" : "выкл"} · участников {g.participantCount} · победителей{" "}

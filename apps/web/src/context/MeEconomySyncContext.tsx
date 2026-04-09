@@ -4,21 +4,24 @@ import {
   useContext,
   useMemo,
 } from "react";
-import type { MeEconomyPatch, MeResponse } from "shared";
-import { useMeStore } from "../store/meStore";
+import type { MeEconomyPatch, MeEconomyResponse, MeProfileResponse, MeResponse } from "shared";
 import {
   applyEconomyFromMutationResponse,
-  refreshMe as refreshMeCore,
   scheduleSmartRefresh,
+  syncMeFromNetwork as syncMeFromNetworkCore,
 } from "../services/meService";
+import { queryClient } from "../query/queryClient";
+import { queryKeys } from "../query/queryKeys";
+import { bumpEconomyEpoch, bumpProfileEpoch } from "../query/meSyncEpoch";
+import { splitMePartial } from "../utils/splitMePartial";
 import { useToast } from "./ToastContext";
 
 type Ctx = {
+  /** Оптимистичный патч только в React Query (profile / economy по полям). */
   patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
-  /** Ответ мутации / дроп: валидный economy → patch + отложенный GET; иначе только debounce GET. */
   patchEconomy: (patch: MeEconomyPatch | null | undefined) => void;
-  refreshMe: () => Promise<MeResponse | null>;
-  /** Отложенная синхронизация с сервером после начислений. */
+  /** Параллельный HTTP sync profile + economy (эпохи против WS). */
+  syncMeFromNetwork: () => Promise<MeResponse | null>;
   reconcileFromServer: () => void;
 };
 
@@ -32,7 +35,24 @@ export function MeEconomySyncProvider({
   const { showToast } = useToast();
 
   const patchMe = useCallback((u: (prev: MeResponse) => Partial<MeResponse>) => {
-    useMeStore.getState().patchMe(u);
+    const p = queryClient.getQueryData<MeProfileResponse>(queryKeys.me.profile());
+    const e = queryClient.getQueryData<MeEconomyResponse>(queryKeys.me.economy());
+    if (!p || !e) return;
+    const merged: MeResponse = { ...p, ...e };
+    const partial = u(merged);
+    const { profile: pp, economy: ep } = splitMePartial(partial);
+    if (Object.keys(pp).length > 0) {
+      bumpProfileEpoch();
+      queryClient.setQueryData<MeProfileResponse>(queryKeys.me.profile(), (old) =>
+        old ? { ...old, ...pp } : old
+      );
+    }
+    if (Object.keys(ep).length > 0) {
+      bumpEconomyEpoch();
+      queryClient.setQueryData<MeEconomyResponse>(queryKeys.me.economy(), (old) =>
+        old ? { ...old, ...ep } : old
+      );
+    }
   }, []);
 
   const patchEconomy = useCallback(
@@ -42,15 +62,23 @@ export function MeEconomySyncProvider({
     []
   );
 
-  const refreshMe = useCallback(() => refreshMeCore(showToast), [showToast]);
+  const syncMeFromNetwork = useCallback(
+    () => syncMeFromNetworkCore(showToast),
+    [showToast]
+  );
 
   const reconcileFromServer = useCallback(() => {
     scheduleSmartRefresh(450);
   }, []);
 
   const value = useMemo(
-    () => ({ patchMe, patchEconomy, refreshMe, reconcileFromServer }),
-    [patchMe, patchEconomy, refreshMe, reconcileFromServer]
+    () => ({
+      patchMe,
+      patchEconomy,
+      syncMeFromNetwork,
+      reconcileFromServer,
+    }),
+    [patchMe, patchEconomy, syncMeFromNetwork, reconcileFromServer]
   );
 
   return (

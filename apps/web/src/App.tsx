@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { getPlatformTheme } from "./platformTheme";
 import { useActivePlatform } from "./context/PlatformContext";
@@ -10,6 +11,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import WebApp from "@twa-dev/sdk";
+import type { MeResponse } from "shared";
 import {
   Home,
   ListTodo,
@@ -18,7 +20,6 @@ import {
   User,
 } from "lucide-react";
 import {
-  api,
   authDev,
   authTelegramWithRetry,
   formatApiError,
@@ -32,17 +33,32 @@ import { routeTitle, ScreenHeader } from "./components/ScreenHeader";
 import { AppLoadingSpinner } from "./components/AppLoadingSpinner";
 import { hasLinkedStreamingAccount } from "./utils/streamingAccount";
 import { MeEconomySyncProvider } from "./context/MeEconomySyncContext";
-import { useMeStore } from "./store/meStore";
-import { useMeRefresh } from "./hooks/useMeRefresh";
-import { handleMeUpdateFromWs, refreshMe as refreshMeFromService } from "./services/meService";
+import { useSyncMeFromNetwork } from "./hooks/useSyncMeFromNetwork";
+import { useMergedMe } from "./hooks/queries/useMergedMe";
+import {
+  handleMeUpdateFromWs,
+  invalidateInflightMeRefresh,
+} from "./services/meService";
+import { prefetchRouteData } from "./query/prefetch";
+import { fetchDropActive, fetchLiveBroadcast } from "./query/fetchers";
+import { meEconomyQueryFn, meProfileQueryFn } from "./query/meQueryFns";
+import { queryClient } from "./query/queryClient";
+import { queryKeys } from "./query/queryKeys";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
 import { useSyncedCountdownMs } from "./hooks/useSyncedCountdown";
 import { useRealtimeWebSocket, type DropStartedPayload } from "./hooks/useRealtimeWebSocket";
 import { applyWsInitialState } from "./realtime/applyWsInitialState";
 import { useDocumentVisible } from "./hooks/useDocumentVisible";
-import { useLiveBroadcastStore } from "./store/liveBroadcastStore";
-import { usePredictionStore } from "./store/predictionStore";
+import {
+  applyDropClaimedToQuery,
+  applyDropFinishedToQuery,
+  applyDropStartedToQuery,
+  applyLiveEndedToQuery,
+  applyLiveStartedToQuery,
+  applyPredictionStateToQuery,
+} from "./realtime/realtimeQueryUpdaters";
+import { syncRealtimeHttpCatchUp } from "./realtime/syncRealtimeHttpCatchUp";
 import {
   getStartParamFromInitData,
   looksLikeTelegramMiniApp,
@@ -73,13 +89,13 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [webLogin, setWebLogin] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const me = useMeStore((s) => s.me);
+  const { me, isInitialLoading, profileQ, economyQ } = useMergedMe();
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [online, setOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
 
-  const refreshMe = useMeRefresh();
+  const syncMeFromNetwork = useSyncMeFromNetwork();
 
   useEffect(() => {
     WebApp.ready();
@@ -126,7 +142,16 @@ export default function App() {
 
       const existing = getToken();
       if (existing && !isTelegramAccountLink) {
-        await refreshMe();
+        void Promise.all([
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.me.profile(),
+            queryFn: meProfileQueryFn,
+          }),
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.me.economy(),
+            queryFn: meEconomyQueryFn,
+          }),
+        ]);
         if (cancelled) return;
         setReady(true);
         return;
@@ -137,7 +162,16 @@ export default function App() {
         if (cancelled) return;
         if (r.ok) {
           setToken(r.data.token);
-          await refreshMe();
+          void Promise.all([
+            queryClient.prefetchQuery({
+              queryKey: queryKeys.me.profile(),
+              queryFn: meProfileQueryFn,
+            }),
+            queryClient.prefetchQuery({
+              queryKey: queryKeys.me.economy(),
+              queryFn: meEconomyQueryFn,
+            }),
+          ]);
           if (r.data.accountsMerged === true) {
             showToast(
               "Аккаунты объединены. Оставлен профиль с большим прогрессом.",
@@ -157,7 +191,16 @@ export default function App() {
         if (cancelled) return;
         if (r.ok) {
           setToken(r.data.token);
-          await refreshMe();
+          void Promise.all([
+            queryClient.prefetchQuery({
+              queryKey: queryKeys.me.profile(),
+              queryFn: meProfileQueryFn,
+            }),
+            queryClient.prefetchQuery({
+              queryKey: queryKeys.me.economy(),
+              queryFn: meEconomyQueryFn,
+            }),
+          ]);
         } else {
           setError(formatApiError(r));
         }
@@ -184,7 +227,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [refreshMe, showToast]);
+  }, [showToast]);
 
   useEffect(() => {
     if (!ready || !getToken() || !me) return;
@@ -195,8 +238,17 @@ export default function App() {
   if (webLogin) {
     return (
       <WebLogin
-        onLoggedIn={async () => {
-          await refreshMe();
+        onLoggedIn={() => {
+          void Promise.all([
+            queryClient.prefetchQuery({
+              queryKey: queryKeys.me.profile(),
+              queryFn: meProfileQueryFn,
+            }),
+            queryClient.prefetchQuery({
+              queryKey: queryKeys.me.economy(),
+              queryFn: meEconomyQueryFn,
+            }),
+          ]);
           setWebLogin(false);
           setReady(true);
         }}
@@ -250,6 +302,32 @@ export default function App() {
     );
   }
 
+  if (isInitialLoading) {
+    return <AppLoadingSpinner />;
+  }
+
+  if (profileQ.isError || economyQ.isError) {
+    return (
+      <div className="app-shell">
+        <div className="app-main">
+          <div className="card stack">
+            <h1>Профиль</h1>
+            <p className="err">
+              Не удалось загрузить данные. Проверьте сеть и попробуйте снова.
+            </p>
+            <button
+              type="button"
+              className="primary"
+              onClick={() => void syncMeFromNetwork()}
+            >
+              Повторить
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (me?.banned) {
     const displayName =
       me.firstName?.trim() ||
@@ -261,7 +339,7 @@ export default function App() {
           displayName={displayName}
           banReason={me.banReason}
           appealPending={me.banAppealPending}
-          onRefresh={refreshMe}
+          onRefresh={syncMeFromNetwork}
         />
       </Suspense>
     );
@@ -272,13 +350,16 @@ export default function App() {
   }
 
   return (
-    <AppShell
-      needsPlatformLink={!hasLinkedStreamingAccount(me)}
-      online={online}
-      onboardingOpen={onboardingOpen}
-      onCloseOnboarding={() => setOnboardingOpen(false)}
-      onShowOnboarding={() => setOnboardingOpen(true)}
-    />
+    <MeEconomySyncProvider>
+      <AppShell
+        me={me}
+        needsPlatformLink={!hasLinkedStreamingAccount(me)}
+        online={online}
+        onboardingOpen={onboardingOpen}
+        onCloseOnboarding={() => setOnboardingOpen(false)}
+        onShowOnboarding={() => setOnboardingOpen(true)}
+      />
+    </MeEconomySyncProvider>
   );
 }
 
@@ -286,12 +367,14 @@ const botFooter =
   import.meta.env.VITE_BOT_USERNAME?.trim().replace(/^@/, "") ?? "";
 
 function AppShell({
+  me,
   needsPlatformLink,
   online,
   onboardingOpen,
   onCloseOnboarding,
   onShowOnboarding,
 }: {
+  me: MeResponse;
   /** Полноэкранный экран привязки Kick/Twitch до первого OAuth. */
   needsPlatformLink: boolean;
   online: boolean;
@@ -299,41 +382,31 @@ function AppShell({
   onCloseOnboarding: () => void;
   onShowOnboarding: () => void;
 }) {
-  const me = useMeStore((s) => s.me);
-  const refreshMe = useMeRefresh();
+  const syncMeFromNetwork = useSyncMeFromNetwork();
   const location = useLocation();
   const { activePlatform, setActivePlatform } = useActivePlatform();
-  const liveBroadcast = useLiveBroadcastStore((s) => s.broadcast);
+
+  const { data: liveForPlatform } = useQuery({
+    queryKey: queryKeys.liveBroadcast.current(),
+    queryFn: fetchLiveBroadcast,
+    staleTime: Infinity,
+    enabled: false,
+  });
 
   /** Пока идёт эфир — шапка и баланс строго по платформе стрима; без эфира переключатель свободен. */
   useEffect(() => {
-    if (liveBroadcast?.active === true) {
-      setActivePlatform(liveBroadcast.platform);
+    if (liveForPlatform?.active === true) {
+      setActivePlatform(liveForPlatform.platform);
     }
-  }, [liveBroadcast, setActivePlatform]);
+  }, [liveForPlatform, setActivePlatform]);
+
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStep, setTourStep] = useState(0);
 
-  const [dropSnap, setDropSnap] = useState<DropSnapshot | null>(null);
   const [dropOpen, setDropOpen] = useState(false);
   const docVisible = useDocumentVisible();
   /** Была скрыта вкладка — при возврате делаем один sync без ожидания таймера. */
   const tabWasHiddenRef = useRef(false);
-
-  const loadDropInflight = useRef<Promise<void> | null>(null);
-  const loadDrop = useCallback(async () => {
-    if (!getToken()) {
-      setDropSnap(null);
-      return;
-    }
-    if (loadDropInflight.current) return loadDropInflight.current;
-    const p = (async () => {
-      const r = await api<DropSnapshot>("/api/v1/drops/active");
-      if (r.ok) setDropSnap(r.data);
-    })();
-    loadDropInflight.current = p;
-    try { await p; } finally { loadDropInflight.current = null; }
-  }, []);
 
   /** Один HTTP catch-up для дропа + эфира + предикта; без дублей mount + WS onOpen за одну сессию. */
   const lastRealtimeHttpSyncMsRef = useRef(0);
@@ -344,11 +417,9 @@ function AppShell({
       const minMs = 2500;
       if (!opts?.force && now - lastRealtimeHttpSyncMsRef.current < minMs) return;
       lastRealtimeHttpSyncMsRef.current = now;
-      void loadDrop();
-      void useLiveBroadcastStore.getState().hydrateFromApi();
-      void usePredictionStore.getState().hydrateFromApi();
+      void syncRealtimeHttpCatchUp();
     },
-    [loadDrop]
+    []
   );
 
   useEffect(() => {
@@ -366,51 +437,30 @@ function AppShell({
         handleMeUpdateFromWs(patch);
       },
       onDropStarted: (data: DropStartedPayload) => {
-        const snap: DropSnapshot = {
-          hasActiveDrop: true,
-          dropId: data.dropId,
-          endsAt: data.endsAt,
-          serverNow: data.serverNow,
-          remainingSeconds: data.remainingSeconds,
-          platform: (data.platform === "twitch" || data.platform === "kick" || data.platform === "both")
-            ? data.platform
-            : undefined,
-          maxWinners: data.maxWinners,
-          winnersCount: data.winnersCount,
-          won: false,
-          rewardCoins: null,
-        };
-        setDropSnap(snap);
+        applyDropStartedToQuery(data);
       },
       onDropFinished: (dropId) => {
-        setDropSnap((prev) =>
-          prev?.hasActiveDrop && prev.dropId === dropId
-            ? { hasActiveDrop: false }
-            : prev
-        );
+        applyDropFinishedToQuery(dropId);
         setDropOpen(false);
       },
       onDropClaimed: ({ dropId, reward }) => {
-        setDropSnap((prev) =>
-          prev?.hasActiveDrop && prev.dropId === dropId
-            ? { ...prev, won: true, rewardCoins: reward }
-            : prev
-        );
+        applyDropClaimedToQuery(dropId, reward);
       },
       onLiveStarted: (data) => {
-        useLiveBroadcastStore.getState().applyLiveStartedFromWs(data);
+        applyLiveStartedToQuery(data);
       },
       onLiveEnded: () => {
-        useLiveBroadcastStore.getState().applyLiveEndedFromWs();
+        applyLiveEndedToQuery();
       },
       onPredictionState: (data) => {
-        usePredictionStore.getState().applyFromWs(data);
+        applyPredictionStateToQuery(data);
       },
+      /** Не делаем HTTP refetch на каждый reconnect — придёт `initial_state` / инкрементальные события. */
       onOpen: () => {
-        void refreshMeFromService();
+        invalidateInflightMeRefresh();
       },
       onInitialState: (data) => {
-        applyWsInitialState(data, setDropSnap);
+        applyWsInitialState(data);
       },
       onBroadcastSeqGap: () => {
         syncRealtimeFromHttp({ force: true });
@@ -418,15 +468,21 @@ function AppShell({
       onInitialStateMissing: () => {
         syncRealtimeFromHttp({ force: true });
       },
-      onLegacyBalancePing: () => void refreshMe(),
+      onLegacyBalancePing: () => {
+        invalidateInflightMeRefresh();
+        void queryClient.invalidateQueries({ queryKey: queryKeys.me.economy() });
+      },
     },
     /** WS нужен и до привязки стрима: `me_update` и `initial_state` без лишнего REST. Сервер не требует OAuth-платформы. */
     !!me
   );
 
-  useEffect(() => {
-    useLiveBroadcastStore.getState().setWsConnected(realtimeConnected);
-  }, [realtimeConnected]);
+  const { data: dropSnap } = useQuery({
+    queryKey: queryKeys.drops.active(),
+    queryFn: fetchDropActive,
+    staleTime: Infinity,
+    enabled: Boolean(me) && !needsPlatformLink && !realtimeConnected,
+  });
 
   /**
    * Раньше зависимость была `me` — любой патч профиля (в т.ч. после каждого `me_update` по WS)
@@ -459,33 +515,23 @@ function AppShell({
     }
     if (tabWasHiddenRef.current) {
       tabWasHiddenRef.current = false;
-      void refreshMe();
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me.economy() });
       syncRealtimeFromHttp({ force: true });
     }
-  }, [docVisible, needsPlatformLink, refreshMe, syncRealtimeFromHttp]);
+  }, [docVisible, needsPlatformLink, syncRealtimeFromHttp]);
 
-  /** Без WS — fallback-проверка каждые 2 мин чтобы не пропустить дроп. */
+  /** Без WS — редкая ревалидация только экономики (не весь профиль). */
   useEffect(() => {
-    if (!me || realtimeConnected) return;
-    if (!docVisible) return;
-    const t = window.setInterval(() => void loadDrop(), 120_000);
-    return () => clearInterval(t);
-  }, [me, realtimeConnected, docVisible, loadDrop]);
-
-  useEffect(() => {
-    if (needsPlatformLink) return;
-    if (!docVisible) return;
+    if (!me?.id || needsPlatformLink) return;
     if (realtimeConnected) return;
-    const id = window.setInterval(() => {
-      void refreshMe();
-    }, 60_000);
+    if (!docVisible) return;
+    const id = window.setInterval(
+      () =>
+        void queryClient.invalidateQueries({ queryKey: queryKeys.me.economy() }),
+      60_000
+    );
     return () => clearInterval(id);
-  }, [
-    needsPlatformLink,
-    refreshMe,
-    realtimeConnected,
-    docVisible,
-  ]);
+  }, [me?.id, needsPlatformLink, realtimeConnected, docVisible]);
 
   const headerBalance =
     me == null
@@ -504,7 +550,7 @@ function AppShell({
 
   const autoOpenedDropRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!dropSnap?.hasActiveDrop || dropSnap.won) return;
+    if (!dropSnap || !dropSnap.hasActiveDrop || dropSnap.won) return;
     if (autoOpenedDropRef.current === dropSnap.dropId) return;
     autoOpenedDropRef.current = dropSnap.dropId;
     try {
@@ -554,7 +600,6 @@ function AppShell({
   const showWelcomeOverlay = needsPlatformLink && !oauthInProgress;
 
   return (
-    <MeEconomySyncProvider>
     <>
       {!online && !needsPlatformLink ? (
         <div className="offline-banner" role="status">
@@ -592,12 +637,7 @@ function AppShell({
             <Routes>
               <Route
                 path="/"
-                element={
-                  <HomePage
-                    me={me}
-                    realtimeWsConnected={realtimeConnected}
-                  />
-                }
+                element={<HomePage me={me} />}
               />
               <Route path="/giveaways" element={<GiveawaysPage me={me} />} />
               <Route
@@ -639,6 +679,7 @@ function AppShell({
               end
               className={({ isActive }) => (isActive ? "active" : "")}
               to="/"
+              onMouseEnter={() => prefetchRouteData("/")}
             >
               <Home className="nav__icon" aria-hidden />
               <span>Главная</span>
@@ -647,6 +688,7 @@ function AppShell({
               data-tour-target="nav-tasks"
               className={({ isActive }) => (isActive ? "active" : "")}
               to="/tasks"
+              onMouseEnter={() => prefetchRouteData("/tasks")}
             >
               <ListTodo className="nav__icon" aria-hidden />
               <span>Задания</span>
@@ -668,6 +710,7 @@ function AppShell({
             <NavLink
               className={({ isActive }) => (isActive ? "active" : "")}
               to="/profile"
+              onMouseEnter={() => prefetchRouteData("/profile")}
             >
               <User className="nav__icon" aria-hidden />
               <span>Профиль</span>
@@ -694,16 +737,20 @@ function AppShell({
           onClose={() => setDropOpen(false)}
           snapshot={dropSnap}
           onAfterClaim={(reward) => {
-            setDropSnap((prev) =>
-              prev?.hasActiveDrop
-                ? { ...prev, won: true, rewardCoins: reward }
-                : prev
+            const snap = queryClient.getQueryData<DropSnapshot>(
+              queryKeys.drops.active()
             );
+            if (snap?.hasActiveDrop && snap.dropId) {
+              applyDropClaimedToQuery(snap.dropId, reward);
+            }
           }}
-          onRefreshSnapshot={loadDrop}
+          onRefreshSnapshot={() => {
+            void queryClient.invalidateQueries({
+              queryKey: queryKeys.drops.active(),
+            });
+          }}
         />
       ) : null}
     </>
-    </MeEconomySyncProvider>
   );
 }

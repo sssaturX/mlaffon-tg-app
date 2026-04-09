@@ -69,7 +69,10 @@ export async function registerAuth(app: FastifyInstance) {
       try {
         if (await isUserBanned(req.userId)) {
           const allowedWhenBanned =
-            path === "/api/v1/me" || path === "/api/v1/ban-appeal";
+            path === "/api/v1/me" ||
+            path === "/api/v1/me/profile" ||
+            path === "/api/v1/me/economy" ||
+            path === "/api/v1/ban-appeal";
           if (!allowedWhenBanned) {
             void reply.status(403).send({
               error: {

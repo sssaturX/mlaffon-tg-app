@@ -1,31 +1,27 @@
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Flame, Gift, HelpCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useHomeContent, useHomeGiveaways } from "../hooks/queries/useHomeQueries";
 import { flushSync } from "react-dom";
 import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
 import type { MeEconomyPatch, MeResponse } from "shared";
-import { api, formatApiError } from "../api";
+import { api, formatApiError, getToken } from "../api";
+import { syncMeFromNetwork } from "../services/meService";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
-import {
-  LiveBroadcastCard,
-  openExternal,
-  type LiveBroadcastActive,
-} from "../components/LiveBroadcastCard";
+import { LiveBroadcastCard, openExternal } from "../components/LiveBroadcastCard";
 import { OAUTH_TOAST_KEY } from "./OAuthReturn";
 import {
   notifyStreakAlreadyWatchedThisBroadcast,
   notifyStreakWatchError,
   notifyStreakWatchSuccess,
 } from "../utils/streakNotifications";
-import { useDocumentVisible } from "../hooks/useDocumentVisible";
-import {
-  useLiveBroadcastStore,
-  type LiveBroadcastPublic,
-} from "../store/liveBroadcastStore";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
-import { usePredictionStore } from "../store/predictionStore";
+import { fetchLiveBroadcast, fetchPredictionsActive } from "../query/fetchers";
+import { queryClient } from "../query/queryClient";
+import { queryKeys } from "../query/queryKeys";
 
 const STREAK_TARGET = 7;
 
@@ -102,31 +98,76 @@ function AnimatedInt({ value }: { value: number }) {
   );
 }
 
-export default function Home({
-  me,
-  realtimeWsConnected,
-}: {
-  me: MeResponse | null;
-  /** Стабильное WS — реже опрашиваем GET /live-broadcast. */
-  realtimeWsConnected: boolean;
-}) {
-  const { patchMe, patchEconomy, refreshMe } = useMeEconomySync();
+export default function Home({ me }: { me: MeResponse | null }) {
+  const { patchMe, patchEconomy } = useMeEconomySync();
   const { showToast } = useToast();
+
+  useQuery({
+    queryKey: queryKeys.sync.homeOauthToast(),
+    queryFn: async () => {
+      let k: string | null = null;
+      try {
+        k = sessionStorage.getItem(OAUTH_TOAST_KEY);
+      } catch {
+        return false;
+      }
+      if (!k) return false;
+      try {
+        sessionStorage.removeItem(OAUTH_TOAST_KEY);
+      } catch {
+        /* ignore */
+      }
+      showToast(
+        k === "twitch"
+          ? "Twitch подключён — можно пользоваться стриком на Twitch."
+          : "Kick подключён — можно пользоваться стриком на Kick.",
+        "success",
+        { durationMs: 5500 }
+      );
+      try {
+        WebApp.HapticFeedback.notificationOccurred("success");
+      } catch {
+        /* ignore */
+      }
+      await syncMeFromNetwork(showToast);
+      return true;
+    },
+    enabled: Boolean(getToken()),
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+  });
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const [watchingLive, setWatchingLive] = useState(false);
-  const live = useLiveBroadcastStore((s) => s.broadcast);
+  const { data: live } = useQuery({
+    queryKey: queryKeys.liveBroadcast.current(),
+    queryFn: fetchLiveBroadcast,
+    staleTime: Infinity,
+    enabled: false,
+  });
   /** Локальный стрик сразу после watch — не зависит от задержки /me в WebView. */
   const [streakDisplay, setStreakDisplay] = useState<{
     platform: "twitch" | "kick";
     value: number;
   } | null>(null);
   const liveActivePrevRef = useRef<boolean | null>(null);
-  const docVisible = useDocumentVisible();
-  const [pub, setPub] = useState<HomePublic | null>(null);
+  const contentQ = useHomeContent();
+  const giveawaysQ = useHomeGiveaways();
+  const pub: HomePublic | null =
+    contentQ.data && giveawaysQ.data
+      ? {
+          faq: contentQ.data.faq,
+          giveaways: giveawaysQ.data.giveaways,
+        }
+      : null;
   const [promo, setPromo] = useState("");
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
-  const prediction = usePredictionStore((s) => s.prediction);
-  const hydratePrediction = usePredictionStore((s) => s.hydrateFromApi);
+  const { data: prediction } = useQuery({
+    queryKey: queryKeys.predictions.active(),
+    queryFn: fetchPredictionsActive,
+    staleTime: Infinity,
+    enabled: false,
+  });
   const [predictionOpen, setPredictionOpen] = useState(false);
   const [predictionOption, setPredictionOption] = useState<"A" | "B">("A");
   const [predictionAmount, setPredictionAmount] = useState("");
@@ -151,15 +192,6 @@ export default function Home({
     myOption: "A" | "B" | null;
     won: boolean | null;
   } | null>(null);
-
-  const loadPublic = useCallback(async () => {
-    const r = await api<HomePublic>("/api/v1/home/public");
-    if (r.ok) setPub(r.data);
-  }, []);
-
-  useEffect(() => {
-    void loadPublic();
-  }, [loadPublic]);
 
   useEffect(() => {
     return () => {
@@ -235,42 +267,12 @@ export default function Home({
         showToast("Предикт завершён: исход выбран", "info");
       }
       setPredictionOpen(false);
-      void hydratePrediction();
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.predictions.active(),
+      });
     }
     lastPredictionStatusRef.current = current;
-  }, [prediction, hydratePrediction, showToast]);
-
-  useEffect(() => {
-    let k: string | null = null;
-    try {
-      k = sessionStorage.getItem(OAUTH_TOAST_KEY);
-    } catch {
-      return;
-    }
-    if (!k) return;
-    try {
-      sessionStorage.removeItem(OAUTH_TOAST_KEY);
-    } catch {
-      /* ignore */
-    }
-    showToast(
-      k === "twitch" ? "Twitch подключён — можно пользоваться стриком на Twitch." : "Kick подключён — можно пользоваться стриком на Kick.",
-      "success",
-      { durationMs: 5500 }
-    );
-    try {
-      WebApp.HapticFeedback.notificationOccurred("success");
-    } catch {
-      /* ignore */
-    }
-    void (async () => {
-      await refreshMe();
-    })();
-  }, [showToast, refreshMe]);
-
-  const hydrateLive = useCallback(() => {
-    void useLiveBroadcastStore.getState().hydrateFromApi();
-  }, []);
+  }, [prediction, showToast]);
 
   /** Шапка и стрик совпадают с платформой эфира. */
   useEffect(() => {
@@ -278,14 +280,6 @@ export default function Home({
       setActivePlatform(live.platform);
     }
   }, [live, setActivePlatform]);
-
-  useEffect(() => {
-    if (!docVisible) return;
-    if (realtimeWsConnected) return;
-    const ms = live?.active ? 30_000 : 60_000;
-    const id = window.setInterval(() => void hydrateLive(), ms);
-    return () => clearInterval(id);
-  }, [hydrateLive, docVisible, live?.active, realtimeWsConnected]);
 
   useEffect(() => {
     if (!live) return;
@@ -471,7 +465,10 @@ export default function Home({
       predictionSuccessTimerRef.current = null;
     }, 1200);
     setPredictionAmount("");
-    await hydratePrediction();
+    await queryClient.fetchQuery({
+      queryKey: queryKeys.predictions.active(),
+      queryFn: fetchPredictionsActive,
+    });
   }
 
   return (
@@ -806,8 +803,7 @@ export default function Home({
                   <div className="giveaway-card__placeholder" aria-hidden />
                 )}
                 <div className="giveaway-card__body">
-                  <p className="giveaway-card__prize">{g.prizeText}</p>
-                  <p className="giveaway-card__title">{g.title}</p>
+                  <p className="giveaway-card__headline">{g.prizeText}</p>
                   <p className="giveaway-card__meta muted">
                     {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
                     {g.winnerCount} победител{g.winnerCount === 1 ? "ь" : g.winnerCount < 5 ? "я" : "ей"}

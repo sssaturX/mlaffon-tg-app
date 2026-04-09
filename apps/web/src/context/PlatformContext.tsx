@@ -17,13 +17,18 @@ type Ctx = {
 
 const PlatformContext = createContext<Ctx | null>(null);
 
-function readStored(): ActivePlatform {
+/** Для prefetch вне React (NavLink hover и т.п.). */
+export function getStoredActivePlatform(): ActivePlatform {
   try {
     const s = localStorage.getItem(STORAGE_KEY);
     return s === "kick" ? "kick" : "twitch";
   } catch {
     return "twitch";
   }
+}
+
+function readStored(): ActivePlatform {
+  return getStoredActivePlatform();
 }
 
 export function PlatformProvider({ children }: { children: React.ReactNode }) {

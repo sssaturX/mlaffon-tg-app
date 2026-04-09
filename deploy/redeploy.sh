@@ -366,10 +366,12 @@ main() {
   assert_required_env_vars
   assert_api_scripts
   assert_telegram_bot_token_in_api_env
-  ensure_infra
 
   log "git pull --ff-only"
   git pull --ff-only
+
+  # После pull: актуальный docker-compose.yml (порты, образы).
+  ensure_infra
 
   log "npm ci"
   npm ci

@@ -1,9 +1,8 @@
 /** Не подключён в `App.tsx` (лидерборд скрыт); страница сохранена для возврата. */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { LeaderboardResponse } from "shared";
-import { api, formatApiError } from "../api";
+import { useEffect, useState } from "react";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { useLeaderboard } from "../hooks/queries/useLeaderboard";
 
 export default function Leaderboard() {
   const { activePlatform } = useActivePlatform();
@@ -15,37 +14,29 @@ export default function Leaderboard() {
   useEffect(() => {
     setPlatform(activePlatform);
   }, [activePlatform]);
-  const [data, setData] = useState<LeaderboardResponse | null>(null);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const firstLoadRef = useRef(true);
 
-  const load = useCallback(async () => {
-    setLoadErr(null);
-    if (firstLoadRef.current) setLoading(true);
-    else setRefreshing(true);
-    const q = new URLSearchParams({ sort, platform });
-    const r = await api<LeaderboardResponse>(
-      `/api/v1/leaderboard?${q.toString()}`
-    );
-    if (r.ok) setData(r.data);
-    else {
-      setLoadErr(formatApiError(r));
-    }
-    setLoading(false);
-    setRefreshing(false);
-    firstLoadRef.current = false;
-  }, [sort, platform]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { data, isPending, isError, refetch, isFetching } = useLeaderboard(
+    sort,
+    platform
+  );
 
   return (
     <div>
-      {loadErr && <p className="err">{loadErr}</p>}
-      {refreshing ? <p className="muted">Обновляем рейтинг…</p> : null}
+      {isError ? (
+        <div className="card stack">
+          <p className="err">Не удалось загрузить рейтинг.</p>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void refetch()}
+          >
+            Повторить
+          </button>
+        </div>
+      ) : null}
+      {isFetching && !isPending ? (
+        <p className="muted">Обновляем рейтинг…</p>
+      ) : null}
       <div className="filters">
         {(["coins", "streak", "referrals"] as const).map((s) => (
           <button
@@ -75,11 +66,11 @@ export default function Leaderboard() {
         ))}
       </div>
 
-      {loading && !data ? (
+      {isPending && !data ? (
         <PageSkeleton />
       ) : null}
 
-      {data?.me && (
+      {!isError && data?.me && (
         <div className="card row leader-row leader-row--highlight">
           <span>Вы</span>
           <span>

@@ -50,7 +50,18 @@ export async function getFaqItems(): Promise<{ q: string; a: string }[]> {
   return Array.isArray(arr.items) ? arr.items : [];
 }
 
-export async function buildHomePublicResponse(): Promise<{
+export async function buildHomeContentResponse(): Promise<{
+  cashback: CashbackPublic;
+  faq: { q: string; a: string }[];
+}> {
+  const [cashback, faq] = await Promise.all([
+    getCashbackSetting(),
+    getFaqItems(),
+  ]);
+  return { cashback, faq };
+}
+
+export async function buildHomeGiveawaysResponse(): Promise<{
   giveaways: {
     id: string;
     title: string;
@@ -63,8 +74,6 @@ export async function buildHomePublicResponse(): Promise<{
     participantCount: number;
     drawnAt: string | null;
   }[];
-  cashback: CashbackPublic;
-  faq: { q: string; a: string }[];
 }> {
   const g = await db
     .select()
@@ -88,7 +97,28 @@ export async function buildHomePublicResponse(): Promise<{
       participantCount: counts.get(x.id) ?? 0,
       drawnAt: x.drawnAt ? x.drawnAt.toISOString() : null,
     })),
-    cashback: await getCashbackSetting(),
-    faq: await getFaqItems(),
   };
+}
+
+export async function buildHomePublicResponse(): Promise<{
+  giveaways: {
+    id: string;
+    title: string;
+    prizeText: string;
+    description: string | null;
+    imageUrl: string | null;
+    endsAt: string;
+    winnerCount: number;
+    ticketPriceCoins: number;
+    participantCount: number;
+    drawnAt: string | null;
+  }[];
+  cashback: CashbackPublic;
+  faq: { q: string; a: string }[];
+}> {
+  const [content, { giveaways }] = await Promise.all([
+    buildHomeContentResponse(),
+    buildHomeGiveawaysResponse(),
+  ]);
+  return { ...content, giveaways };
 }

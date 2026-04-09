@@ -52,6 +52,107 @@ export type UserTaskStatus =
   | "completed"
   | "expired";
 
+export type MePlatformsState = {
+  twitch:
+    | { status: "not_connected" }
+    | {
+        status: "connected";
+        displayName: string | null;
+        avatarUrl: string | null;
+      };
+  kick:
+    | { status: "not_connected" }
+    | {
+        status: "connected";
+        displayName: string | null;
+        avatarUrl: string | null;
+      };
+};
+
+/** Профиль и привязки (без баланса/уровня/стрика). Кэш: semi-static. */
+export interface MeProfileResponse {
+  id: string;
+  telegramId: string | null;
+  email: string | null;
+  username: string | null;
+  firstName: string | null;
+  photoUrl: string | null;
+  referralCode: string;
+  referralLinkMiniApp: string;
+  referralLinkWeb: string;
+  referralLink: string;
+  referralCount: number;
+  platforms: MePlatformsState;
+  banned: boolean;
+  banReason: string | null;
+  banAppealPending: boolean;
+  leaderboardRankCoins: number | null;
+}
+
+/** Баланс, прогресс и стрики. Основной источник обновлений — WebSocket. */
+export interface MeEconomyResponse {
+  coins: number;
+  coinsTwitch: number;
+  coinsKick: number;
+  lifetimeEarned: number;
+  lifetimeTwitch: number;
+  lifetimeKick: number;
+  level: number;
+  rewardMultiplier: number;
+  streak: number;
+  streakTwitch: number;
+  streakKick: number;
+}
+
+export function mergeMeProfileAndEconomy(
+  profile: MeProfileResponse,
+  economy: MeEconomyResponse
+): MeResponse {
+  return { ...profile, ...economy };
+}
+
+export interface HomeContentResponse {
+  cashback: {
+    enabled: boolean;
+    title: string;
+    imageUrl: string | null;
+    body: string;
+  };
+  faq: { q: string; a: string }[];
+}
+
+export interface HomeGiveawayPublic {
+  id: string;
+  title: string;
+  prizeText: string;
+  description: string | null;
+  imageUrl: string | null;
+  endsAt: string;
+  winnerCount: number;
+  ticketPriceCoins: number;
+  participantCount: number;
+  drawnAt: string | null;
+}
+
+export interface HomeGiveawaysResponse {
+  giveaways: HomeGiveawayPublic[];
+}
+
+export interface FortuneConfigResponse {
+  paidSpinCost: number;
+  segments: {
+    index: number;
+    type: "coins" | "nothing";
+    value?: number;
+    label: string;
+  }[];
+}
+
+export interface FortuneStateResponse {
+  utcDate: string;
+  freeAvailable: boolean;
+}
+
 export interface MeResponse {
   id: string;
   /** null — только веб, до привязки Telegram */
@@ -84,22 +185,7 @@ export interface MeResponse {
   /** Совместимость: то же, что referralLinkMiniApp */
   referralLink: string;
   referralCount: number;
-  platforms: {
-    twitch:
-      | { status: "not_connected" }
-      | {
-          status: "connected";
-          displayName: string | null;
-          avatarUrl: string | null;
-        };
-    kick:
-      | { status: "not_connected" }
-      | {
-          status: "connected";
-          displayName: string | null;
-          avatarUrl: string | null;
-        };
-  };
+  platforms: MePlatformsState;
   /** Доступ к приложению закрыт (кроме /me и апелляции). */
   banned: boolean;
   banReason: string | null;

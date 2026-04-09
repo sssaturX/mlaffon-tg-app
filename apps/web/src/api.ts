@@ -30,30 +30,42 @@ export function formatApiError(r: ApiErr): string {
 
 export { formatOAuthRedirectError } from "./utils/userFacingMessages.js";
 
+export type ApiRequestInit = RequestInit & {
+  /**
+   * default — не форсировать no-store (браузер и CDN могут кэшировать по заголовкам сервера).
+   * no-store — как раньше: каждый раз с сервера (баланс, дропы, live).
+   */
+  httpCache?: "default" | "no-store";
+};
+
 export async function api<T>(
   path: string,
-  init?: RequestInit
+  init?: ApiRequestInit
 ): Promise<ApiResult<T>> {
   const token = getToken();
+  const { httpCache, ...restInit } = init ?? {};
   const headers: HeadersInit = {
-    ...(init?.headers ?? {}),
+    ...(restInit.headers ?? {}),
   };
   if (token) (headers as Record<string, string>).Authorization = `Bearer ${token}`;
-  if (init?.body && !(headers as Record<string, string>)["Content-Type"]) {
+  if (restInit.body && !(headers as Record<string, string>)["Content-Type"]) {
     (headers as Record<string, string>)["Content-Type"] = "application/json";
   }
 
   try {
-    const method = (init?.method ?? "GET").toUpperCase();
-    if (method === "GET" || method === "HEAD") {
+    const method = (restInit.method ?? "GET").toUpperCase();
+    const bustCache = httpCache !== "default";
+    if (bustCache && (method === "GET" || method === "HEAD")) {
       (headers as Record<string, string>)["Cache-Control"] = "no-cache";
       (headers as Record<string, string>)["Pragma"] = "no-cache";
     }
-    const noStore =
+    const cacheInit: Pick<RequestInit, "cache"> =
       method === "GET" || method === "HEAD"
-        ? ({ cache: "no-store" as const } satisfies Pick<RequestInit, "cache">)
+        ? bustCache
+          ? { cache: "no-store" as const }
+          : { cache: "default" as const }
         : {};
-    const r = await fetch(path, { ...noStore, ...init, headers });
+    const r = await fetch(path, { ...cacheInit, ...restInit, headers });
     let data: unknown = {};
     try {
       data = await r.json();

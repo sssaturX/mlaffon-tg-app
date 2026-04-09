@@ -52,11 +52,19 @@ function pickOutcome(): {
   };
 }
 
-export async function getFortuneStatus(userId: string): Promise<{
-  utcDate: string;
-  freeAvailable: boolean;
+export function getFortuneConfigResponse(): {
   paidSpinCost: number;
   segments: FortuneSegmentPublic[];
+} {
+  return {
+    paidSpinCost: gameConfig.fortune.paidSpinCost,
+    segments: getFortuneSegments(),
+  };
+}
+
+export async function getFortuneStateResponse(userId: string): Promise<{
+  utcDate: string;
+  freeAvailable: boolean;
 }> {
   const day = utcDateString();
   const [row] = await db
@@ -69,9 +77,21 @@ export async function getFortuneStatus(userId: string): Promise<{
   return {
     utcDate: day,
     freeAvailable: !row?.freeUsed,
-    paidSpinCost: gameConfig.fortune.paidSpinCost,
-    segments: getFortuneSegments(),
   };
+}
+
+/** Совместимость: конфиг + состояние в одном ответе. */
+export async function getFortuneStatus(userId: string): Promise<{
+  utcDate: string;
+  freeAvailable: boolean;
+  paidSpinCost: number;
+  segments: FortuneSegmentPublic[];
+}> {
+  const [config, state] = await Promise.all([
+    Promise.resolve(getFortuneConfigResponse()),
+    getFortuneStateResponse(userId),
+  ]);
+  return { ...config, ...state };
 }
 
 export async function spinFortuneWheel(

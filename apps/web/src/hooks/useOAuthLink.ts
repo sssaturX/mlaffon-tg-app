@@ -1,11 +1,10 @@
 import WebApp from "@twa-dev/sdk";
 import { api, formatApiError } from "../api";
-import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useToast } from "../context/ToastContext";
+import { syncMeFromNetwork } from "../services/meService";
 
 export function useOAuthLink() {
   const { showToast } = useToast();
-  const { refreshMe } = useMeEconomySync();
 
   async function startOAuth(platform: "twitch" | "kick") {
     const path =
@@ -35,7 +34,7 @@ export function useOAuthLink() {
         import.meta.env.DEV ? "Тестовое подключение выполнено" : "Подключено",
         "success"
       );
-      void refreshMe();
+      void syncMeFromNetwork();
     } else showToast(formatApiError(r), "error");
   }
 
