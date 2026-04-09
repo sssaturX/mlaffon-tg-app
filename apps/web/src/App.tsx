@@ -420,7 +420,8 @@ function AppShell({
       },
       onLegacyBalancePing: () => void refreshMe(),
     },
-    !needsPlatformLink && !!me
+    /** WS нужен и до привязки стрима: `me_update` и `initial_state` без лишнего REST. Сервер не требует OAuth-платформы. */
+    !!me
   );
 
   useEffect(() => {

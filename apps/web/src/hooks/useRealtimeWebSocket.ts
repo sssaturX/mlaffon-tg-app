@@ -88,12 +88,13 @@ export function useRealtimeWebSocket(
   const ref = useRef(handlers);
   ref.current = handlers;
 
+  const token = enabled ? getToken() : "";
+
   useEffect(() => {
     if (!enabled) {
       setConnected(false);
       return;
     }
-    const token = getToken();
     if (!token) {
       setConnected(false);
       return;
@@ -273,7 +274,7 @@ export function useRealtimeWebSocket(
       }
       setConnected(false);
     };
-  }, [enabled]);
+  }, [enabled, token]);
 
   return connected;
 }
