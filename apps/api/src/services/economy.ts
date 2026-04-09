@@ -1,7 +1,6 @@
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { transactions, userBalances, userInventory } from "../db/schema.js";
-import { gameConfig } from "../config.js";
+import { transactions, userBalances } from "../db/schema.js";
 import { publishBalanceUpdate } from "./realtimePublish.js";
 
 export type CreditReason =
@@ -20,59 +19,6 @@ export type CreditReason =
 export type EconomyPlatform = "twitch" | "kick";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-function boostEligible(kind: CreditReason): boolean {
-  return kind !== "admin";
-}
-
-/**
- * При наличии заряда в инвентаре (boost_x2) умножает сумму на множитель (не выше max из конфига),
- * списывает один заряд. Без заряда возвращает baseAmount.
- */
-async function consumeBoostMultiply(
-  tx: Tx,
-  userId: string,
-  baseAmount: number,
-  eligible: boolean
-): Promise<{
-  finalAmount: number;
-  boostApplied: boolean;
-  multiplier: number;
-}> {
-  if (!eligible || baseAmount <= 0) {
-    return { finalAmount: baseAmount, boostApplied: false, multiplier: 1 };
-  }
-
-  const itemId = gameConfig.boost.inventoryItemId;
-  const maxM = gameConfig.boost.maxMultiplier;
-
-  const [consumed] = await tx
-    .update(userInventory)
-    .set({
-      quantity: sql`${userInventory.quantity} - 1`,
-      updatedAt: sql`now()`,
-    })
-    .where(
-      and(
-        eq(userInventory.userId, userId),
-        eq(userInventory.itemId, itemId),
-        sql`${userInventory.quantity} > 0`
-      )
-    )
-    .returning({ id: userInventory.id });
-
-  if (!consumed) {
-    return { finalAmount: baseAmount, boostApplied: false, multiplier: 1 };
-  }
-
-  const mult = Math.min(maxM, 2);
-  const finalAmount = Math.floor(baseAmount * mult);
-  return {
-    finalAmount,
-    boostApplied: true,
-    multiplier: mult,
-  };
-}
 
 async function readBalances(tx: Tx, userId: string) {
   const [row] = await tx
@@ -195,44 +141,29 @@ export async function applyCredit(params: {
       .limit(1);
     if (existing) return { ok: false, reason: "duplicate" };
 
-    const { finalAmount, boostApplied, multiplier } = await consumeBoostMultiply(
-      tx,
-      userId,
-      baseAmount,
-      boostEligible(kind)
-    );
-    if (finalAmount <= 0) throw new Error("amount_must_be_positive");
-
-    const metaOut = {
-      ...(meta ?? {}),
-      rewardBeforeBoost: baseAmount,
-      boostMultiplier: boostApplied ? multiplier : 1,
-      boostApplied,
-    };
-
     await insertCreditTx(tx, {
       userId,
-      amount: finalAmount,
+      amount: baseAmount,
       idempotencyKey,
       kind,
       platform,
       referenceType,
       referenceId,
-      meta: metaOut,
+      meta,
     });
 
     const balances = await readBalances(tx, userId);
     return {
       ok: true,
       ...balances,
-      creditedAmount: finalAmount,
+      creditedAmount: baseAmount,
     };
   });
   if (result.ok) void publishBalanceUpdate(userId);
   return result;
 }
 
-/** Награды без привязки к платформе — делим 50/50 между Twitch и Kick. Один заряд буста на всю сумму. */
+/** Награды без привязки к платформе — делим 50/50 между Twitch и Kick. */
 export async function applyCreditSplit(params: {
   userId: string;
   amount: number;
@@ -287,23 +218,8 @@ export async function applyCreditSplit(params: {
       .limit(1);
     if (dupTw || dupKick) return { ok: false, reason: "duplicate" };
 
-    const { finalAmount, boostApplied, multiplier } = await consumeBoostMultiply(
-      tx,
-      userId,
-      baseAmount,
-      boostEligible(kind)
-    );
-    if (finalAmount <= 0) throw new Error("amount_must_be_positive");
-
-    const metaOut = {
-      ...(meta ?? {}),
-      rewardBeforeBoost: baseAmount,
-      boostMultiplier: boostApplied ? multiplier : 1,
-      boostApplied,
-    };
-
-    const half = Math.floor(finalAmount / 2);
-    const rest = finalAmount - half;
+    const half = Math.floor(baseAmount / 2);
+    const rest = baseAmount - half;
 
     await insertCreditTx(tx, {
       userId,
@@ -313,7 +229,7 @@ export async function applyCreditSplit(params: {
       platform: "twitch",
       referenceType,
       referenceId,
-      meta: metaOut,
+      meta,
     });
     await insertCreditTx(tx, {
       userId,
@@ -323,14 +239,14 @@ export async function applyCreditSplit(params: {
       platform: "kick",
       referenceType,
       referenceId,
-      meta: metaOut,
+      meta,
     });
 
     const balances = await readBalances(tx, userId);
     return {
       ok: true,
       ...balances,
-      creditedAmount: finalAmount,
+      creditedAmount: baseAmount,
     };
   });
   if (result.ok) void publishBalanceUpdate(userId);

@@ -58,10 +58,6 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
   const [joining, setJoining] = useState(false);
   const [joinCooldown, setJoinCooldown] = useState(false);
   const joinCooldownTimerRef = useRef<number | null>(null);
-  const [boostPoints, setBoostPoints] = useState("");
-  const [boosting, setBoosting] = useState(false);
-  const [boostCooldown, setBoostCooldown] = useState(false);
-  const boostCooldownTimerRef = useRef<number | null>(null);
   const hasLoadedDataRef = useRef(false);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
@@ -93,9 +89,6 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     return () => {
       if (joinCooldownTimerRef.current != null) {
         window.clearTimeout(joinCooldownTimerRef.current);
-      }
-      if (boostCooldownTimerRef.current != null) {
-        window.clearTimeout(boostCooldownTimerRef.current);
       }
     };
   }, []);
@@ -158,39 +151,6 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     } catch {
       /* ignore */
     }
-  }
-
-  async function boost() {
-    if (!id || !data || boostCooldown) return;
-    const points = Math.floor(Number(boostPoints));
-    if (!Number.isFinite(points) || points <= 0) {
-      showToast("Введите сумму буста больше нуля", "error");
-      return;
-    }
-    setBoostCooldown(true);
-    if (boostCooldownTimerRef.current != null) {
-      window.clearTimeout(boostCooldownTimerRef.current);
-    }
-    boostCooldownTimerRef.current = window.setTimeout(() => {
-      setBoostCooldown(false);
-      boostCooldownTimerRef.current = null;
-    }, 1500);
-    setBoosting(true);
-    const r = await api<{ ok: boolean; economy: MeEconomyPatch }>(
-      `/api/v1/giveaways/${id}/boost`,
-      {
-        method: "POST",
-        body: JSON.stringify({ platform: activePlatform, points }),
-      }
-    );
-    setBoosting(false);
-    if (!r.ok) {
-      showToast(formatApiError(r), "error");
-      return;
-    }
-    patchEconomy(r.data.economy);
-    showToast("Буст применён. Вес в розыгрыше увеличен.", "success");
-    setBoostPoints("");
   }
 
   if (!me) {
@@ -409,34 +369,6 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
           {balance.toLocaleString("ru-RU")} · переключите платформу в шапке.
         </p>
       )}
-
-      {g.isParticipant && !g.drawnAt ? (
-        <div className="card stack">
-          <p className="m-0">
-            <strong>Буст шансов</strong>
-          </p>
-          <p className="muted m-0">
-            Потратьте монеты текущей платформы, чтобы увеличить вес при выборе победителей.
-          </p>
-          <div className="row">
-            <input
-              type="number"
-              min={1}
-              value={boostPoints}
-              onChange={(e) => setBoostPoints(e.target.value)}
-              placeholder="Сумма буста"
-            />
-            <button
-              type="button"
-              className="primary"
-              disabled={boosting || boostCooldown}
-              onClick={() => void boost()}
-            >
-              {boosting || boostCooldown ? "..." : "Бустить"}
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       {ended && !g.drawnAt && (
         <p className="muted">Приём участников окончен, ожидается выбор победителей.</p>

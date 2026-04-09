@@ -9,8 +9,6 @@ import {
 import { computeLevel, computeRewardMultiplier } from "../config.js";
 import { ensureStreamStreakRow } from "./streamStreak.js";
 import { hasPendingBanAppeal } from "./banAppeals.js";
-import { getCoinRankAll } from "./leaderboard.js";
-
 export async function buildMeResponse(userId: string): Promise<{
   id: string;
   telegramId: string | null;
@@ -57,7 +55,7 @@ export async function buildMeResponse(userId: string): Promise<{
   banned: boolean;
   banReason: string | null;
   banAppealPending: boolean;
-  /** Ранг в глобальном топе по сумме монет (Twitch+Kick). */
+  /** Ранг по монетам; сейчас не считается (лидерборд в приложении отключён). */
   leaderboardRankCoins: number | null;
 }> {
   const streamStreak = await ensureStreamStreakRow(userId);
@@ -124,8 +122,6 @@ export async function buildMeResponse(userId: string): Promise<{
   const banned = u.banned === true;
   const banAppealPending = banned ? await hasPendingBanAppeal(userId) : false;
 
-  const leaderboardRankCoins = await getCoinRankAll(userId);
-
   return {
     id: u.id,
     telegramId: u.telegramId != null ? u.telegramId.toString() : null,
@@ -156,7 +152,7 @@ export async function buildMeResponse(userId: string): Promise<{
     banned,
     banReason: u.banReason ?? null,
     banAppealPending,
-    leaderboardRankCoins,
+    leaderboardRankCoins: null,
   };
 }
 

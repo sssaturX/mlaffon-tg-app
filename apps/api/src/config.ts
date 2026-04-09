@@ -31,7 +31,7 @@ export interface GameConfig {
   };
   fortune: {
     paidSpinCost: number;
-    outcomes: { type: "coins" | "boost" | "nothing"; weight: number; value?: number }[];
+    outcomes: { type: "coins" | "nothing"; weight: number; value?: number }[];
   };
   platforms: {
     twitchEnabled: boolean;
@@ -46,21 +46,16 @@ export interface GameConfig {
     dropsAttempt: { max: number; timeWindowMs: number };
     promoApply: { max: number; timeWindowMs: number };
     giveawayJoin: { max: number; timeWindowMs: number };
-    giveawayBoost: { max: number; timeWindowMs: number };
     predictionBet: { max: number; timeWindowMs: number };
     fortuneSpin: { max: number; timeWindowMs: number };
-  };
-  /** Множитель к наградам при заряде в инвентаре (см. inventoryItemId). Не выше maxMultiplier. */
-  boost: {
-    maxMultiplier: number;
-    inventoryItemId: string;
   };
 }
 
 const defaultConfig: GameConfig = {
   level: {
     coinsPerLevelUnit: 100,
-    rewardMultiplierPerLevel: 0.05,
+    /** 0 — без множителя награды от уровня (только отображение уровня). */
+    rewardMultiplierPerLevel: 0,
   },
   streak: {
     bonusEveryDays: 7,
@@ -83,8 +78,7 @@ const defaultConfig: GameConfig = {
       { type: "coins", weight: 35, value: 10 },
       { type: "coins", weight: 25, value: 25 },
       { type: "coins", weight: 10, value: 50 },
-      { type: "boost", weight: 15, value: 1 },
-      { type: "nothing", weight: 15 },
+      { type: "nothing", weight: 30 },
     ],
   },
   platforms: {
@@ -99,13 +93,8 @@ const defaultConfig: GameConfig = {
     dropsAttempt: { max: 20, timeWindowMs: 60_000 },
     promoApply: { max: 15, timeWindowMs: 60_000 },
     giveawayJoin: { max: 30, timeWindowMs: 60_000 },
-    giveawayBoost: { max: 20, timeWindowMs: 60_000 },
     predictionBet: { max: 12, timeWindowMs: 60_000 },
     fortuneSpin: { max: 25, timeWindowMs: 60_000 },
-  },
-  boost: {
-    maxMultiplier: 2,
-    inventoryItemId: "boost_x2",
   },
 };
 

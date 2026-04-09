@@ -1,7 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { shopItems, userInventory } from "../db/schema.js";
-import { gameConfig } from "../config.js";
 import { applyDebit, type EconomyPlatform } from "./economy.js";
 import { nanoid } from "nanoid";
 
@@ -24,6 +23,8 @@ export async function purchaseItem(
     .where(eq(shopItems.id, itemId))
     .limit(1);
   if (!item || !item.active) return { ok: false, error: "item_not_found" };
+  if (item.kind !== "extra_spin")
+    return { ok: false, error: "item_not_found" };
 
   const idem = `shop:${userId}:${itemId}:${nanoid()}`;
   const debit = await applyDebit({
@@ -41,38 +42,21 @@ export async function purchaseItem(
     return { ok: false, error: "duplicate" };
   }
 
-  if (item.kind === "extra_spin") {
-    const qty = (item.meta as { spins?: number } | null)?.spins ?? 1;
-    await db
-      .insert(userInventory)
-      .values({
-        userId,
-        itemId: "extra_spin",
-        quantity: qty,
-      })
-      .onConflictDoUpdate({
-        target: [userInventory.userId, userInventory.itemId],
-        set: {
-          quantity: sql`${userInventory.quantity} + ${qty}`,
-          updatedAt: sql`now()`,
-        },
-      });
-  } else if (item.kind === "boost") {
-    await db
-      .insert(userInventory)
-      .values({
-        userId,
-        itemId: gameConfig.boost.inventoryItemId,
-        quantity: 1,
-      })
-      .onConflictDoUpdate({
-        target: [userInventory.userId, userInventory.itemId],
-        set: {
-          quantity: sql`${userInventory.quantity} + 1`,
-          updatedAt: sql`now()`,
-        },
-      });
-  }
+  const qty = (item.meta as { spins?: number } | null)?.spins ?? 1;
+  await db
+    .insert(userInventory)
+    .values({
+      userId,
+      itemId: "extra_spin",
+      quantity: qty,
+    })
+    .onConflictDoUpdate({
+      target: [userInventory.userId, userInventory.itemId],
+      set: {
+        quantity: sql`${userInventory.quantity} + ${qty}`,
+        updatedAt: sql`now()`,
+      },
+    });
 
   return {
     ok: true,

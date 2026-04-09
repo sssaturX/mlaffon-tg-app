@@ -2,7 +2,6 @@ import { randomInt } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
-  giveawayBoosts,
   giveawayParticipants,
   giveawayWinners,
   giveaways,
@@ -12,7 +11,6 @@ import {
 import { applyDebit } from "./economy.js";
 import { buildMeEconomyPatch } from "./me.js";
 import { checkTelegramChannelMembership } from "./telegramChannel.js";
-import { debitPlatformBalance, getPointPlatformByType } from "./platformBalances.js";
 
 export function displayUsername(u: {
   username: string | null;
@@ -388,34 +386,7 @@ export async function drawGiveawayWinners(giveawayId: string): Promise<
 
   const pickCount = Math.min(need, parts.length);
 
-  const boostRows = await db
-    .select({
-      userId: giveawayBoosts.userId,
-      pointsSpent: sql<number>`coalesce(sum(${giveawayBoosts.pointsSpent}), 0)::int`,
-      ticketsAdded: sql<number>`coalesce(sum(${giveawayBoosts.ticketsAdded}), 0)::int`,
-    })
-    .from(giveawayBoosts)
-    .where(eq(giveawayBoosts.giveawayId, giveawayId))
-    .groupBy(giveawayBoosts.userId);
-  const boosts = new Map<string, { points: number; tickets: number }>();
-  for (const b of boostRows) {
-    boosts.set(b.userId, {
-      points: b.pointsSpent ?? 0,
-      tickets: b.ticketsAdded ?? 0,
-    });
-  }
-
-  const conversionRate = Math.max(
-    1,
-    Number.parseInt(process.env.GIVEAWAY_BOOST_CONVERSION_RATE ?? "100", 10) || 100
-  );
-  const weighted = parts.map((p) => {
-    const b = boosts.get(p.userId);
-    const pointsBoost = Math.floor((b?.points ?? 0) / conversionRate);
-    const ticketsBoost = b?.tickets ?? 0;
-    const weight = 1 + ticketsBoost + pointsBoost;
-    return { userId: p.userId, weight };
-  });
+  const weighted = parts.map((p) => ({ userId: p.userId, weight: 1 }));
   let picked = weightedPickUnique(weighted, pickCount);
   if (picked.length < pickCount) {
     const fallback = shuffleUserIds(parts.map((p) => p.userId)).filter(
@@ -520,91 +491,6 @@ export async function listGiveawaysPublic(): Promise<GiveawayListItem[]> {
       status,
     };
   });
-}
-
-export async function boostGiveaway(params: {
-  giveawayId: string;
-  userId: string;
-  platform: "twitch" | "kick";
-  points: number;
-}): Promise<
-  | { ok: true; economy: Awaited<ReturnType<typeof buildMeEconomyPatch>> }
-  | {
-      ok: false;
-      code:
-        | "not_found"
-        | "inactive"
-        | "ended"
-        | "already_drawn"
-        | "not_participant"
-        | "bad_points"
-        | "platform_not_allowed"
-        | "platform_not_connected"
-        | "platform_inactive"
-        | "insufficient_coins";
-    }
-> {
-  const points = Math.floor(params.points);
-  if (points <= 0) return { ok: false, code: "bad_points" };
-
-  const [g] = await db
-    .select()
-    .from(giveaways)
-    .where(eq(giveaways.id, params.giveawayId))
-    .limit(1);
-  if (!g) return { ok: false, code: "not_found" };
-  if (!g.active) return { ok: false, code: "inactive" };
-  if (g.drawnAt) return { ok: false, code: "already_drawn" };
-  if (g.endsAt <= new Date()) return { ok: false, code: "ended" };
-
-  const gp = (g.platform ?? "both") as GiveawayPlatformScope;
-  if (gp === "twitch" && params.platform !== "twitch")
-    return { ok: false, code: "platform_not_allowed" };
-  if (gp === "kick" && params.platform !== "kick")
-    return { ok: false, code: "platform_not_allowed" };
-  if (!(await userHasPlatform(params.userId, params.platform)))
-    return { ok: false, code: "platform_not_connected" };
-
-  const [joined] = await db
-    .select({ id: giveawayParticipants.id })
-    .from(giveawayParticipants)
-    .where(
-      and(
-        eq(giveawayParticipants.giveawayId, params.giveawayId),
-        eq(giveawayParticipants.userId, params.userId)
-      )
-    )
-    .limit(1);
-  if (!joined) return { ok: false, code: "not_participant" };
-
-  const platform = await getPointPlatformByType(params.platform);
-  if (!platform || !platform.isActive) return { ok: false, code: "platform_inactive" };
-
-  const debit = await debitPlatformBalance({
-    userId: params.userId,
-    amount: points,
-    platform,
-    idempotencyKey: `giveaway_boost:${params.giveawayId}:${params.userId}:${Date.now()}:${points}`,
-    kind: "giveaway_boost",
-    referenceType: "giveaway",
-    referenceId: params.giveawayId,
-    meta: { platformType: params.platform },
-  });
-  if (!debit.ok) {
-    if (debit.reason === "insufficient") return { ok: false, code: "insufficient_coins" };
-    return { ok: false, code: "insufficient_coins" };
-  }
-
-  await db.insert(giveawayBoosts).values({
-    giveawayId: params.giveawayId,
-    userId: params.userId,
-    platformType: params.platform,
-    pointsSpent: points,
-    ticketsAdded: 0,
-  });
-
-  const economy = await buildMeEconomyPatch(params.userId);
-  return { ok: true, economy };
 }
 
 export async function listGiveawayParticipantsWithUsernames(giveawayId: string): Promise<

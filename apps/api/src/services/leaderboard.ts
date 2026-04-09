@@ -1,4 +1,4 @@
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   platformAccounts,
@@ -266,19 +266,3 @@ async function rankOfUserByReferrals(
   return { rank: Number(c) + 1, value: myVal };
 }
 
-/**
- * Ранг по сумме монет (поле `coins`) в глобальном топе: 1 + число пользователей с большим балансом.
- */
-export async function getCoinRankAll(userId: string): Promise<number | null> {
-  const [me] = await db
-    .select({ coins: userBalances.coins })
-    .from(userBalances)
-    .where(eq(userBalances.userId, userId))
-    .limit(1);
-  if (!me) return null;
-  const [{ c }] = await db
-    .select({ c: sql<number>`count(*)::int` })
-    .from(userBalances)
-    .where(gt(userBalances.coins, me.coins));
-  return Number(c) + 1;
-}

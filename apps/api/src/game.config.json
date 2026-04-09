@@ -1,7 +1,7 @@
 {
   "level": {
     "coinsPerLevelUnit": 100,
-    "rewardMultiplierPerLevel": 0.05
+    "rewardMultiplierPerLevel": 0
   },
   "streak": {
     "bonusEveryDays": 7,
@@ -12,9 +12,11 @@
     "bonusCoins": 500
   },
   "referral": {
-    "referrerReward": 100,
+    "referrerReward": 0,
     "refereeBonus": 25,
-    "qualifyMinLifetimeEarned": 50
+    "qualifyMinLifetimeEarned": 50,
+    "weeklyPercentL1": 0.02,
+    "weeklyPercentL2": 0.005
   },
   "fortune": {
     "paidSpinCost": 20,
@@ -22,8 +24,7 @@
       { "type": "coins", "weight": 35, "value": 10 },
       { "type": "coins", "weight": 25, "value": 25 },
       { "type": "coins", "weight": 10, "value": 50 },
-      { "type": "boost", "weight": 15, "value": 1 },
-      { "type": "nothing", "weight": 15 }
+      { "type": "nothing", "weight": 30 }
     ]
   },
   "platforms": {
@@ -31,17 +32,14 @@
     "kickEnabled": true
   },
   "rateLimit": {
-    "maxPerWindow": 120,
+    "maxPerWindow": 200,
     "timeWindowMs": 60000
   },
   "routeRateLimits": {
     "dropsAttempt": { "max": 20, "timeWindowMs": 60000 },
     "promoApply": { "max": 15, "timeWindowMs": 60000 },
     "giveawayJoin": { "max": 30, "timeWindowMs": 60000 },
+    "predictionBet": { "max": 12, "timeWindowMs": 60000 },
     "fortuneSpin": { "max": 25, "timeWindowMs": 60000 }
-  },
-  "boost": {
-    "maxMultiplier": 2,
-    "inventoryItemId": "boost_x2"
   }
 }

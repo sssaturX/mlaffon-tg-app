@@ -1,11 +1,6 @@
-import { and, eq, isNull, sql, desc } from "drizzle-orm";
+import { and, eq, isNull, desc } from "drizzle-orm";
 import { db } from "../db/index.js";
-import {
-  appSettings,
-  giveaways,
-  userBalances,
-  users,
-} from "../db/schema.js";
+import { appSettings, giveaways } from "../db/schema.js";
 import { getParticipantCountsForGiveawayIds } from "./giveaways.js";
 
 export type CashbackPublic = {
@@ -56,7 +51,6 @@ export async function getFaqItems(): Promise<{ q: string; a: string }[]> {
 }
 
 export async function buildHomePublicResponse(): Promise<{
-  stats: { usersCount: number; coinsEarnedTotal: number };
   giveaways: {
     id: string;
     title: string;
@@ -72,15 +66,6 @@ export async function buildHomePublicResponse(): Promise<{
   cashback: CashbackPublic;
   faq: { q: string; a: string }[];
 }> {
-  const [{ c }] = await db
-    .select({ c: sql<number>`count(*)::int` })
-    .from(users);
-  const [{ s }] = await db
-    .select({
-      s: sql<number>`coalesce(sum(${userBalances.lifetimeEarned}), 0)::int`,
-    })
-    .from(userBalances);
-
   const g = await db
     .select()
     .from(giveaways)
@@ -91,7 +76,6 @@ export async function buildHomePublicResponse(): Promise<{
   const counts = await getParticipantCountsForGiveawayIds(g.map((x) => x.id));
 
   return {
-    stats: { usersCount: c ?? 0, coinsEarnedTotal: s ?? 0 },
     giveaways: g.map((x) => ({
       id: x.id,
       title: x.title,

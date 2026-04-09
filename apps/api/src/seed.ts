@@ -285,18 +285,12 @@ async function seed() {
 
   const shopSeeds = [
     {
-      id: "boost_x2",
-      title: "Буст ×2 к награде",
-      kind: "boost",
-      priceCoins: 80,
-      meta: { durationMinutes: 60 },
-    },
-    {
       id: "extra_spin_pack",
       title: "+3 спина колеса",
-      kind: "extra_spin",
+      kind: "extra_spin" as const,
       priceCoins: 50,
       meta: { spins: 3 },
+      active: true,
     },
   ];
 
@@ -314,11 +308,18 @@ async function seed() {
           kind: s.kind,
           priceCoins: s.priceCoins,
           meta: s.meta,
-          active: true,
+          active: s.active,
         })
         .where(eq(shopItems.id, s.id));
     } else {
-      await db.insert(shopItems).values(s);
+      await db.insert(shopItems).values({
+        id: s.id,
+        title: s.title,
+        kind: s.kind,
+        priceCoins: s.priceCoins,
+        meta: s.meta,
+        active: s.active,
+      });
     }
   }
 

@@ -282,25 +282,6 @@ export default function Profile({
         </div>
       )}
 
-      <div className="card stack card--pad-sm profile-stats-row">
-        <div className="profile-stat-cell">
-          <p className="muted text-caption">Уровень</p>
-          <p className="label-strong">{me.level}</p>
-        </div>
-        <div className="profile-stat-cell">
-          <p className="muted text-caption">Ранг (монеты)</p>
-          <p className="label-strong">
-            {me.leaderboardRankCoins != null
-              ? `#${me.leaderboardRankCoins}`
-              : "—"}
-          </p>
-        </div>
-        <div className="profile-stat-cell">
-          <p className="muted text-caption">Множитель</p>
-          <p className="label-strong">×{me.rewardMultiplier.toFixed(2)}</p>
-        </div>
-      </div>
-
       <div className="card stack card--pad-sm">
         <div className="profile-row">
           <div className="profile-row__left">

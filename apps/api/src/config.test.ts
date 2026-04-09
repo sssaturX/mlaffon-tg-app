@@ -17,7 +17,7 @@ describe("computeRewardMultiplier", () => {
     expect(computeRewardMultiplier(0)).toBe(1);
   });
 
-  it("increases with level", () => {
-    expect(computeRewardMultiplier(2)).toBeGreaterThan(1);
+  it("follows rewardMultiplierPerLevel (0 in default config)", () => {
+    expect(computeRewardMultiplier(2)).toBe(1);
   });
 });

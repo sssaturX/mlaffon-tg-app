@@ -1,10 +1,4 @@
-import {
-  ChevronDown,
-  Coins,
-  Flame,
-  Gift,
-  HelpCircle,
-} from "lucide-react";
+import { ChevronDown, Flame, Gift, HelpCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import WebApp from "@twa-dev/sdk";
@@ -36,7 +30,6 @@ import { usePredictionStore } from "../store/predictionStore";
 const STREAK_TARGET = 7;
 
 type HomePublic = {
-  stats: { usersCount: number; coinsEarnedTotal: number };
   giveaways: {
     id: string;
     title: string;
@@ -700,25 +693,11 @@ export default function Home({
             <p className="home-hero__name">{tgDisplayName}</p>
             <p className="muted home-hero__sub">
               Режим: {activePlatform === "twitch" ? "Twitch" : "Kick"} · уровень{" "}
-              {me.level} · ×{me.rewardMultiplier.toFixed(2)}
+              {me.level}
             </p>
           </div>
         </div>
       </div>
-
-      {pub && (
-        <div className="home-stats home-stats--public">
-          <div className="stat-tile">
-            <div className="stat-tile__label">
-              <Coins size={16} strokeWidth={2} aria-hidden />
-              Монет заработано
-            </div>
-            <div className="stat-tile__value">
-              {pub.stats.coinsEarnedTotal.toLocaleString("ru-RU")}
-            </div>
-          </div>
-        </div>
-      )}
 
       {live?.active ? (
         <LiveBroadcastCard

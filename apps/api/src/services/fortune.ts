@@ -1,11 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "../db/index.js";
-import {
-  fortuneSpins,
-  userBalances,
-  userInventory,
-} from "../db/schema.js";
+import { fortuneSpins, userBalances } from "../db/schema.js";
 import { gameConfig } from "../config.js";
 import {
   applyCredit,
@@ -16,7 +12,7 @@ import { utcDateString } from "./streak.js";
 
 export type FortuneSegmentPublic = {
   index: number;
-  type: "coins" | "boost" | "nothing";
+  type: "coins" | "nothing";
   value?: number;
   label: string;
 };
@@ -25,7 +21,6 @@ function labelForOutcome(
   o: (typeof gameConfig.fortune.outcomes)[number]
 ): string {
   if (o.type === "coins") return `${o.value ?? 0} монет`;
-  if (o.type === "boost") return "Буст ×2";
   return "Пусто";
 }
 
@@ -86,7 +81,7 @@ export async function spinFortuneWheel(
 ): Promise<
   | {
       ok: true;
-      outcome: "coins" | "boost" | "nothing";
+      outcome: "coins" | "nothing";
       /** Индекс сектора на колесе (0..n-1), совпадает с GET /games/fortune segments. */
       segmentIndex: number;
       amount?: number;
@@ -157,24 +152,6 @@ export async function spinFortuneWheel(
     if (credit.ok) {
       coinsCredited = credit.creditedAmount;
     }
-  }
-
-  if (outcome.type === "boost") {
-    const qty = outcome.value ?? 1;
-    await db
-      .insert(userInventory)
-      .values({
-        userId,
-        itemId: gameConfig.boost.inventoryItemId,
-        quantity: qty,
-      })
-      .onConflictDoUpdate({
-        target: [userInventory.userId, userInventory.itemId],
-        set: {
-          quantity: sql`${userInventory.quantity} + ${qty}`,
-          updatedAt: sql`now()`,
-        },
-      });
   }
 
   if (mode === "free" && row) {

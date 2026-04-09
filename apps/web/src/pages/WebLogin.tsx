@@ -241,7 +241,7 @@ export function WebLogin({
             </label>
 
             {mode === "register" ? (
-              <>
+              <div className="auth-register-block">
                 <div className="auth-strength">
                   <div className="auth-strength__head">
                     <span className="muted small">Надёжность</span>
@@ -338,7 +338,7 @@ export function WebLogin({
                     Пароли должны совпадать
                   </p>
                 ) : null}
-              </>
+              </div>
             ) : null}
 
             <button

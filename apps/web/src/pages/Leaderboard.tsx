@@ -1,3 +1,4 @@
+/** Не подключён в `App.tsx` (лидерборд скрыт); страница сохранена для возврата. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LeaderboardResponse } from "shared";
 import { api, formatApiError } from "../api";

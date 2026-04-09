@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import WebApp from "@twa-dev/sdk";
-import { Sparkles, Gift, Ban } from "lucide-react";
+import { Sparkles, Ban } from "lucide-react";
 import { api, formatApiError } from "../api";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { scheduleSmartRefresh } from "../services/meService";
@@ -22,7 +22,7 @@ type FortuneStatus = {
 };
 
 type SpinReveal = {
-  outcome: "coins" | "boost" | "nothing";
+  outcome: "coins" | "nothing";
   amount?: number;
   segmentLabel: string;
 };
@@ -38,16 +38,6 @@ function SpinResultCard({ result }: { result: SpinReveal }) {
           +{n.toLocaleString("ru-RU")}{" "}
           <span className="games-win-card__unit">монет</span>
         </p>
-        <p className="games-win-card__hint">{result.segmentLabel}</p>
-      </div>
-    );
-  }
-  if (result.outcome === "boost") {
-    return (
-      <div className="games-win-card games-win-card--boost" role="status">
-        <Gift className="games-win-card__icon" aria-hidden size={28} strokeWidth={2} />
-        <p className="games-win-card__eyebrow">В инвентарь</p>
-        <p className="games-win-card__value">Буст ×2</p>
         <p className="games-win-card__hint">{result.segmentLabel}</p>
       </div>
     );
@@ -102,7 +92,7 @@ export default function Games() {
 
     const r = await api<{
       segmentIndex: number;
-      outcome: "coins" | "boost" | "nothing";
+      outcome: "coins" | "nothing";
       amount?: number;
       coins: number;
       coinsTwitch: number;

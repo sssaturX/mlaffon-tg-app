@@ -3,7 +3,6 @@ import { z } from "zod";
 import { authUser } from "../plugins/auth.js";
 import { gameConfig } from "../config.js";
 import {
-  boostGiveaway,
   getGiveawayPublicDetail,
   joinGiveaway,
   listGiveawaysPublic,
@@ -34,78 +33,6 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
     {
       config: {
         rateLimit: {
-          max: gameConfig.routeRateLimits.giveawayBoost.max,
-          timeWindow: gameConfig.routeRateLimits.giveawayBoost.timeWindowMs,
-        },
-      },
-    },
-    async (req, reply) => {
-    const userId = authUser(req, reply);
-    if (!userId) return;
-    const id = (req.params as { id: string }).id;
-    const parsed = joinBody.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return reply.status(400).send({
-        error: {
-          code: "bad_request",
-          message: "Выберите платформу: Twitch или Kick.",
-        },
-      });
-    }
-    const r = await joinGiveaway({
-      giveawayId: id,
-      userId,
-      platform: parsed.data.platform,
-    });
-    if (!r.ok) {
-      const status: Record<typeof r.code, number> = {
-        not_found: 404,
-        inactive: 400,
-        ended: 400,
-        already_drawn: 409,
-        already_joined: 409,
-        insufficient_coins: 400,
-        duplicate_debit: 409,
-        channel_not_subscribed: 403,
-        channel_not_configured: 503,
-        platform_not_connected: 403,
-        platform_not_allowed: 400,
-      };
-      const messages: Record<typeof r.code, string> = {
-        not_found: "Розыгрыш не найден",
-        inactive: "Розыгрыш неактивен",
-        ended: "Розыгрыш уже завершён",
-        already_drawn: "Победители уже выбраны",
-        already_joined: "Вы уже участвуете",
-        insufficient_coins: "Недостаточно монет на выбранной платформе",
-        duplicate_debit: "Повторное списание",
-        channel_not_subscribed:
-          "Нужна подписка на канал: откройте ссылку в карточке розыгрыша и подпишитесь, затем снова нажмите «Участвовать»",
-        channel_not_configured:
-          "Проверка подписки недоступна (канал или бот не настроены). Обратитесь к администратору.",
-        platform_not_connected:
-          "Подключите Twitch или Kick в профиле",
-        platform_not_allowed:
-          "Этот розыгрыш только для другой платформы — переключите платформу в шапке или выберите другой розыгрыш",
-      };
-      return reply.status(status[r.code]).send({
-        error: { code: r.code, message: messages[r.code] },
-      });
-    }
-    return { ok: true, joinedAt: r.joinedAt, economy: r.economy };
-  }
-  );
-
-  const boostBody = z.object({
-    platform: z.enum(["twitch", "kick"]),
-    points: z.number().int().min(1),
-  });
-
-  app.post(
-    "/api/v1/giveaways/:id/boost",
-    {
-      config: {
-        rateLimit: {
           max: gameConfig.routeRateLimits.giveawayJoin.max,
           timeWindow: gameConfig.routeRateLimits.giveawayJoin.timeWindowMs,
         },
@@ -115,20 +42,19 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
       const userId = authUser(req, reply);
       if (!userId) return;
       const id = (req.params as { id: string }).id;
-      const parsed = boostBody.safeParse(req.body ?? {});
+      const parsed = joinBody.safeParse(req.body ?? {});
       if (!parsed.success) {
         return reply.status(400).send({
           error: {
             code: "bad_request",
-            message: "Выберите платформу и сумму буста.",
+            message: "Выберите платформу: Twitch или Kick.",
           },
         });
       }
-      const r = await boostGiveaway({
+      const r = await joinGiveaway({
         giveawayId: id,
         userId,
         platform: parsed.data.platform,
-        points: parsed.data.points,
       });
       if (!r.ok) {
         const status: Record<typeof r.code, number> = {
@@ -136,30 +62,36 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
           inactive: 400,
           ended: 400,
           already_drawn: 409,
-          not_participant: 403,
-          bad_points: 400,
-          platform_not_allowed: 400,
-          platform_not_connected: 403,
-          platform_inactive: 409,
+          already_joined: 409,
           insufficient_coins: 400,
+          duplicate_debit: 409,
+          channel_not_subscribed: 403,
+          channel_not_configured: 503,
+          platform_not_connected: 403,
+          platform_not_allowed: 400,
         };
         const messages: Record<typeof r.code, string> = {
           not_found: "Розыгрыш не найден",
           inactive: "Розыгрыш неактивен",
           ended: "Розыгрыш уже завершён",
           already_drawn: "Победители уже выбраны",
-          not_participant: "Сначала вступите в розыгрыш, затем бустите шансы",
-          bad_points: "Введите сумму буста больше нуля",
-          platform_not_allowed: "Эта платформа недоступна для выбранного розыгрыша",
-          platform_not_connected: "Подключите платформу в профиле",
-          platform_inactive: "Платформа буста отключена администратором",
+          already_joined: "Вы уже участвуете",
           insufficient_coins: "Недостаточно монет на выбранной платформе",
+          duplicate_debit: "Повторное списание",
+          channel_not_subscribed:
+            "Нужна подписка на канал: откройте ссылку в карточке розыгрыша и подпишитесь, затем снова нажмите «Участвовать»",
+          channel_not_configured:
+            "Проверка подписки недоступна (канал или бот не настроены). Обратитесь к администратору.",
+          platform_not_connected:
+            "Подключите Twitch или Kick в профиле",
+          platform_not_allowed:
+            "Этот розыгрыш только для другой платформы — переключите платформу в шапке или выберите другой розыгрыш",
         };
         return reply.status(status[r.code]).send({
           error: { code: r.code, message: messages[r.code] },
         });
       }
-      return { ok: true, economy: r.economy };
+      return { ok: true, joinedAt: r.joinedAt, economy: r.economy };
     }
   );
 }

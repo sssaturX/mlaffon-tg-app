@@ -15,7 +15,6 @@ import {
   ListTodo,
   Gamepad2,
   ShoppingBag,
-  Trophy,
   User,
 } from "lucide-react";
 import {
@@ -54,7 +53,7 @@ const HomePage = lazy(() => import("./pages/Home"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const Games = lazy(() => import("./pages/Games"));
 const Shop = lazy(() => import("./pages/Shop"));
-const Leaderboard = lazy(() => import("./pages/Leaderboard"));
+// Лидерборд скрыт: при возврате — lazy("./pages/Leaderboard"), Route + NavLink «Топ», см. GET /api/v1/leaderboard.
 const Profile = lazy(() => import("./pages/Profile"));
 const OAuthReturn = lazy(() => import("./pages/OAuthReturn"));
 const OAuthBrowserDone = lazy(() => import("./pages/OAuthBrowserDone"));
@@ -227,7 +226,7 @@ export default function App() {
     return (
       <div className="app-shell">
         <div className="app-main">
-          <div className="card stack login-card">
+          <div className="card stack">
             <h1>Вход</h1>
             {error && <p className="err">{error}</p>}
             <p className="muted">
@@ -586,7 +585,6 @@ function AppShell({
                 path="/shop"
                 element={<Shop />}
               />
-              <Route path="/leaderboard" element={<Leaderboard />} />
               <Route
                 path="/oauth/:platform"
                 element={<OAuthReturn />}
@@ -638,13 +636,6 @@ function AppShell({
             >
               <ShoppingBag className="nav__icon" aria-hidden />
               <span>Магазин</span>
-            </NavLink>
-            <NavLink
-              className={({ isActive }) => (isActive ? "active" : "")}
-              to="/leaderboard"
-            >
-              <Trophy className="nav__icon" aria-hidden />
-              <span>Топ</span>
             </NavLink>
             <NavLink
               className={({ isActive }) => (isActive ? "active" : "")}
