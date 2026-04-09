@@ -11,6 +11,10 @@ import {
 } from "../db/schema.js";
 import { getPointPlatformById, getPointPlatformByType, type PointPlatform } from "./platformBalances.js";
 import { publishBalanceUpdate, publishBroadcastEvent } from "./realtimePublish.js";
+import {
+  cancelPredictionAutoCloseJob,
+  schedulePredictionAutoCloseJob,
+} from "./predictionScheduler.js";
 
 type PredictionOption = "A" | "B";
 type PredictionStatus = "draft" | "active" | "paused" | "closed" | "resolved";
@@ -234,8 +238,52 @@ async function closeExpiredPredictionsTx(tx: Tx): Promise<string[]> {
   return rows.map((r) => r.id);
 }
 
+/** Ленивый ремонт: без глобального cron — вызывается из чтений списка/карточки. */
 async function syncExpiredPredictions(): Promise<void> {
   await closeExpiredPredictionsNow();
+}
+
+/**
+ * Идемпотентное закрытие по delayed job (BullMQ). Повторный запуск безопасен.
+ * Если `autoCloseAt` сдвинули в будущее — перепланируем job.
+ */
+export async function finalizePredictionAutoClose(
+  predictionId: string
+): Promise<void> {
+  const now = Date.now();
+  const [row] = await db
+    .select()
+    .from(predictions)
+    .where(eq(predictions.id, predictionId))
+    .limit(1);
+  if (!row) return;
+  if (row.status !== "active") return;
+  if (!row.autoCloseAt) return;
+  if (row.autoCloseAt.getTime() > now) {
+    await schedulePredictionAutoCloseJob(predictionId, row.autoCloseAt);
+    return;
+  }
+
+  const [updated] = await db
+    .update(predictions)
+    .set({
+      status: "closed",
+      closedAt: sql`now()`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(predictions.id, predictionId),
+        eq(predictions.status, "active"),
+        sql`${predictions.autoCloseAt} is not null`,
+        sql`${predictions.autoCloseAt} <= now()`
+      )
+    )
+    .returning({ id: predictions.id });
+
+  if (!updated) return;
+  await cancelPredictionAutoCloseJob(predictionId);
+  await publishPredictionState(predictionId);
 }
 
 export async function closeExpiredPredictionsNow(): Promise<number> {
@@ -349,6 +397,14 @@ export async function startPrediction(
     return { ok: true as const };
   });
   if (!r.ok) return r;
+  const [activeRow] = await db
+    .select({ autoCloseAt: predictions.autoCloseAt })
+    .from(predictions)
+    .where(eq(predictions.id, predictionId))
+    .limit(1);
+  if (activeRow?.autoCloseAt) {
+    await schedulePredictionAutoCloseJob(predictionId, activeRow.autoCloseAt);
+  }
   await publishPredictionState(predictionId);
   return { ok: true };
 }
@@ -374,6 +430,7 @@ export async function closePrediction(
       .limit(1);
     return { ok: false, code: exists ? "bad_status" : "not_found" };
   }
+  await cancelPredictionAutoCloseJob(predictionId);
   await publishPredictionState(predictionId);
   return { ok: true };
 }
@@ -394,6 +451,7 @@ export async function pausePrediction(
       .limit(1);
     return { ok: false, code: exists ? "bad_status" : "not_found" };
   }
+  await cancelPredictionAutoCloseJob(predictionId);
   await publishPredictionState(predictionId);
   return { ok: true };
 }
@@ -564,6 +622,7 @@ export async function placePredictionBet(input: {
       msg === "platform_inactive"
     ) {
       if (msg === "not_active" && autoClosedByTimer) {
+        void cancelPredictionAutoCloseJob(input.predictionId);
         await publishPredictionState(input.predictionId);
       }
       return { ok: false, code: msg };

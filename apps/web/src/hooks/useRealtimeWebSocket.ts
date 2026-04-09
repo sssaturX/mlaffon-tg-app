@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getToken } from "../api";
+import type { DropSnapshot } from "../components/DropOverlay";
 
 type LiveStartedPayload = {
   id: string;
@@ -42,9 +43,25 @@ export type PredictionStatePayload = {
   myPlatformBalance: number | null;
 };
 
+export type WsInitialStatePayload = {
+  serverNow: string;
+  live:
+    | { active: false }
+    | {
+        active: true;
+        id: string;
+        platform: string;
+        streamUrl: string;
+        vpnNote: string | null;
+        startedAt: string;
+      };
+  drop: DropSnapshot;
+  prediction: PredictionStatePayload | null;
+};
+
 /**
  * WebSocket `/api/v1/ws?token=…`
- * События: `me_update`, `drop_*`, `live_*`.
+ * События: `initial_state`, затем `me_update`, `drop_*`, `live_*`, `prediction_state`.
  * `balance_updated` — legacy, без действия (экономика приходит через `me_update`).
  */
 export function useRealtimeWebSocket(
@@ -57,6 +74,12 @@ export function useRealtimeWebSocket(
     onLiveEnded: () => void;
     onPredictionState: (data: PredictionStatePayload) => void;
     onOpen: () => void;
+    /** Первое сообщение после connect / reconnect — снимок эфира/дропа/предикта. */
+    onInitialState?: (data: WsInitialStatePayload) => void;
+    /** Пропуск `seq` между broadcast-событиями → HTTP catch-up. */
+    onBroadcastSeqGap?: () => void;
+    /** Если сервер не прислал `initial_state` (старый API / сбой). */
+    onInitialStateMissing?: () => void;
     onLegacyBalancePing?: () => void;
   },
   enabled: boolean
@@ -83,8 +106,19 @@ export function useRealtimeWebSocket(
     let ws: WebSocket | null = null;
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let initialStateTimer: ReturnType<typeof setTimeout> | undefined;
+    let initialStateReceived = false;
+    /** Последний `seq` с сервера (broadcast). После reconnect сбрасывается до нового `initial_state`. */
+    let lastBroadcastSeq: number | null = null;
     let attempt = 0;
     const maxAttempts = 20;
+
+    function clearInitialStateTimer() {
+      if (initialStateTimer !== undefined) {
+        clearTimeout(initialStateTimer);
+        initialStateTimer = undefined;
+      }
+    }
 
     function scheduleReconnect() {
       if (cancelled) return;
@@ -96,8 +130,21 @@ export function useRealtimeWebSocket(
       }, delay);
     }
 
+    function observeBroadcastSeq(raw: { seq?: unknown }) {
+      if (typeof raw.seq !== "number" || !Number.isFinite(raw.seq)) return;
+      const s = raw.seq;
+      const prev = lastBroadcastSeq;
+      if (prev != null && s > prev + 1) {
+        ref.current.onBroadcastSeqGap?.();
+      }
+      lastBroadcastSeq = s;
+    }
+
     function connect() {
       if (cancelled) return;
+      clearInitialStateTimer();
+      initialStateReceived = false;
+      lastBroadcastSeq = null;
       try {
         if (ws) {
           const old = ws;
@@ -114,10 +161,19 @@ export function useRealtimeWebSocket(
       socket.onopen = () => {
         attempt = 0;
         setConnected(true);
+        clearInitialStateTimer();
+        initialStateReceived = false;
+        initialStateTimer = setTimeout(() => {
+          initialStateTimer = undefined;
+          if (!cancelled && !initialStateReceived) {
+            ref.current.onInitialStateMissing?.();
+          }
+        }, 2800);
         ref.current.onOpen();
       };
 
       socket.onclose = () => {
+        clearInitialStateTimer();
         if (ws !== socket) return;
         setConnected(false);
         ws = null;
@@ -134,13 +190,26 @@ export function useRealtimeWebSocket(
             type?: string;
             data?: unknown;
             v?: number;
+            seq?: number;
+            broadcastSeq?: number;
           };
           const h = ref.current;
+          if (d.type === "initial_state" && d.data && typeof d.data === "object") {
+            initialStateReceived = true;
+            clearInitialStateTimer();
+            lastBroadcastSeq =
+              typeof d.broadcastSeq === "number" && Number.isFinite(d.broadcastSeq)
+                ? d.broadcastSeq
+                : 0;
+            h.onInitialState?.(d.data as WsInitialStatePayload);
+            return;
+          }
           if (d.type === "me_update" && d.data && typeof d.data === "object") {
             h.onMePatch(d.data);
             return;
           }
           if (d.type === "drop_started" && d.data && typeof d.data === "object") {
+            observeBroadcastSeq(d);
             const p = d.data as DropStartedPayload;
             if (p.dropId && p.endsAt) {
               h.onDropStarted(p);
@@ -148,6 +217,7 @@ export function useRealtimeWebSocket(
             return;
           }
           if (d.type === "drop_finished" && d.data && typeof d.data === "object") {
+            observeBroadcastSeq(d);
             const id = (d.data as { dropId?: string }).dropId;
             if (id) h.onDropFinished(id);
             return;
@@ -163,6 +233,7 @@ export function useRealtimeWebSocket(
             return;
           }
           if (d.type === "live_started" && d.data && typeof d.data === "object") {
+            observeBroadcastSeq(d);
             const payload = d.data as LiveStartedPayload;
             if (payload.id && payload.streamUrl) {
               h.onLiveStarted(payload);
@@ -170,10 +241,12 @@ export function useRealtimeWebSocket(
             return;
           }
           if (d.type === "live_ended") {
+            observeBroadcastSeq(d);
             h.onLiveEnded();
             return;
           }
           if (d.type === "prediction_state" && d.data && typeof d.data === "object") {
+            observeBroadcastSeq(d);
             h.onPredictionState(d.data as PredictionStatePayload);
             return;
           }
@@ -191,6 +264,7 @@ export function useRealtimeWebSocket(
 
     return () => {
       cancelled = true;
+      clearInitialStateTimer();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       try {
         ws?.close();

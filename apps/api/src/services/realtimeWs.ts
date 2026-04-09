@@ -1,6 +1,7 @@
 import type { WebSocket } from "ws";
 import { verifySession } from "../lib/jwt.js";
 import { isUserBanned } from "./userBan.js";
+import { buildWsInitialState } from "./wsInitialState.js";
 
 const userSockets = new Map<string, Set<WebSocket>>();
 
@@ -87,4 +88,13 @@ export async function handleRealtimeWsConnection(
   }
 
   trackSocket(userId, socket);
+
+  try {
+    const initial = await buildWsInitialState(userId);
+    if (socket.readyState === 1) {
+      socket.send(JSON.stringify(initial));
+    }
+  } catch {
+    /* ignore: клиент всё равно может подтянуть REST */
+  }
 }

@@ -1,8 +1,9 @@
 import { getRedis } from "../lib/redis.js";
+import { REALTIME_REDIS_CHANNEL } from "../lib/realtimeChannel.js";
+import { db } from "../db/index.js";
+import { outboxEvents } from "../db/schema.js";
 import { broadcastJson, sendToUser } from "./realtimeWs.js";
 import { buildMeEconomyPatch } from "./me.js";
-
-const CHANNEL = "mlaffon_realtime";
 const PUBLISH_RETRIES = 2;
 const PUBLISH_RETRY_DELAY_MS = 150;
 
@@ -18,7 +19,7 @@ function getSubscriber() {
 async function redisPublishWithRetry(payload: string): Promise<boolean> {
   for (let attempt = 0; attempt <= PUBLISH_RETRIES; attempt++) {
     try {
-      await getRedis().publish(CHANNEL, payload);
+      await getRedis().publish(REALTIME_REDIS_CHANNEL, payload);
       return true;
     } catch (e) {
       if (attempt < PUBLISH_RETRIES) {
@@ -117,14 +118,13 @@ export async function publishBalanceUpdate(userId: string): Promise<void> {
   }
 }
 
+/** Broadcast только через outbox → worker вешает `seq` и шлёт в Redis (см. outboxFlush). */
 export async function publishBroadcastEvent(
   event: BroadcastWsEvent
 ): Promise<void> {
-  const payload = JSON.stringify({ scope: "broadcast" as const, event });
-  const ok = await redisPublishWithRetry(payload);
-  if (!ok) {
-    broadcastJson(event);
-  }
+  await db.insert(outboxEvents).values({
+    event: event as unknown as Record<string, unknown>,
+  });
 }
 
 export async function startRealtimeSubscriber(
@@ -134,7 +134,7 @@ export async function startRealtimeSubscriber(
 
   const connect = async () => {
     try {
-      await sub.subscribe(CHANNEL);
+      await sub.subscribe(REALTIME_REDIS_CHANNEL);
     } catch (e) {
       log.warn(
         { err: e },

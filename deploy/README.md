@@ -5,8 +5,9 @@
 | [Caddyfile](Caddyfile) | HTTPS **автоматически** (Caddy + Let’s Encrypt), статика, `/api` |
 | [Caddyfile.manual-certs](Caddyfile.manual-certs) | Тот же сайт, но **свои** `fullchain.pem` / `privkey.pem` (уже выданные сертификаты) |
 | [mlaffon-api.service](mlaffon-api.service) | systemd: API |
-| [mlaffon-worker.service](mlaffon-worker.service) | systemd: BullMQ worker |
-| [redeploy.sh](redeploy.sh) | **Деплой**: `git pull`, `docker compose up -d postgres redis` + health, `npm ci`, **`VAPID_*` → `apps/api/.env`**, проверка **`TELEGRAM_BOT_TOKEN`**, **Telegram**: при `TELEGRAM_WEBHOOK_SECRET` в `deploy.env` или `DEPLOY_TELEGRAM_WEBHOOK_SECRET=1` — запись/генерация секрета в `.env` (вебхук); иначе при отсутствии секрета в `.env` — **long polling**. Сборка, `db:push` + `db:seed` (retry), `chmod`, restart API/worker, smoke `/health` и `/api/v1/home/public` |
+| [mlaffon-worker.service](mlaffon-worker.service) | systemd: основной BullMQ worker (outbox, domain-timers, task-verify, cron) |
+| [mlaffon-worker-fraud.service](mlaffon-worker-fraud.service) | systemd: только очередь `fraud-review` (опционально) |
+| [redeploy.sh](redeploy.sh) | **Деплой**: `git pull`, `docker compose`, `npm ci`, **`VAPID_*`**, Telegram как ниже, **`npm run build`**, `db:push` + `db:seed` (retry), `chmod`, **автоматически**: копирование `deploy/mlaffon-*.service` → `/etc/systemd/system/`, `daemon-reload`, **`systemctl enable` + `restart`** для api, worker и worker-fraud, smoke `/health` и `/api/v1/home/public` |
 | [deploy.env.example](deploy.env.example) | Пример `deploy/deploy.env` для `VITE_*` при сборке |
 
 **Админка не логинится:** в `apps/api/.env` должны быть заданы `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PASSPHRASE` (без них API отвечает 503). После правки `.env`: `sudo systemctl restart mlaffon-api`. Сборка админки шлёт запросы на `/api` **того же хоста** `admin.…` (Caddy проксирует на API) — отдельный `VITE_API_ORIGIN` на проде для поддомена не обязателен.
@@ -65,6 +66,8 @@
 - `DEPLOY_DB_SEED_RETRIES=3` и `DEPLOY_DB_SEED_RETRY_DELAY=3` — retry для `db:seed`
 - `DEPLOY_CADDY=1` — обновить `/etc/caddy/Caddyfile` и reload Caddy
 - `DEPLOY_SYSTEMD_DAEMON_RELOAD=1` — выполнить `systemctl daemon-reload` перед restart сервисов
+- `DEPLOY_SKIP_SYSTEMD_COPY=1` — не перезаписывать unit-файлы из репо (если правите их вручную на сервере)
+- `DEPLOY_SKIP_WORKER_FRAUD=1` — не копировать/не включать/не перезапускать `mlaffon-worker-fraud`
 - `DEPLOY_TELEGRAM_WEBHOOK_SECRET=1` — сгенерировать/записать `TELEGRAM_WEBHOOK_SECRET` в `apps/api/.env`, если его ещё нет (вебхук)
 - `TELEGRAM_WEBHOOK_SECRET` в `deploy/deploy.env` — тот же эффект: значение попадёт в `apps/api/.env` при каждом деплое
 - `DEPLOY_SKIP_TELEGRAM_CHECK=1` — не требовать непустой `TELEGRAM_BOT_TOKEN` в `apps/api/.env`

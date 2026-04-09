@@ -2,7 +2,10 @@
 #
 # Продовый redeploy:
 # git pull -> (docker compose up postgres/redis + wait health) -> npm ci -> build
-# -> db push (retry) -> chmod/rights -> restart systemd API/worker -> health checks.
+# -> db push (retry) -> chmod/rights -> systemd: копирование unit из deploy/, daemon-reload, enable + restart
+#    (mlaffon-api, mlaffon-worker, mlaffon-worker-fraud) -> health checks.
+#
+# Broadcast/realtime: основной worker обязателен; worker-fraud — по умолчанию тоже ставится и перезапускается.
 #
 # Использование:
 #   chmod +x deploy/redeploy.sh
@@ -18,7 +21,9 @@
 #   DEPLOY_DB_RETRY_DELAY=3    # сек между retry
 #   DEPLOY_DB_SEED_RETRIES=3   # retry для db:seed
 #   DEPLOY_DB_SEED_RETRY_DELAY=3
-#   DEPLOY_SYSTEMD_DAEMON_RELOAD=1  # перед restart выполнить daemon-reload
+#   DEPLOY_SYSTEMD_DAEMON_RELOAD=1  # перед enable/restart выполнить daemon-reload (по умолчанию 1)
+#   DEPLOY_SKIP_SYSTEMD_COPY=1      # не копировать unit из deploy/ (если правите их вручную на сервере)
+#   DEPLOY_SKIP_WORKER_FRAUD=1        # не копировать/не enable/не restart mlaffon-worker-fraud
 #   DEPLOY_TELEGRAM_WEBHOOK_SECRET=1 # сгенерировать TELEGRAM_WEBHOOK_SECRET в apps/api/.env, если пусто
 #   TELEGRAM_WEBHOOK_SECRET=...      # в deploy.env — записать в apps/api/.env (вебхук)
 #   DEPLOY_SKIP_TELEGRAM_CHECK=1     # не проверять TELEGRAM_BOT_TOKEN в apps/api/.env
@@ -274,6 +279,46 @@ systemd_reload_if_requested() {
   $SUDO systemctl daemon-reload
 }
 
+# Копирует unit из репозитория, enable при автозапуске, restart — один вызов «без ручных шагов».
+install_and_restart_mlaffon_systemd() {
+  if [[ "${DEPLOY_SKIP_SYSTEMD_COPY:-0}" != "1" ]]; then
+    log "копирование systemd unit → /etc/systemd/system/"
+    [[ -f "$REPO/deploy/mlaffon-api.service" ]] || die "Нет $REPO/deploy/mlaffon-api.service"
+    [[ -f "$REPO/deploy/mlaffon-worker.service" ]] || die "Нет $REPO/deploy/mlaffon-worker.service"
+    $SUDO cp "$REPO/deploy/mlaffon-api.service" /etc/systemd/system/
+    $SUDO cp "$REPO/deploy/mlaffon-worker.service" /etc/systemd/system/
+    if [[ "${DEPLOY_SKIP_WORKER_FRAUD:-0}" != "1" ]]; then
+      if [[ -f "$REPO/deploy/mlaffon-worker-fraud.service" ]]; then
+        $SUDO cp "$REPO/deploy/mlaffon-worker-fraud.service" /etc/systemd/system/
+      else
+        log "предупреждение: нет $REPO/deploy/mlaffon-worker-fraud.service — fraud-worker не копируется"
+      fi
+    fi
+  else
+    log "пропуск копирования unit (DEPLOY_SKIP_SYSTEMD_COPY=1)"
+  fi
+
+  systemd_reload_if_requested
+
+  local units=(mlaffon-api mlaffon-worker)
+  if [[ "${DEPLOY_SKIP_WORKER_FRAUD:-0}" != "1" ]] && [[ -f /etc/systemd/system/mlaffon-worker-fraud.service ]]; then
+    units+=(mlaffon-worker-fraud)
+  fi
+
+  log "systemctl enable ${units[*]}"
+  $SUDO systemctl enable "${units[@]}"
+
+  log "systemctl restart ${units[*]}"
+  $SUDO systemctl restart "${units[@]}"
+}
+
+show_mlaffon_units_status() {
+  $SUDO systemctl is-active mlaffon-api mlaffon-worker 2>/dev/null || true
+  if [[ -f /etc/systemd/system/mlaffon-worker-fraud.service ]]; then
+    $SUDO systemctl is-active mlaffon-worker-fraud 2>/dev/null || true
+  fi
+}
+
 run_db_sync() {
   if [[ "${DEPLOY_SKIP_DB:-0}" == "1" ]]; then
     log "пропуск db:push (DEPLOY_SKIP_DB=1)"
@@ -345,10 +390,7 @@ main() {
   $SUDO chown root:www-data "$REPO/apps/api/.env"
   $SUDO chmod 640 "$REPO/apps/api/.env"
 
-  systemd_reload_if_requested
-
-  log "systemctl restart mlaffon-api mlaffon-worker"
-  $SUDO systemctl restart mlaffon-api mlaffon-worker
+  install_and_restart_mlaffon_systemd
 
   reload_caddy_if_requested
 
@@ -358,7 +400,8 @@ main() {
   log "готово"
   curl -sS "http://127.0.0.1:3001/health" || true
   echo ""
-  $SUDO systemctl is-active mlaffon-api mlaffon-worker caddy 2>/dev/null || true
+  show_mlaffon_units_status
+  $SUDO systemctl is-active caddy 2>/dev/null || true
 }
 
 main "$@"

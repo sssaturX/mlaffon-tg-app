@@ -52,11 +52,19 @@ SET twitch_coins = coins, twitch_lifetime_earned = lifetime_earned
 WHERE twitch_coins = 0 AND coins > 0;
 ```
 
-5. Запуск **воркера** очереди (отдельный терминал):
+5. Запуск **воркера** очереди (отдельный терминал): проверки заданий, недельные рефералы, **outbox broadcast** (~500 ms), delayed jobs (дроп, эфир, **автозакрытие предикта**).
 
 ```bash
 npm run worker -w api
 ```
+
+Опционально второй процесс только для `fraud-review`:
+
+```bash
+npm run worker:fraud -w api
+```
+
+**Без основного воркера** broadcast-события (дроп, эфир, предикт в ленту) **не уходят в Redis/WS** — они копятся в таблице `outbox_events`. Предикты дополнительно подстрахованы ленивым закрытием при чтении API. Подробнее: [docs/MASTER_PROMPT_PRODUCTION.md](docs/MASTER_PROMPT_PRODUCTION.md), [docs/AI_AGENT_EVENT_SYSTEM_MASTER.md](docs/AI_AGENT_EVENT_SYSTEM_MASTER.md).
 
 6. Запуск API и веба:
 

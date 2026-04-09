@@ -4,6 +4,9 @@
 
 **Обновлять:** при смене требований или после внедрения — править таблицу статусов и раздел «Реализовано».
 
+**Event-driven / Redis / WebSocket / BullMQ (мастер-ТЗ и prompt для AI):** [AI_AGENT_EVENT_SYSTEM_MASTER.md](AI_AGENT_EVENT_SYSTEM_MASTER.md).  
+**Production-ориентированное ТЗ + prompt (outbox, seq, воркеры):** [MASTER_PROMPT_PRODUCTION.md](MASTER_PROMPT_PRODUCTION.md).
+
 ---
 
 ## Глоссарий

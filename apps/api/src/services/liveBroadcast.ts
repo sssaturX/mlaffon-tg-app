@@ -8,6 +8,7 @@ import {
 } from "./streamStreak.js";
 import { publishBroadcastEvent } from "./realtimePublish.js";
 import { deactivateActiveDropsOnStreamEnd } from "./drops.js";
+import { scheduleLiveAutoEndJob } from "./domainScheduler.js";
 
 export type LivePlatform = "twitch" | "kick";
 
@@ -75,6 +76,14 @@ export async function startLiveBroadcast(input: {
       vpnNote: input.vpnNote?.trim() || null,
     },
   });
+
+  const autoEndMs = Number.parseInt(
+    process.env.LIVE_BROADCAST_AUTO_END_MS ?? "0",
+    10
+  );
+  if (Number.isFinite(autoEndMs) && autoEndMs > 0) {
+    void scheduleLiveAutoEndJob(inserted.id, autoEndMs);
+  }
 
   return { ok: true, id: inserted.id };
 }

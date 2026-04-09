@@ -39,6 +39,7 @@ import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
 import { DropTicker } from "./components/DropTicker";
 import { useSyncedCountdownMs } from "./hooks/useSyncedCountdown";
 import { useRealtimeWebSocket, type DropStartedPayload } from "./hooks/useRealtimeWebSocket";
+import { applyWsInitialState } from "./realtime/applyWsInitialState";
 import { useDocumentVisible } from "./hooks/useDocumentVisible";
 import { useLiveBroadcastStore } from "./store/liveBroadcastStore";
 import { usePredictionStore } from "./store/predictionStore";
@@ -407,7 +408,15 @@ function AppShell({
       },
       onOpen: () => {
         void refreshMeFromService();
-        syncRealtimeFromHttp();
+      },
+      onInitialState: (data) => {
+        applyWsInitialState(data, setDropSnap);
+      },
+      onBroadcastSeqGap: () => {
+        syncRealtimeFromHttp({ force: true });
+      },
+      onInitialStateMissing: () => {
+        syncRealtimeFromHttp({ force: true });
       },
       onLegacyBalancePing: () => void refreshMe(),
     },
@@ -447,10 +456,10 @@ function AppShell({
   useEffect(() => {
     if (needsPlatformLink) return;
     if (!docVisible) return;
-    const ms = realtimeConnected ? 120_000 : 60_000;
+    if (realtimeConnected) return;
     const id = window.setInterval(() => {
       void refreshMe();
-    }, ms);
+    }, 60_000);
     return () => clearInterval(id);
   }, [
     needsPlatformLink,

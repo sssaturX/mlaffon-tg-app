@@ -98,14 +98,17 @@ sudo chmod -R o+rX $REPO/apps/api/dist
 ```bash
 sudo cp $REPO/deploy/mlaffon-api.service /etc/systemd/system/
 sudo cp $REPO/deploy/mlaffon-worker.service /etc/systemd/system/
+sudo cp $REPO/deploy/mlaffon-worker-fraud.service /etc/systemd/system/
 ```
 
 Либо скопируйте блоки вручную из раздела [Systemd](#systemd-api-и-воркер). В `apps/api/.env` задайте **`PORT=3001`**. Убедитесь, что **`npm run build` уже выполнен** (есть каталоги `apps/api/dist` и `apps/web/dist`).
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now mlaffon-api mlaffon-worker
+sudo systemctl enable --now mlaffon-api mlaffon-worker mlaffon-worker-fraud
 ```
+
+`mlaffon-worker-fraud` опционален: без него jobs `fraud-review` копятся в Redis, но основной **worker** (broadcast/outbox, таймеры, задания) обязателен.
 
 **Веб-сервер на выбор:**
 
@@ -128,7 +131,7 @@ cd apps/api && npx drizzle-kit push
 cd /opt/mlaffon/mlaffon-tg-app
 REPO=/opt/mlaffon/mlaffon-tg-app
 sudo chmod -R o+rX $REPO/apps/web/dist $REPO/apps/api/dist
-sudo systemctl restart mlaffon-api mlaffon-worker
+sudo systemctl restart mlaffon-api mlaffon-worker mlaffon-worker-fraud
 sudo systemctl reload caddy
 # или: sudo systemctl reload nginx
 ```
@@ -142,7 +145,7 @@ sudo systemctl reload caddy
 | Где | Что |
 |-----|-----|
 | **Docker** | **Postgres** и **Redis** (`docker compose`). |
-| **Node на хосте** | Собранные `apps/api/dist` — API и воркер (**systemd**). |
+| **Node на хосте** | Собранные `apps/api/dist` — API, основной worker и при необходимости **worker-fraud** (**systemd**). |
 | **Nginx / Caddy** | Статика **напрямую** из `apps/web/dist` (путь в конфиге) и **прокси** `/api` → `127.0.0.1:3001`. |
 
 Отдельного Docker-образа приложения в репо нет — при желании позже можно добавить `Dockerfile` и заменить systemd.
@@ -157,12 +160,13 @@ sudo systemctl reload caddy
 
 ## Systemd: API и воркер
 
-Готовые файлы в репозитории: **[deploy/mlaffon-api.service](../deploy/mlaffon-api.service)**, **[deploy/mlaffon-worker.service](../deploy/mlaffon-worker.service)** (корень репо **`/opt/mlaffon/mlaffon-tg-app`**). Установка:
+Готовые файлы в репозитории: **[deploy/mlaffon-api.service](../deploy/mlaffon-api.service)**, **[deploy/mlaffon-worker.service](../deploy/mlaffon-worker.service)**, **[deploy/mlaffon-worker-fraud.service](../deploy/mlaffon-worker-fraud.service)** (корень репо **`/opt/mlaffon/mlaffon-tg-app`**). Установка:
 
 ```bash
 REPO=/opt/mlaffon/mlaffon-tg-app
 sudo cp $REPO/deploy/mlaffon-api.service /etc/systemd/system/
 sudo cp $REPO/deploy/mlaffon-worker.service /etc/systemd/system/
+sudo cp $REPO/deploy/mlaffon-worker-fraud.service /etc/systemd/system/
 ```
 
 `which node` — при необходимости замените в `ExecStart` (часто `/usr/bin/node`).
@@ -202,6 +206,27 @@ Group=www-data
 WorkingDirectory=/opt/mlaffon/mlaffon-tg-app/apps/api
 EnvironmentFile=/opt/mlaffon/mlaffon-tg-app/apps/api/.env
 ExecStart=/usr/bin/node dist/worker.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`/etc/systemd/system/mlaffon-worker-fraud.service` (только очередь `fraud-review`):
+
+```ini
+[Unit]
+Description=Mlaffon BullMQ worker (fraud-review queue only)
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/mlaffon/mlaffon-tg-app/apps/api
+EnvironmentFile=/opt/mlaffon/mlaffon-tg-app/apps/api/.env
+ExecStart=/usr/bin/node dist/worker-fraud.js
 Restart=on-failure
 RestartSec=5
 
@@ -272,7 +297,8 @@ sudo nginx -t && sudo systemctl reload nginx
 - `PUBLIC_WEB_URL=https://ваш-домен`
 - OAuth redirect в Twitch/Kick = как в `.env`, **https**.
 - `VITE_BOT_USERNAME` задан при **`npm run build`** на сервере.
-- Воркер в systemd, если нужны задания с проверкой через API.
+- **Основной** воркер в systemd обязателен: без него не уходят broadcast-события (outbox → Redis) и не срабатывают delayed jobs (дроп, эфир, предикты, задания).
+- **worker-fraud** — по желанию; иначе очередь `fraud-review` накапливается, пока процесс не запущен.
 
 ---
 

@@ -7,6 +7,7 @@ import {
   publishBroadcastEvent,
   publishUserEvent,
 } from "./realtimePublish.js";
+import { scheduleDropEndJob } from "./domainScheduler.js";
 
 function normalizeCode(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, 8);
@@ -364,6 +365,23 @@ export async function attemptDropCode(
 /**
  * При завершении эфира гасим все ещё «живые» по таймеру дропы (правило: дроп только во время стрима).
  */
+/** Worker: по таймеру гасим дроп в БД и шлём `drop_finished` (вместо setTimeout в API). */
+export async function finalizeDropAfterTimer(dropId: string): Promise<void> {
+  const now = new Date();
+  const [d] = await db.select().from(drops).where(eq(drops.id, dropId)).limit(1);
+  if (!d || !d.active) return;
+  if (d.endsAt.getTime() > now.getTime()) {
+    await scheduleDropEndJob(dropId, d.endsAt.getTime() - now.getTime());
+    return;
+  }
+  await db.update(drops).set({ active: false }).where(eq(drops.id, dropId));
+  void publishBroadcastEvent({
+    type: "drop_finished",
+    v: 1,
+    data: { dropId },
+  });
+}
+
 export async function deactivateActiveDropsOnStreamEnd(): Promise<void> {
   const now = new Date();
   const rows = await db
@@ -442,16 +460,7 @@ export async function startDrop(params: {
   });
 
   const untilEnd = endsAt.getTime() - now.getTime();
-  const delay = Math.min(Math.max(0, untilEnd), 2147483647);
-  if (delay > 0) {
-    setTimeout(() => {
-      void publishBroadcastEvent({
-        type: "drop_finished",
-        v: 1,
-        data: { dropId: ins.id },
-      });
-    }, delay);
-  }
+  void scheduleDropEndJob(ins.id, untilEnd);
 
   return { id: ins.id };
 }

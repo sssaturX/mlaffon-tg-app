@@ -56,12 +56,11 @@ import { markReferralPercentEligible } from "./services/referralEligibility.js";
 import { handleRealtimeWsConnection } from "./services/realtimeWs.js";
 import { startRealtimeSubscriber } from "./services/realtimePublish.js";
 import { seedDefaultPointPlatforms } from "./services/platformBalances.js";
-import { closeExpiredPredictionsNow } from "./services/predictions.js";
 import { trackSecurityFingerprint } from "./services/securitySignals.js";
+import { enqueueFraudReviewJob } from "./services/fraudReviewQueue.js";
 import { taskEvidence, tasks } from "./db/schema.js";
 
 const app = Fastify({ logger: true });
-let predictionTimerCloser: NodeJS.Timeout | null = null;
 
 await app.register(cors, {
   origin: true,
@@ -547,6 +546,14 @@ app.post("/api/v1/tasks/:id/claim", async (req, reply) => {
     deviceId: String(req.headers["x-device-id"] ?? ""),
   });
   if (sec.suspicious) {
+    void enqueueFraudReviewJob({
+      kind: "task_claim_blocked",
+      userId,
+      sharedUsers: sec.sharedUsers,
+      ip: String(req.ip ?? ""),
+      userAgent: String(req.headers["user-agent"] ?? ""),
+      deviceId: String(req.headers["x-device-id"] ?? ""),
+    });
     return reply.status(403).send({
       error: {
         code: "multi_account_suspected",
@@ -826,6 +833,14 @@ app.post("/api/v1/tasks/stream-message", async (req, reply) => {
     deviceId: String(req.headers["x-device-id"] ?? ""),
   });
   if (sec.suspicious) {
+    void enqueueFraudReviewJob({
+      kind: "stream_message_blocked",
+      userId,
+      sharedUsers: sec.sharedUsers,
+      ip: String(req.ip ?? ""),
+      userAgent: String(req.headers["user-agent"] ?? ""),
+      deviceId: String(req.headers["x-device-id"] ?? ""),
+    });
     return reply.status(403).send({
       error: {
         code: "multi_account_suspected",
@@ -963,19 +978,9 @@ try {
   await waitForDatabaseReady();
   await seedDefaultPointPlatforms();
   await startRealtimeSubscriber(app.log);
-  predictionTimerCloser = setInterval(() => {
-    void closeExpiredPredictionsNow().catch((err) => {
-      app.log.warn({ err }, "prediction_auto_close_failed");
-    });
-  }, 1000);
-  predictionTimerCloser.unref();
   const telegramPollStop: { current?: () => void } = {};
   app.addHook("onClose", async () => {
     telegramPollStop.current?.();
-    if (predictionTimerCloser) {
-      clearInterval(predictionTimerCloser);
-      predictionTimerCloser = null;
-    }
   });
   await app.listen({ port, host });
   app.log.info(`API http://${host}:${port}`);

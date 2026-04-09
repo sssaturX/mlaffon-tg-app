@@ -509,6 +509,20 @@ export const predictions = pgTable(
   ]
 );
 
+/** Транзакционный outbox для broadcast в Redis (см. services/outboxFlush.ts). */
+export const outboxEvents = pgTable(
+  "outbox_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    event: jsonb("event").notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+  },
+  (t) => [index("outbox_events_created_idx").on(t.createdAt)]
+);
+
 export const predictionBets = pgTable(
   "prediction_bets",
   {

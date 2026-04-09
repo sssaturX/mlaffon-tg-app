@@ -14,6 +14,7 @@ import { tryWebReferralRegisterByIp } from "../lib/abuse.js";
 import { gameConfig } from "../config.js";
 import { applyCreditSplit } from "./economy.js";
 import { resolveWebSignupReferrerId } from "./users.js";
+import { enqueueFraudReviewJob } from "./fraudReviewQueue.js";
 
 const SALT_ROUNDS = 11;
 
@@ -95,6 +96,16 @@ export async function registerWithEmail(
         referenceId: referredById,
       });
     }
+
+    const emailDomain = email.includes("@")
+      ? (email.split("@")[1] ?? "").slice(0, 128)
+      : "";
+    void enqueueFraudReviewJob({
+      kind: "web_register",
+      userId,
+      emailDomain,
+      clientIp: opts?.clientIp ?? null,
+    });
 
     const token = signSession(userId, null);
     return { ok: true, token, userId };

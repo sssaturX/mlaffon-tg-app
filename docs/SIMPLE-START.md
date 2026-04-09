@@ -12,7 +12,8 @@
 | ---------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `docker compose up -d`       | То же                                                                                                  |
 | `npm run dev` (API + Vite)   | `npm run build` → API из `dist` + статика из `**apps/web/dist`** + `**apps/admin/dist**`               |
-| `npm run worker -w api`      | Отдельный процесс `node dist/worker.js` (через systemd)                                                |
+| `npm run worker -w api`      | `node dist/worker.js` (systemd `mlaffon-worker`) — outbox, таймеры, задания                            |
+| `npm run worker:fraud -w api` | Опционально `node dist/worker-fraud.js` (`mlaffon-worker-fraud`) — очередь `fraud-review`              |
 | Браузер → Vite прокси `/api` | **Caddy** отдаёт **два** сайта (`mlaffon.fun` и `admin.mlaffon.fun`) и шлёт `/api` на `127.0.0.1:3001` |
 
 
@@ -132,14 +133,15 @@ sudo chmod 640 $REPO/apps/api/.env
 
 ## 7. API и воркер (systemd)
 
-Как два отдельных терминала с `node`, но в фоне и с автозапуском:
+Как отдельные процессы `node` в фоне с автозапуском: API, основной worker (outbox, таймеры, задания), опционально worker только для `fraud-review`:
 
 ```bash
 sudo cp $REPO/deploy/mlaffon-api.service /etc/systemd/system/
 sudo cp $REPO/deploy/mlaffon-worker.service /etc/systemd/system/
+sudo cp $REPO/deploy/mlaffon-worker-fraud.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now mlaffon-api mlaffon-worker
-sudo systemctl status mlaffon-api mlaffon-worker --no-pager
+sudo systemctl enable --now mlaffon-api mlaffon-worker mlaffon-worker-fraud
+sudo systemctl status mlaffon-api mlaffon-worker mlaffon-worker-fraud --no-pager
 ```
 
 Проверка API:
@@ -279,7 +281,7 @@ npm run build
 cd apps/api && npx drizzle-kit push
 cd $REPO
 sudo chmod -R o+rX apps/api/dist apps/web/dist apps/admin/dist
-sudo systemctl restart mlaffon-api mlaffon-worker
+sudo systemctl restart mlaffon-api mlaffon-worker mlaffon-worker-fraud
 ```
 
 Новые файлы в `apps/web/dist` и `apps/admin/dist` отдаются сразу после сборки и `chmod` — Caddy перезагружать не нужно, если не меняли сам конфиг.
@@ -302,7 +304,7 @@ sudo systemctl reload caddy
 ```bash
 sudo nano $REPO/apps/api/.env
 # сохранить, затем:
-sudo systemctl restart mlaffon-api mlaffon-worker
+sudo systemctl restart mlaffon-api mlaffon-worker mlaffon-worker-fraud
 ```
 
 `npm run build` для смены `.env` **не нужен**. Убедитесь, что у файла права `640` и владелец как в §6.
@@ -337,6 +339,7 @@ sudo chmod -R o+rX apps/web/dist apps/admin/dist
 ```bash
 sudo journalctl -u mlaffon-api -n 50 --no-pager
 sudo journalctl -u mlaffon-worker -n 50 --no-pager
+sudo journalctl -u mlaffon-worker-fraud -n 50 --no-pager
 sudo journalctl -u caddy -n 50 --no-pager
 cd $REPO && docker compose ps
 curl -s http://127.0.0.1:3001/health
