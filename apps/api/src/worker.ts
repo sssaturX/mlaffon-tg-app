@@ -47,7 +47,8 @@ const taskWorker = new Worker(
   {
     connection: taskConn,
     concurrency: 8,
-    settings: { stalledInterval: 120_000, maxStalledCount: 2 },
+    stalledInterval: 120_000,
+    maxStalledCount: 2,
   }
 );
 
@@ -79,7 +80,8 @@ const cronWorker = new Worker(
   },
   {
     connection: cronConn,
-    settings: { stalledInterval: 60_000, maxStalledCount: 2 },
+    stalledInterval: 60_000,
+    maxStalledCount: 2,
   }
 );
 
@@ -122,7 +124,8 @@ const domainTimersWorker = new Worker(
   },
   {
     connection: domainTimersConn,
-    settings: { stalledInterval: 90_000, maxStalledCount: 2 },
+    stalledInterval: 90_000,
+    maxStalledCount: 2,
   }
 );
 

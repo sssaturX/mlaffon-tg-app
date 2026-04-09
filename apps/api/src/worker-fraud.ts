@@ -35,7 +35,8 @@ const fraudReviewWorker = new Worker(
   {
     connection: fraudReviewConn,
     concurrency: 2,
-    settings: { stalledInterval: 60_000, maxStalledCount: 2 },
+    stalledInterval: 60_000,
+    maxStalledCount: 2,
   }
 );
 
