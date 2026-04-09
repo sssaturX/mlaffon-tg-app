@@ -14,11 +14,14 @@ const ADMIN_NAV_ITEMS = [
 type AdminNavId = (typeof ADMIN_NAV_ITEMS)[number]["id"];
 
 const TOKEN_KEY = "mlaffon_admin_token";
+/** Интервалы авто-обновления активной вкладки (видимая вкладка браузера). */
 const ADMIN_AUTO_REFRESH_MS = {
-  fast: 3000,
-  normal: 8000,
-  slow: 15000,
+  fast: 8000,
+  normal: 20000,
+  slow: 45000,
 } as const;
+/** Не чаще: `/api/admin/stats` при тике авто-рефреша (цифры в шапке редко критичны каждые N сек). */
+const ADMIN_STATS_AUTO_REFRESH_MIN_MS = 45_000;
 
 /**
  * База URL для запросов к API.
@@ -409,6 +412,7 @@ export function App() {
   const [predictionPlatformsLoading, setPredictionPlatformsLoading] = useState(false);
   const [predictionsLoading, setPredictionsLoading] = useState(false);
   const autoRefreshRunningRef = useRef(false);
+  const lastStatsAutoRefreshAtRef = useRef(0);
   const usersPrevSearchRef = useRef<string | undefined>(undefined);
 
   const getAutoRefreshMs = useCallback(() => {
@@ -834,7 +838,11 @@ export function App() {
       autoRefreshRunningRef.current = true;
       try {
         const s = { silent: true } as const;
-        await loadStats(s);
+        const now = Date.now();
+        if (now - lastStatsAutoRefreshAtRef.current >= ADMIN_STATS_AUTO_REFRESH_MIN_MS) {
+          await loadStats(s);
+          lastStatsAutoRefreshAtRef.current = now;
+        }
         if (tab === "giveaways") {
           await loadGiveaways(s);
           if (expandedId) await loadGiveawayDetail(expandedId, s);
