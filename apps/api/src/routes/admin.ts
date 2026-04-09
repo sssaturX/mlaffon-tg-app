@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   giveaways,
@@ -142,38 +142,49 @@ export async function registerAdminRoutes(app: FastifyInstance) {
 
   app.get("/api/admin/users", async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
-    const q = req.query as { limit?: string; offset?: string };
+    const q = req.query as { limit?: string; offset?: string; search?: string };
     const limit = Math.min(200, Math.max(1, Number.parseInt(q.limit ?? "50", 10) || 50));
     const offset = Math.max(0, Number.parseInt(q.offset ?? "0", 10) || 0);
 
-    const [{ total }] = await db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(users);
+    const rawSearch = typeof q.search === "string" ? q.search.trim().slice(0, 120) : "";
+    const searchTerm = rawSearch.startsWith("@") ? rawSearch.slice(1).trim() : rawSearch;
+    const searchWhere =
+      searchTerm.length > 0
+        ? or(ilike(users.username, `%${searchTerm}%`), ilike(users.firstName, `%${searchTerm}%`))
+        : undefined;
 
-    const rows = await db
-      .select({
-        id: users.id,
-        telegramId: users.telegramId,
-        username: users.username,
-        firstName: users.firstName,
-        createdAt: users.createdAt,
-        banned: users.banned,
-        banReason: users.banReason,
-        coins: sql<number>`coalesce(${userBalances.coins}, 0)`,
-        twitchCoins: sql<number>`coalesce(${userBalances.twitchCoins}, 0)`,
-        kickCoins: sql<number>`coalesce(${userBalances.kickCoins}, 0)`,
-        lifetimeEarned: sql<number>`coalesce(${userBalances.lifetimeEarned}, 0)`,
-        twitchLifetimeEarned: sql<number>`coalesce(${userBalances.twitchLifetimeEarned}, 0)`,
-        kickLifetimeEarned: sql<number>`coalesce(${userBalances.kickLifetimeEarned}, 0)`,
-        streakTwitch: sql<number>`coalesce(${userStreamStreaks.twitchCurrent}, 0)`,
-        streakKick: sql<number>`coalesce(${userStreamStreaks.kickCurrent}, 0)`,
-      })
-      .from(users)
-      .leftJoin(userBalances, eq(users.id, userBalances.userId))
-      .leftJoin(userStreamStreaks, eq(users.id, userStreamStreaks.userId))
-      .orderBy(desc(users.createdAt))
-      .limit(limit)
-      .offset(offset);
+    const [{ total }] = searchWhere
+      ? await db
+          .select({ total: sql<number>`count(*)::int` })
+          .from(users)
+          .where(searchWhere)
+      : await db.select({ total: sql<number>`count(*)::int` }).from(users);
+
+    const rows = await (() => {
+      const base = db
+        .select({
+          id: users.id,
+          telegramId: users.telegramId,
+          username: users.username,
+          firstName: users.firstName,
+          createdAt: users.createdAt,
+          banned: users.banned,
+          banReason: users.banReason,
+          coins: sql<number>`coalesce(${userBalances.coins}, 0)`,
+          twitchCoins: sql<number>`coalesce(${userBalances.twitchCoins}, 0)`,
+          kickCoins: sql<number>`coalesce(${userBalances.kickCoins}, 0)`,
+          lifetimeEarned: sql<number>`coalesce(${userBalances.lifetimeEarned}, 0)`,
+          twitchLifetimeEarned: sql<number>`coalesce(${userBalances.twitchLifetimeEarned}, 0)`,
+          kickLifetimeEarned: sql<number>`coalesce(${userBalances.kickLifetimeEarned}, 0)`,
+          streakTwitch: sql<number>`coalesce(${userStreamStreaks.twitchCurrent}, 0)`,
+          streakKick: sql<number>`coalesce(${userStreamStreaks.kickCurrent}, 0)`,
+        })
+        .from(users)
+        .leftJoin(userBalances, eq(users.id, userBalances.userId))
+        .leftJoin(userStreamStreaks, eq(users.id, userStreamStreaks.userId));
+      const filtered = searchWhere ? base.where(searchWhere) : base;
+      return filtered.orderBy(desc(users.createdAt)).limit(limit).offset(offset);
+    })();
 
     const refRows = await db
       .select({

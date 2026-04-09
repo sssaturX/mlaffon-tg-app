@@ -889,6 +889,16 @@ button:disabled {
   margin-top: 12px;
 }
 
+.admin-users-toolbar {
+  align-items: flex-end;
+  margin-bottom: 4px;
+}
+
+.admin-users-toolbar .secondary {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
 .admin-flex-between {
   display: flex;
   justify-content: space-between;
@@ -982,6 +992,45 @@ label.admin-checkbox-row input[type="checkbox"] {
 
 .admin-drop-status {
   margin-bottom: 16px;
+}
+
+.admin-disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  text-align: left;
+  border: 1px solid var(--admin-border-strong);
+  border-radius: 10px;
+  background: var(--admin-bg-elevated);
+  color: var(--admin-text);
+  font: inherit;
+  cursor: pointer;
+  min-height: 48px;
+  transition:
+    background 0.2s var(--admin-ease),
+    border-color 0.2s var(--admin-ease);
+}
+
+.admin-disclosure:hover {
+  background: var(--admin-surface-hover);
+  border-color: rgba(94, 234, 212, 0.2);
+}
+
+.admin-disclosure__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-disclosure__chev {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--admin-muted);
+  width: 1.5rem;
+  text-align: center;
 }
 
 .admin-btn-mt {

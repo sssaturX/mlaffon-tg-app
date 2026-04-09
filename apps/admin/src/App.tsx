@@ -305,7 +305,14 @@ export function App() {
   const [adminUsers, setAdminUsers] = useState<AdminUserRow[] | null>(null);
   const [usersTotal, setUsersTotal] = useState(0);
   const [usersOffset, setUsersOffset] = useState(0);
+  const [usersSearchDraft, setUsersSearchDraft] = useState("");
+  const [usersSearch, setUsersSearch] = useState("");
   const USERS_PAGE = 50;
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setUsersSearch(usersSearchDraft.trim()), 350);
+    return () => window.clearTimeout(id);
+  }, [usersSearchDraft]);
 
   const selectTab = useCallback((id: AdminNavId) => {
     setNavDrawerOpen(false);
@@ -317,6 +324,7 @@ export function App() {
   const [dropHistory, setDropHistory] = useState<DropHistoryRow[] | null>(null);
   const [dropHistoryTotal, setDropHistoryTotal] = useState(0);
   const [dropHistoryLoading, setDropHistoryLoading] = useState(false);
+  const [dropHistoryOpen, setDropHistoryOpen] = useState(false);
   const [dropClaimantsDropId, setDropClaimantsDropId] = useState<string | null>(null);
   const [dropClaimants, setDropClaimants] = useState<DropClaimantRow[] | null>(null);
   const [dropClaimantsLoading, setDropClaimantsLoading] = useState(false);
@@ -401,6 +409,7 @@ export function App() {
   const [predictionPlatformsLoading, setPredictionPlatformsLoading] = useState(false);
   const [predictionsLoading, setPredictionsLoading] = useState(false);
   const autoRefreshRunningRef = useRef(false);
+  const usersPrevSearchRef = useRef<string | undefined>(undefined);
 
   const getAutoRefreshMs = useCallback(() => {
     if (tab === "predictions" || tab === "live" || tab === "drops") {
@@ -519,10 +528,14 @@ export function App() {
       if (!silent) setUsersLoading(true);
       if (!silent) setErr(null);
       try {
-        const r = await fetch(
-          `${apiBase()}/api/admin/users?limit=${USERS_PAGE}&offset=${offset}`,
-          { headers: authHeaders() }
-        );
+        const params = new URLSearchParams({
+          limit: String(USERS_PAGE),
+          offset: String(offset),
+        });
+        if (usersSearch.length > 0) params.set("search", usersSearch);
+        const r = await fetch(`${apiBase()}/api/admin/users?${params}`, {
+          headers: authHeaders(),
+        });
         const j = (await r.json()) as {
           users?: AdminUserRow[];
           total?: number;
@@ -539,7 +552,7 @@ export function App() {
         if (!silent) setUsersLoading(false);
       }
     },
-    [token, authHeaders]
+    [token, authHeaders, usersSearch]
   );
 
   const loadGiveawayDetail = useCallback(
@@ -748,8 +761,14 @@ export function App() {
   }, [token, loadStats, loadGiveaways, loadPromos]);
 
   useEffect(() => {
-    if (token && tab === "users") void loadAdminUsers(usersOffset);
-  }, [token, tab, usersOffset, loadAdminUsers]);
+    if (!token || tab !== "users") return;
+    if (usersPrevSearchRef.current !== usersSearch) {
+      usersPrevSearchRef.current = usersSearch;
+      setUsersOffset(0);
+      return;
+    }
+    void loadAdminUsers(usersOffset);
+  }, [token, tab, usersOffset, usersSearch, loadAdminUsers]);
 
   useEffect(() => {
     if (token && tab === "drops") {
@@ -1578,7 +1597,36 @@ export function App() {
       {tab === "users" ? (
         <>
           <h2 className="admin-mt-0">Пользователи</h2>
-          <p className="muted">Балансы и рефералы (по дате регистрации, новые сверху).</p>
+          <p className="muted">
+            Балансы и рефералы (по дате регистрации, новые сверху). Поиск — по Telegram-нику
+            или имени, без учёта регистра.
+          </p>
+          <div className="admin-users-toolbar row">
+            <div style={{ flex: "2 1 220px", minWidth: "min(100%, 200px)" }}>
+              <label htmlFor="users-search">Поиск</label>
+              <input
+                id="users-search"
+                type="search"
+                placeholder="@ник или часть имени"
+                value={usersSearchDraft}
+                onChange={(e) => setUsersSearchDraft(e.target.value)}
+                autoComplete="off"
+                enterKeyHint="search"
+              />
+            </div>
+            {usersSearchDraft.trim().length > 0 ? (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setUsersSearchDraft("");
+                  setUsersSearch("");
+                }}
+              >
+                Сбросить
+              </button>
+            ) : null}
+          </div>
           {adminUsers === null ? (
             <AdminSkeletonRows rows={5} />
           ) : (
@@ -2836,104 +2884,133 @@ export function App() {
                 </p>
               </div>
               <div className="card stack">
-                <p className="admin-m-0">
-                  <strong>История дропов</strong>{" "}
-                  <span className="muted">
-                    (всего в базе: {dropHistoryTotal}) — нажмите строку, чтобы увидеть
-                    получивших монеты
+                <button
+                  type="button"
+                  className="admin-disclosure"
+                  aria-expanded={dropHistoryOpen}
+                  onClick={() => {
+                    setDropHistoryOpen((open) => {
+                      if (open) {
+                        setDropClaimantsDropId(null);
+                        setDropClaimants(null);
+                        setDropClaimantsLoading(false);
+                      }
+                      return !open;
+                    });
+                  }}
+                >
+                  <span className="admin-disclosure__text">
+                    <strong>История дропов</strong>{" "}
+                    <span className="muted">
+                      (всего в базе: {dropHistoryTotal})
+                    </span>
                   </span>
-                </p>
-                {dropHistoryLoading ? (
-                  <p className="muted admin-m-0">Загрузка…</p>
-                ) : !dropHistory || dropHistory.length === 0 ? (
-                  <p className="muted admin-m-0">Пока нет записей дропов.</p>
-                ) : (
-                  <div className="admin-users-wrap">
-                    <table className="admin-users-table">
-                      <thead>
-                        <tr>
-                          <th>Код</th>
-                          <th>Платформа</th>
-                          <th>Победители</th>
-                          <th>Награда</th>
-                          <th>Старт</th>
-                          <th>Статус</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dropHistory.map((d) => (
-                          <tr
-                            key={d.id}
-                            style={{
-                              cursor: "pointer",
-                              background:
-                                dropClaimantsDropId === d.id
-                                  ? "rgba(34, 197, 94, 0.08)"
-                                  : undefined,
-                            }}
-                            onClick={() => {
-                              setDropClaimantsDropId(d.id);
-                              setDropClaimants(null);
-                              setDropClaimantsLoading(true);
-                              void (async () => {
-                                try {
-                                  const r = await fetch(
-                                    `${apiBase()}/api/admin/drops/${encodeURIComponent(d.id)}/claimants`,
-                                    { headers: authHeaders() }
-                                  );
-                                  const j = (await r.json()) as {
-                                    claimants?: DropClaimantRow[];
-                                  };
-                                  if (r.ok) setDropClaimants(j.claimants ?? []);
-                                } finally {
-                                  setDropClaimantsLoading(false);
-                                }
-                              })();
-                            }}
-                          >
-                            <td className="mono">{d.code}</td>
-                            <td>{d.platform}</td>
-                            <td>
-                              {d.winnersCount} / {d.maxWinners}
-                            </td>
-                            <td>
-                              {d.rewardMin}–{d.rewardMax}
-                            </td>
-                            <td className="muted admin-table-nowrap">
-                              {new Date(d.startedAt).toLocaleString("ru-RU")}
-                            </td>
-                            <td>{d.active ? "активен" : "завершён"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                {dropClaimantsDropId ? (
-                  <div className="admin-drop-claimants">
-                    <p className="admin-m-0">
-                      <strong>Получили монеты</strong>{" "}
-                      <span className="muted">(дроп {dropClaimantsDropId.slice(0, 8)}…)</span>
+                  <span className="admin-disclosure__chev" aria-hidden>
+                    {dropHistoryOpen ? "▼" : "▶"}
+                  </span>
+                </button>
+                {dropHistoryOpen ? (
+                  <>
+                    <p className="muted admin-m-0">
+                      Нажмите строку таблицы, чтобы увидеть получивших монеты.
                     </p>
-                    {dropClaimantsLoading ? (
+                    {dropHistoryLoading ? (
                       <p className="muted admin-m-0">Загрузка…</p>
-                    ) : !dropClaimants || dropClaimants.length === 0 ? (
-                      <p className="muted admin-m-0">Никто не получил награду в этом дропе.</p>
+                    ) : !dropHistory || dropHistory.length === 0 ? (
+                      <p className="muted admin-m-0">Пока нет записей дропов.</p>
                     ) : (
-                      <ul className="list">
-                        {dropClaimants.map((c) => (
-                          <li key={c.userId}>
-                            <strong>
-                              {c.username
-                                ? `@${c.username}`
-                                : c.firstName || `${c.userId.slice(0, 8)}…`}
-                            </strong>
-                            : +{c.rewardCoins} монет
-                          </li>
-                        ))}
-                      </ul>
+                      <div className="admin-users-wrap">
+                        <table className="admin-users-table">
+                          <thead>
+                            <tr>
+                              <th>Код</th>
+                              <th>Платформа</th>
+                              <th>Победители</th>
+                              <th>Награда</th>
+                              <th>Старт</th>
+                              <th>Статус</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dropHistory.map((d) => (
+                              <tr
+                                key={d.id}
+                                style={{
+                                  cursor: "pointer",
+                                  background:
+                                    dropClaimantsDropId === d.id
+                                      ? "rgba(94, 234, 212, 0.08)"
+                                      : undefined,
+                                }}
+                                onClick={() => {
+                                  setDropClaimantsDropId(d.id);
+                                  setDropClaimants(null);
+                                  setDropClaimantsLoading(true);
+                                  void (async () => {
+                                    try {
+                                      const r = await fetch(
+                                        `${apiBase()}/api/admin/drops/${encodeURIComponent(d.id)}/claimants`,
+                                        { headers: authHeaders() }
+                                      );
+                                      const j = (await r.json()) as {
+                                        claimants?: DropClaimantRow[];
+                                      };
+                                      if (r.ok) setDropClaimants(j.claimants ?? []);
+                                    } finally {
+                                      setDropClaimantsLoading(false);
+                                    }
+                                  })();
+                                }}
+                              >
+                                <td className="mono">{d.code}</td>
+                                <td>{d.platform}</td>
+                                <td>
+                                  {d.winnersCount} / {d.maxWinners}
+                                </td>
+                                <td>
+                                  {d.rewardMin}–{d.rewardMax}
+                                </td>
+                                <td className="muted admin-table-nowrap">
+                                  {new Date(d.startedAt).toLocaleString("ru-RU")}
+                                </td>
+                                <td>{d.active ? "активен" : "завершён"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
-                  </div>
+                    {dropClaimantsDropId ? (
+                      <div className="admin-drop-claimants">
+                        <p className="admin-m-0">
+                          <strong>Получили монеты</strong>{" "}
+                          <span className="muted">
+                            (дроп {dropClaimantsDropId.slice(0, 8)}…)
+                          </span>
+                        </p>
+                        {dropClaimantsLoading ? (
+                          <p className="muted admin-m-0">Загрузка…</p>
+                        ) : !dropClaimants || dropClaimants.length === 0 ? (
+                          <p className="muted admin-m-0">
+                            Никто не получил награду в этом дропе.
+                          </p>
+                        ) : (
+                          <ul className="list">
+                            {dropClaimants.map((c) => (
+                              <li key={c.userId}>
+                                <strong>
+                                  {c.username
+                                    ? `@${c.username}`
+                                    : c.firstName || `${c.userId.slice(0, 8)}…`}
+                                </strong>
+                                : +{c.rewardCoins} монет
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ) : null}
+                  </>
                 ) : null}
               </div>
             </>
