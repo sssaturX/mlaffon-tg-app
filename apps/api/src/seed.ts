@@ -4,6 +4,10 @@ import { db } from "./db/index.js";
 import { appSettings, giveaways, promoCodes, shopItems, tasks } from "./db/schema.js";
 import { invalidateActiveTasksCache } from "./services/taskCatalogCache.js";
 
+/** Официальный канал для API-заданий follow (Twitch login / Kick slug в URL). */
+const OFFICIAL_TWITCH_BROADCASTER_LOGIN = "mlaffonxd";
+const OFFICIAL_KICK_CHANNEL_SLUG = "mlaffonxd";
+
 async function seed() {
   const taskSeeds = [
     {
@@ -219,32 +223,45 @@ async function seed() {
     {
       id: "daily_twitch_watch",
       title: "Смотри Twitch",
-      description:
-        "Подключи Twitch OAuth; награда после проверки Helix (по умолчанию — аккаунт привязан)",
+      description: `Подключи Twitch OAuth и подпишись на канал ${OFFICIAL_TWITCH_BROADCASTER_LOGIN} (бесплатная подписка / follow). Награда после проверки Helix.`,
       reward: 15,
       platform: "twitch",
       type: "daily",
       validationType: "api",
       meta: {
-        helix: { kind: "connected" },
+        helix: {
+          kind: "follow",
+          broadcaster_login: OFFICIAL_TWITCH_BROADCASTER_LOGIN,
+        },
+        actionUrl: `https://www.twitch.tv/${OFFICIAL_TWITCH_BROADCASTER_LOGIN}`,
+        actionLabel: "Открыть канал Twitch",
+        verifyLabel: "Проверить подписку",
+        help: {
+          title: "Как получить награду",
+          body: `Открой канал twitch.tv/${OFFICIAL_TWITCH_BROADCASTER_LOGIN}, нажми «Подписаться», затем «Проверить подписку». Нужны права OAuth: чтение подписок на каналы.`,
+          icon: "tv",
+        },
       },
     },
     {
       id: "daily_kick_watch",
       title: "Смотри Kick",
-      description: "Подключи Kick OAuth; проверка API (или только привязка аккаунта)",
+      description: `Подключи Kick OAuth и подпишись на канал ${OFFICIAL_KICK_CHANNEL_SLUG} на Kick. Награда после проверки API follow.`,
       reward: 15,
       platform: "kick",
       type: "daily",
       validationType: "api",
       meta: {
-        kick: { kind: "connected" },
-        actionUrl: "https://kick.com/",
-        actionLabel: "Подписаться на Kick",
+        kick: {
+          kind: "follow",
+          channel_slug: OFFICIAL_KICK_CHANNEL_SLUG,
+        },
+        actionUrl: `https://kick.com/${OFFICIAL_KICK_CHANNEL_SLUG}`,
+        actionLabel: "Открыть канал Kick",
         verifyLabel: "Проверить подписку",
         help: {
           title: "Как получить награду",
-          body: "Сначала открой канал по кнопке ниже, затем нажми «Проверить подписку».",
+          body: `Сначала открой kick.com/${OFFICIAL_KICK_CHANNEL_SLUG} и подпишись на канал, затем нажми «Проверить подписку».`,
           icon: "tv",
         },
       },
