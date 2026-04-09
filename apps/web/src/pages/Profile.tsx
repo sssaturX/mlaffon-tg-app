@@ -1,5 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Calendar,
@@ -30,7 +29,6 @@ import {
   useInvalidateReferrals,
   useReferrals,
 } from "../hooks/queries/useReferrals";
-import { queryKeys } from "../query/queryKeys";
 
 export default function Profile({
   me,
@@ -56,10 +54,12 @@ export default function Profile({
   const [webPassword2, setWebPassword2] = useState("");
   const [webCredBusy, setWebCredBusy] = useState(false);
 
-  useQuery({
-    queryKey: queryKeys.sync.profileOAuth(oauthOk, oauthErr),
-    queryFn: async () => {
+  useEffect(() => {
+    if (!getToken() || !(oauthOk || oauthErr)) return;
+    let cancelled = false;
+    void (async () => {
       await syncMeFromNetwork();
+      if (cancelled) return;
       invalidateReferrals();
       navigate("/profile", { replace: true });
       if (oauthOk) {
@@ -84,14 +84,18 @@ export default function Profile({
           /* ignore */
         }
       }
-      return true;
-    },
-    enabled: Boolean(getToken() && (oauthOk || oauthErr)),
-    /** Повторный заход с теми же query-параметрами должен снова отработать после очистки URL. */
-    staleTime: 0,
-    gcTime: 0,
-    retry: false,
-  });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    oauthOk,
+    oauthErr,
+    syncMeFromNetwork,
+    invalidateReferrals,
+    navigate,
+    showToast,
+  ]);
 
   async function disconnect(platform: string) {
     const r = await api(`/api/v1/platforms/${platform}`, { method: "DELETE" });

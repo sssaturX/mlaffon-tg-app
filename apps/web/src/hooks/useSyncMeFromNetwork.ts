@@ -1,9 +1,9 @@
 import { useCallback } from "react";
 import { useToast } from "../context/ToastContext";
-import { syncMeFromNetwork } from "../services/meService";
+import { hydrateMeThroughEventBus } from "../meDomain/meHydration";
 
-/** Toast-aware обёртка над единственной точкой sync домена `me`. */
+/** Toast-aware гидратация me — только HTTP → `me:update` в reducer. */
 export function useSyncMeFromNetwork() {
   const { showToast } = useToast();
-  return useCallback(() => syncMeFromNetwork(showToast), [showToast]);
+  return useCallback(() => hydrateMeThroughEventBus(showToast), [showToast]);
 }

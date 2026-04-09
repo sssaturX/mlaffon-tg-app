@@ -42,6 +42,8 @@ import {
 import { prefetchRouteData } from "./query/prefetch";
 import { fetchDropActive, fetchLiveBroadcast } from "./query/fetchers";
 import { meEconomyQueryFn, meProfileQueryFn } from "./query/meQueryFns";
+import { appEventBus } from "./events/appEventBus";
+import { emitAppBootstrap } from "./meDomain/bootstrapOrchestrator";
 import { queryClient } from "./query/queryClient";
 import { queryKeys } from "./query/queryKeys";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
@@ -234,6 +236,10 @@ export default function App() {
     if (!hasLinkedStreamingAccount(me)) return;
     if (!hasSeenOnboarding()) setOnboardingOpen(true);
   }, [ready, me]);
+
+  useEffect(() => {
+    if (ready && getToken()) emitAppBootstrap("token_ready");
+  }, [ready]);
 
   if (webLogin) {
     return (
@@ -470,7 +476,7 @@ function AppShell({
       },
       onLegacyBalancePing: () => {
         invalidateInflightMeRefresh();
-        void queryClient.invalidateQueries({ queryKey: queryKeys.me.economy() });
+        appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
       },
     },
     /** WS нужен и до привязки стрима: `me_update` и `initial_state` без лишнего REST. Сервер не требует OAuth-платформы. */
@@ -515,7 +521,7 @@ function AppShell({
     }
     if (tabWasHiddenRef.current) {
       tabWasHiddenRef.current = false;
-      void queryClient.invalidateQueries({ queryKey: queryKeys.me.economy() });
+      appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
       syncRealtimeFromHttp({ force: true });
     }
   }, [docVisible, needsPlatformLink, syncRealtimeFromHttp]);
@@ -526,8 +532,7 @@ function AppShell({
     if (realtimeConnected) return;
     if (!docVisible) return;
     const id = window.setInterval(
-      () =>
-        void queryClient.invalidateQueries({ queryKey: queryKeys.me.economy() }),
+      () => appEventBus.emit("me:reconcile:economy", { delayMs: 0 }),
       60_000
     );
     return () => clearInterval(id);

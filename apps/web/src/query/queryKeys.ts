@@ -50,25 +50,4 @@ export const queryKeys = {
     entry: (sort: string, platform: string) =>
       [...queryKeys.leaderboard.all, sort, platform] as const,
   },
-  /**
-   * Одноразовые оркестраторы (useQuery, staleTime: ∞) — не дублировать fetch в useEffect.
-   */
-  sync: {
-    all: ["sync"] as const,
-    profileOAuth: (ok: string | null, err: string | null) =>
-      [...queryKeys.sync.all, "profile-oauth", ok ?? "", err ?? ""] as const,
-    homeOauthToast: () => [...queryKeys.sync.all, "home-oauth-toast"] as const,
-    oauthReturn: (
-      platform: string,
-      connected: string | null,
-      error: string | null
-    ) =>
-      [
-        ...queryKeys.sync.all,
-        "oauth-return",
-        platform,
-        connected ?? "",
-        error ?? "",
-      ] as const,
-  },
 } as const;

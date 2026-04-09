@@ -8,19 +8,17 @@ import type { MeEconomyPatch, MeEconomyResponse, MeProfileResponse, MeResponse }
 import {
   applyEconomyFromMutationResponse,
   scheduleSmartRefresh,
-  syncMeFromNetwork as syncMeFromNetworkCore,
 } from "../services/meService";
+import { hydrateMeThroughEventBus } from "../meDomain/meHydration";
 import { queryClient } from "../query/queryClient";
 import { queryKeys } from "../query/queryKeys";
-import { bumpEconomyEpoch, bumpProfileEpoch } from "../query/meSyncEpoch";
 import { splitMePartial } from "../utils/splitMePartial";
+import { appEventBus } from "../events/appEventBus";
 import { useToast } from "./ToastContext";
 
 type Ctx = {
-  /** Оптимистичный патч только в React Query (profile / economy по полям). */
   patchMe: (u: (prev: MeResponse) => Partial<MeResponse>) => void;
   patchEconomy: (patch: MeEconomyPatch | null | undefined) => void;
-  /** Параллельный HTTP sync profile + economy (эпохи против WS). */
   syncMeFromNetwork: () => Promise<MeResponse | null>;
   reconcileFromServer: () => void;
 };
@@ -40,19 +38,11 @@ export function MeEconomySyncProvider({
     if (!p || !e) return;
     const merged: MeResponse = { ...p, ...e };
     const partial = u(merged);
-    const { profile: pp, economy: ep } = splitMePartial(partial);
-    if (Object.keys(pp).length > 0) {
-      bumpProfileEpoch();
-      queryClient.setQueryData<MeProfileResponse>(queryKeys.me.profile(), (old) =>
-        old ? { ...old, ...pp } : old
-      );
-    }
-    if (Object.keys(ep).length > 0) {
-      bumpEconomyEpoch();
-      queryClient.setQueryData<MeEconomyResponse>(queryKeys.me.economy(), (old) =>
-        old ? { ...old, ...ep } : old
-      );
-    }
+    appEventBus.emit("me:update", {
+      kind: "merged_partial",
+      source: "optimistic",
+      partial,
+    });
   }, []);
 
   const patchEconomy = useCallback(
@@ -63,7 +53,7 @@ export function MeEconomySyncProvider({
   );
 
   const syncMeFromNetwork = useCallback(
-    () => syncMeFromNetworkCore(showToast),
+    () => hydrateMeThroughEventBus(showToast),
     [showToast]
   );
 

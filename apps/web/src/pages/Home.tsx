@@ -7,7 +7,7 @@ import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
 import type { MeEconomyPatch, MeResponse } from "shared";
 import { api, formatApiError, getToken } from "../api";
-import { syncMeFromNetwork } from "../services/meService";
+import { hydrateMeThroughEventBus } from "../meDomain/meHydration";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -102,41 +102,36 @@ export default function Home({ me }: { me: MeResponse | null }) {
   const { patchMe, patchEconomy } = useMeEconomySync();
   const { showToast } = useToast();
 
-  useQuery({
-    queryKey: queryKeys.sync.homeOauthToast(),
-    queryFn: async () => {
-      let k: string | null = null;
-      try {
-        k = sessionStorage.getItem(OAUTH_TOAST_KEY);
-      } catch {
-        return false;
-      }
-      if (!k) return false;
-      try {
-        sessionStorage.removeItem(OAUTH_TOAST_KEY);
-      } catch {
-        /* ignore */
-      }
-      showToast(
-        k === "twitch"
-          ? "Twitch подключён — можно пользоваться стриком на Twitch."
-          : "Kick подключён — можно пользоваться стриком на Kick.",
-        "success",
-        { durationMs: 5500 }
-      );
-      try {
-        WebApp.HapticFeedback.notificationOccurred("success");
-      } catch {
-        /* ignore */
-      }
-      await syncMeFromNetwork(showToast);
-      return true;
-    },
-    enabled: Boolean(getToken()),
-    staleTime: Infinity,
-    gcTime: 0,
-    retry: false,
-  });
+  const oauthHomeToastDoneRef = useRef(false);
+  useEffect(() => {
+    if (!me || !getToken() || oauthHomeToastDoneRef.current) return;
+    let k: string | null = null;
+    try {
+      k = sessionStorage.getItem(OAUTH_TOAST_KEY);
+    } catch {
+      return;
+    }
+    if (!k) return;
+    oauthHomeToastDoneRef.current = true;
+    try {
+      sessionStorage.removeItem(OAUTH_TOAST_KEY);
+    } catch {
+      /* ignore */
+    }
+    showToast(
+      k === "twitch"
+        ? "Twitch подключён — можно пользоваться стриком на Twitch."
+        : "Kick подключён — можно пользоваться стриком на Kick.",
+      "success",
+      { durationMs: 5500 }
+    );
+    try {
+      WebApp.HapticFeedback.notificationOccurred("success");
+    } catch {
+      /* ignore */
+    }
+    void hydrateMeThroughEventBus(showToast);
+  }, [me, showToast]);
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const [watchingLive, setWatchingLive] = useState(false);
   const { data: live } = useQuery({

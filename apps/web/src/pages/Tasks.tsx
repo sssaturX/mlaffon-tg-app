@@ -7,8 +7,7 @@ import { useActivePlatform } from "../context/PlatformContext";
 import { TaskDetailModal } from "../components/TaskDetailModal";
 import { useInvalidateTasks, useTasks } from "../hooks/queries/useTasks";
 import { ApiQueryError } from "../query/apiQueryError";
-import { queryClient } from "../query/queryClient";
-import { queryKeys } from "../query/queryKeys";
+import { appEventBus } from "../events/appEventBus";
 function platformPillClass(p: Platform): string {
   if (p === "twitch") return "pill pill--twitch";
   if (p === "kick") return "pill pill--kick";
@@ -85,9 +84,7 @@ export default function Tasks() {
         setModalMsg(m);
         setMsg(m);
         invalidateTasks();
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.me.economy(),
-        });
+        appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
         return;
       }
       const okMsg = `+${r.data.reward ?? 0} монет`;

@@ -1,7 +1,7 @@
 import WebApp from "@twa-dev/sdk";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
-import { syncMeFromNetwork } from "../services/meService";
+import { appEventBus } from "../events/appEventBus";
 
 export function useOAuthLink() {
   const { showToast } = useToast();
@@ -34,7 +34,7 @@ export function useOAuthLink() {
         import.meta.env.DEV ? "Тестовое подключение выполнено" : "Подключено",
         "success"
       );
-      void syncMeFromNetwork();
+      appEventBus.emit("app:me:hydrate", {});
     } else showToast(formatApiError(r), "error");
   }
 

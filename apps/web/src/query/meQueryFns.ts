@@ -2,28 +2,37 @@ import type { MeEconomyResponse, MeProfileResponse } from "shared";
 import { fetchMeEconomy, fetchMeProfile } from "./fetchers";
 import { queryClient } from "./queryClient";
 import { queryKeys } from "./queryKeys";
-import { getEconomyEpoch, getProfileEpoch } from "./meSyncEpoch";
+import { appEventBus } from "../events/appEventBus";
+import { getDomainVersion } from "../meDomain/domainVersion";
 
 export async function meProfileQueryFn(): Promise<MeProfileResponse> {
-  const e0 = getProfileEpoch();
+  const profileV0 = getDomainVersion().profile;
+  const economyV0 = getDomainVersion().economy;
   const data = await fetchMeProfile();
-  if (e0 !== getProfileEpoch()) {
-    const cached = queryClient.getQueryData<MeProfileResponse>(
-      queryKeys.me.profile()
-    );
-    if (cached) return cached;
-  }
-  return data;
+  appEventBus.emit("me:update", {
+    kind: "http_snapshot",
+    source: "http",
+    profile: data,
+    profileV0,
+    economyV0,
+  });
+  return (
+    queryClient.getQueryData<MeProfileResponse>(queryKeys.me.profile()) ?? data
+  );
 }
 
 export async function meEconomyQueryFn(): Promise<MeEconomyResponse> {
-  const e0 = getEconomyEpoch();
+  const profileV0 = getDomainVersion().profile;
+  const economyV0 = getDomainVersion().economy;
   const data = await fetchMeEconomy();
-  if (e0 !== getEconomyEpoch()) {
-    const cached = queryClient.getQueryData<MeEconomyResponse>(
-      queryKeys.me.economy()
-    );
-    if (cached) return cached;
-  }
-  return data;
+  appEventBus.emit("me:update", {
+    kind: "http_snapshot",
+    source: "http",
+    economy: data,
+    profileV0,
+    economyV0,
+  });
+  return (
+    queryClient.getQueryData<MeEconomyResponse>(queryKeys.me.economy()) ?? data
+  );
 }

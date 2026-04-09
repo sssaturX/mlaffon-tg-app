@@ -3,8 +3,7 @@ import WebApp from "@twa-dev/sdk";
 import type { MeResponse } from "shared";
 import { setToken } from "../api";
 import { useOAuthLink } from "../hooks/useOAuthLink";
-import { queryClient } from "../query/queryClient";
-import { queryKeys } from "../query/queryKeys";
+import { appEventBus } from "../events/appEventBus";
 import { looksLikeTelegramMiniApp } from "../utils/waitForTelegramInitData";
 
 const creatorName =
@@ -39,7 +38,7 @@ export default function WelcomeGate({ me }: { me: MeResponse }) {
 
   function exitToLogin() {
     setToken(null);
-    queryClient.removeQueries({ queryKey: queryKeys.me.all });
+    appEventBus.emit("me:update", { kind: "clear", reason: "logout" });
     window.location.reload();
   }
 
