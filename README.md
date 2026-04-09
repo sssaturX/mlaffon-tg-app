@@ -4,6 +4,8 @@
 
 Интеграции: **Twitch OAuth + Helix**, **Kick OAuth + PKCE** (API с fallback), **шифрование токенов** (AES-256-GCM), **rate limits** на claim и OAuth callback.
 
+**ТЗ заказчика и статус реализации:** [docs/TZ-README.md](docs/TZ-README.md).
+
 ## Требования
 
 - Node.js 20+
