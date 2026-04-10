@@ -177,11 +177,11 @@ async function seed() {
         uiOrder: 0,
         evidenceExamples: [
           {
-            src: "/tasks/br/stage1-registration.svg",
+            src: "/tasks/br/stage1-reg.webp",
             caption: "Пример 1: регистрация / аккаунт по ссылке",
           },
           {
-            src: "/tasks/br/stage1-ingame.svg",
+            src: "/tasks/br/stage1%262level.webp",
             caption: "Пример 2: ник, сервер, в игре",
           },
         ],
@@ -207,7 +207,7 @@ async function seed() {
         uiOrder: 1,
         evidenceExamples: [
           {
-            src: "/tasks/br/stage2-level.svg",
+            src: "/tasks/br/stage1%262level.webp",
             caption: "Пример: уровень 5, ник и сервер хорошо видны",
           },
         ],

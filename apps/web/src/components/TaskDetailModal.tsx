@@ -94,13 +94,15 @@ function TaskEvidenceControls({
   );
 }
 
-function hardStageDisplay(t: TaskDto): { cur: number; total: number } | null {
+/** Завершённые этапы из `hardStageCurrent` (0 = ни одного, после 1-го этапа = 1, …). */
+function hardStageDisplay(t: TaskDto): { completed: number; total: number } | null {
   if (!t.hard || typeof t.hardStageTotal !== "number" || t.hardStageTotal <= 0) {
     return null;
   }
+  const total = t.hardStageTotal;
   const raw = t.hardStageCurrent ?? 0;
-  const cur = Math.min(t.hardStageTotal, Math.max(1, raw + 1));
-  return { cur, total: t.hardStageTotal };
+  const completed = Math.max(0, Math.min(total, Math.floor(raw)));
+  return { completed, total };
 }
 
 /** Забрать награду / финальный «Получить» — не требует «сначала открой ссылку» для подсветки кнопки. */
@@ -268,9 +270,9 @@ export function TaskDetailModal({
             {hardDisp ? (
               <div className="task-progress task-progress--stream task-detail-modal__block">
                 <div className="task-progress__head">
-                  <span className="muted">Этап</span>
+                  <span className="muted">Прогресс этапов</span>
                   <span className="muted">
-                    {hardDisp.cur}/{hardDisp.total}
+                    {hardDisp.completed}/{hardDisp.total}
                   </span>
                 </div>
                 <div className="task-progress__bar">
@@ -279,7 +281,10 @@ export function TaskDetailModal({
                     style={{
                       width: `${Math.max(
                         0,
-                        Math.min(100, (hardDisp.cur / Math.max(1, hardDisp.total)) * 100)
+                        Math.min(
+                          100,
+                          (hardDisp.completed / Math.max(1, hardDisp.total)) * 100
+                        )
                       )}%`,
                     }}
                   />

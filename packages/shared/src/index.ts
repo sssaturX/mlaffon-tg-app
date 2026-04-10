@@ -46,7 +46,7 @@ export interface TaskDto {
   chainKey?: string | null;
   /** Для визуального выделения сложных задач (например BR). */
   hard?: boolean;
-  /** Для staged hard-задач (пример: 0/2, 1/2, 2/2). */
+  /** Сколько этапов цепочки уже пройдено (0 = ни одного, после 1-го = 1, …). UI: «0/2», «1/2». */
   hardStageCurrent?: number;
   hardStageTotal?: number;
   /** Группа на экране заданий (из meta.uiSection). */
