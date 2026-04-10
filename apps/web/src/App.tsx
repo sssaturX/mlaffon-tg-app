@@ -145,9 +145,14 @@ export default function App() {
     (async () => {
       setError(null);
 
+      /** Дать WebView один кадр после WebApp.ready() — initData иногда появляется не синхронно. */
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+
       let initData = WebApp.initData?.trim() ?? "";
       if (!initData && looksLikeTelegramMiniApp()) {
-        initData = (await waitForTelegramInitData(2000)) ?? "";
+        initData = (await waitForTelegramInitData(5500)) ?? "";
       }
 
       const startParam = initData ? getStartParamFromInitData(initData) : null;
@@ -155,27 +160,19 @@ export default function App() {
       const isTelegramAccountLink = startParam?.startsWith("link_") === true;
 
       const existing = getToken();
-      if (existing && !isTelegramAccountLink) {
-        void Promise.all([
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.me.profile(),
-            queryFn: meProfileQueryFn,
-          }),
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.me.economy(),
-            queryFn: meEconomyQueryFn,
-          }),
-        ]);
-        if (cancelled) return;
-        setReady(true);
-        return;
-      }
 
+      /**
+       * Важно: при наличии initData сначала обмен на JWT (мини-приложение).
+       * Иначе старый веб-токен в localStorage даёт ранний prefetch → 401 / ошибка профиля,
+       * а «Повторить» очищает сессию (hydrateMeThroughEventBus при auth_error).
+       */
       if (initData) {
         const r = await authTelegramWithRetry(initData);
         if (cancelled) return;
         if (r.ok) {
           setToken(r.data.token);
+          queryClient.removeQueries({ queryKey: queryKeys.me.profile() });
+          queryClient.removeQueries({ queryKey: queryKeys.me.economy() });
           void Promise.all([
             queryClient.prefetchQuery({
               queryKey: queryKeys.me.profile(),
@@ -198,6 +195,22 @@ export default function App() {
           setError(m);
           showToast(m, "error");
         }
+        setReady(true);
+        return;
+      }
+
+      if (existing && !isTelegramAccountLink) {
+        void Promise.all([
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.me.profile(),
+            queryFn: meProfileQueryFn,
+          }),
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.me.economy(),
+            queryFn: meEconomyQueryFn,
+          }),
+        ]);
+        if (cancelled) return;
         setReady(true);
         return;
       }
