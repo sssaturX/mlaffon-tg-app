@@ -147,6 +147,16 @@ function userTaskMapKey(taskId: string, periodKey: string): string {
   return `${taskId}\0${periodKey}`;
 }
 
+/** Порядок секций в списке заданий (meta.uiSection). */
+const SECTION_UI_RANK: Record<string, number> = {
+  black_russia: 0,
+  stream_tasks: 1,
+  twitch: 2,
+  kick: 3,
+  telegram: 4,
+  global: 5,
+};
+
 function rewardPlatformLabel(taskPlatform: string): "twitch" | "kick" | "split" {
   if (taskPlatform === "twitch") return "twitch";
   if (taskPlatform === "kick") return "kick";
@@ -374,6 +384,8 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     const hardStageTotal = asNumber(meta.hardStageTotal);
     const hardStageCurrent = asNumber(meta.hardStageCurrent);
     const ui = extractTaskUiFields(meta);
+    const uiSection = asString(meta.uiSection);
+    const uiOrder = asNumber(meta.uiOrder);
     rows.push({
       id: t.id,
       title: t.title,
@@ -390,6 +402,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       actionLabel: ui.actionLabel,
       verifyLabel: ui.verifyLabel,
       help: ui.help,
+      evidenceExamples: ui.evidenceExamples,
       progressCurrent: progress?.current,
       progressTarget: progress?.target,
       progressLabel: progress?.label ?? null,
@@ -397,8 +410,18 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       hard: meta.hard === true,
       hardStageCurrent: hardStageCurrent != null ? Math.floor(hardStageCurrent) : undefined,
       hardStageTotal: hardStageTotal != null ? Math.floor(hardStageTotal) : undefined,
+      uiSection: uiSection ?? null,
+      uiOrder: uiOrder != null ? Math.floor(uiOrder) : undefined,
     });
   }
+  rows.sort((a, b) => {
+    const ra = SECTION_UI_RANK[a.uiSection ?? ""] ?? 50;
+    const rb = SECTION_UI_RANK[b.uiSection ?? ""] ?? 50;
+    if (ra !== rb) return ra - rb;
+    const oa = a.uiOrder ?? 999;
+    const ob = b.uiOrder ?? 999;
+    return oa - ob;
+  });
   return rows;
 }
 

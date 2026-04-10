@@ -1,5 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { getPlatformTheme } from "./platformTheme";
 import { useActivePlatform } from "./context/PlatformContext";
 import {
@@ -540,22 +548,40 @@ function AppShell({
     dropSnap?.hasActiveDrop === true &&
     !dropSnap.won;
 
-  const dropServerNow =
-    dropSnap?.hasActiveDrop && dropSnap.serverNow
-      ? dropSnap.serverNow
-      : dropSnap?.hasActiveDrop
-        ? new Date(
-            Date.now() - dropSnap.remainingSeconds * 1000
-          ).toISOString()
-        : null;
+  /** Одно смещение на дроп: из кэша (WS) или закрепление при первом появлении снимка. */
+  const dropClockOffsetMs = useMemo(() => {
+    const d =
+      dropSnap?.hasActiveDrop === true ? dropSnap : null;
+    if (!d) return null;
+    if (
+      typeof d.countdownOffsetMs === "number" &&
+      Number.isFinite(d.countdownOffsetMs)
+    ) {
+      return d.countdownOffsetMs;
+    }
+    if (d.serverNow) {
+      return Date.parse(d.serverNow) - Date.now();
+    }
+    return (
+      Date.parse(d.endsAt) -
+      d.remainingSeconds * 1000 -
+      Date.now()
+    );
+  }, [
+    dropSnap?.hasActiveDrop === true ? dropSnap.dropId : null,
+    dropSnap?.hasActiveDrop === true ? dropSnap.countdownOffsetMs : null,
+    dropSnap?.hasActiveDrop === true ? dropSnap.serverNow : null,
+    dropSnap?.hasActiveDrop === true ? dropSnap.endsAt : null,
+    dropSnap?.hasActiveDrop === true ? dropSnap.remainingSeconds : null,
+  ]);
 
   const dropRemainingMs = useSyncedCountdownMs(
     dropSnap?.hasActiveDrop ? dropSnap.endsAt : null,
-    dropServerNow,
+    dropClockOffsetMs,
     dropTickerActive
   );
 
-  const dropSecondsLeft = Math.max(0, Math.ceil(dropRemainingMs / 1000));
+  const dropSecondsLeft = Math.max(0, Math.floor(dropRemainingMs / 1000));
 
   const showDropTicker =
     Boolean(me) &&
@@ -703,6 +729,7 @@ function AppShell({
           open={dropOpen}
           onClose={() => setDropOpen(false)}
           snapshot={dropSnap}
+          clockOffsetMs={dropClockOffsetMs}
           onAfterClaim={(reward) => {
             const snap = queryClient.getQueryData<DropSnapshot>(
               queryKeys.drops.active()

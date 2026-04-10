@@ -14,6 +14,11 @@ export type DropSnapshot =
       endsAt: string;
       /** Серверное время на момент ответа — для синхронизации таймера */
       serverNow?: string;
+      /**
+       * `Date.parse(serverNow) - Date.now()` в момент записи снимка в кэш (WS).
+       * Без этого оверлей пересчитывает offset при открытии и расходится с тикером.
+       */
+      countdownOffsetMs?: number;
       remainingSeconds: number;
       platform?: "twitch" | "kick" | "both";
       maxWinners: number;
@@ -78,12 +83,15 @@ export function DropOverlay({
   open,
   onClose,
   snapshot,
+  clockOffsetMs,
   onAfterClaim,
   onRefreshSnapshot,
 }: {
   open: boolean;
   onClose: () => void;
   snapshot: DropSnapshot | null;
+  /** Смещение часов с сервером (то же, что у DropTicker в App). */
+  clockOffsetMs: number | null;
   /** Reward после успешного attempt (без лишнего GET /drops/active). */
   onAfterClaim: (reward: number) => void | Promise<void>;
   onRefreshSnapshot?: () => void | Promise<void>;
@@ -108,14 +116,8 @@ export function DropOverlay({
   const active = open && !!snapshotActive && !snapshotActive.won;
 
   const endsAt = snapshotActive?.endsAt ?? null;
-  const serverNowIso = snapshotActive
-    ? snapshotActive.serverNow ??
-      new Date(
-        Date.now() - snapshotActive.remainingSeconds * 1000
-      ).toISOString()
-    : null;
 
-  const remainingMs = useSyncedCountdownMs(endsAt, serverNowIso, active);
+  const remainingMs = useSyncedCountdownMs(endsAt, clockOffsetMs, active);
   const timeUp = !!snapshotActive && !snapshotActive.won && remainingMs <= 0;
 
   const resetInput = useCallback(() => {

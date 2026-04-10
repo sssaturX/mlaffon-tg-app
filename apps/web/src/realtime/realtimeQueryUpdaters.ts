@@ -12,6 +12,28 @@ import type { LiveBroadcastPublic } from "../store/liveBroadcastStore";
 import { queryClient } from "../query/queryClient";
 import { queryKeys } from "../query/queryKeys";
 
+/** Фиксирует смещение клиент↔сервер в момент применения WS (см. useSyncedCountdownMs). */
+function withDropCountdownOffset<
+  T extends {
+    hasActiveDrop: true;
+    serverNow?: string;
+    endsAt: string;
+    remainingSeconds: number;
+  },
+>(drop: T): T & { countdownOffsetMs: number } {
+  const clientNow = Date.now();
+  let offset: number;
+  if (drop.serverNow) {
+    const sn = Date.parse(drop.serverNow);
+    offset = Number.isFinite(sn) ? sn - clientNow : NaN;
+  } else {
+    offset =
+      Date.parse(drop.endsAt) - drop.remainingSeconds * 1000 - clientNow;
+  }
+  if (!Number.isFinite(offset)) offset = 0;
+  return { ...drop, countdownOffsetMs: offset };
+}
+
 function dispatchLiveEvent(): void {
   try {
     window.dispatchEvent(new CustomEvent("mlaffon-live"));
@@ -35,8 +57,8 @@ export function normalizePredictionState(
 }
 
 export function applyDropStartedToQuery(data: DropStartedPayload): void {
-  const snap: DropSnapshot = {
-    hasActiveDrop: true,
+  const snap = withDropCountdownOffset({
+    hasActiveDrop: true as const,
     dropId: data.dropId,
     endsAt: data.endsAt,
     serverNow: data.serverNow,
@@ -51,8 +73,8 @@ export function applyDropStartedToQuery(data: DropStartedPayload): void {
     winnersCount: data.winnersCount,
     won: false,
     rewardCoins: null,
-  };
-  queryClient.setQueryData(queryKeys.drops.active(), snap);
+  });
+  queryClient.setQueryData(queryKeys.drops.active(), snap as DropSnapshot);
 }
 
 export function applyDropFinishedToQuery(dropId: string): void {
@@ -140,7 +162,11 @@ export function applyWsInitialStateToQueries(
 
   queryClient.setQueryData(
     queryKeys.drops.active(),
-    data.drop.hasActiveDrop ? data.drop : { hasActiveDrop: false }
+    data.drop.hasActiveDrop
+      ? (withDropCountdownOffset(
+          data.drop as Extract<DropSnapshot, { hasActiveDrop: true }>
+        ) as DropSnapshot)
+      : { hasActiveDrop: false }
   );
 
   if (data.prediction) {
