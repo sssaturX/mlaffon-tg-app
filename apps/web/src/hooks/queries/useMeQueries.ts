@@ -19,11 +19,12 @@ export function useMeProfileQuery(enabled: boolean) {
   });
 }
 
-export function useMeEconomyQuery(enabled: boolean) {
+/** Экономика приезжает в том же `GET /me`, что и профиль; отдельный запрос к /me/economy не делаем. */
+export function useMeEconomyQuery(enabled: boolean, profileFetchSettled: boolean) {
   return useQuery({
     queryKey: queryKeys.me.economy(),
     queryFn: meEconomyQueryFn,
-    enabled: enabled && Boolean(getToken()),
+    enabled: enabled && Boolean(getToken()) && profileFetchSettled,
     staleTime: STALE_ME_ECONOMY,
   });
 }

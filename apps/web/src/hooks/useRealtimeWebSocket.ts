@@ -76,9 +76,9 @@ export function useRealtimeWebSocket(
     onOpen: () => void;
     /** Первое сообщение после connect / reconnect — снимок эфира/дропа/предикта. */
     onInitialState?: (data: WsInitialStatePayload) => void;
-    /** Пропуск `seq` между broadcast-событиями → HTTP catch-up. */
+    /** Пропуск `seq` между broadcast-событиями (опционально: лог / переподключение). */
     onBroadcastSeqGap?: () => void;
-    /** Если сервер не прислал `initial_state` (старый API / сбой). */
+    /** Сервер не прислал `initial_state` вовремя (опционально: метрика / переподключение). */
     onInitialStateMissing?: () => void;
     onLegacyBalancePing?: () => void;
   },

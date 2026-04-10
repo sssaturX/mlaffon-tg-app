@@ -23,7 +23,9 @@ export function getMeFromCache(): MeResponse | null {
 export function useMergedMe() {
   const enabled = Boolean(getToken());
   const profileQ = useMeProfileQuery(enabled);
-  const economyQ = useMeEconomyQuery(enabled);
+  const profileFetchSettled =
+    profileQ.isSuccess || profileQ.isError || profileQ.isFetched;
+  const economyQ = useMeEconomyQuery(enabled, profileFetchSettled);
 
   const me: MeResponse | null = useMemo(() => {
     if (!profileQ.data || !economyQ.data) return null;
@@ -36,9 +38,9 @@ export function useMergedMe() {
     !profileQ.isError &&
     !economyQ.isError &&
     (profileQ.isPending ||
-      economyQ.isPending ||
+      (profileQ.isSuccess && economyQ.isPending) ||
       profileQ.data === undefined ||
-      economyQ.data === undefined);
+      (profileQ.isSuccess && economyQ.data === undefined));
 
   return {
     me,

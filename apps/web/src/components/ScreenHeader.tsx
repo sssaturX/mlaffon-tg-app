@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Coins } from "lucide-react";
 import { useActivePlatform } from "../context/PlatformContext";
 import { useAnimatedNumber } from "../hooks/useAnimatedNumber";
-import { fetchLiveBroadcast } from "../query/fetchers";
+import { liveBroadcastWsOnlyQueryFn } from "../realtime/wsOnlyQueryFns";
 import { queryKeys } from "../query/queryKeys";
 
 /** Всегда показываем число: animated ?? value (иначе при null из хука шапка «пустая»). */
@@ -24,7 +24,7 @@ export function ScreenHeader({
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const { data: broadcast } = useQuery({
     queryKey: queryKeys.liveBroadcast.current(),
-    queryFn: fetchLiveBroadcast,
+    queryFn: liveBroadcastWsOnlyQueryFn,
     staleTime: Infinity,
     enabled: false,
   });

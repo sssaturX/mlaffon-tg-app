@@ -4,14 +4,11 @@ import type {
   HomeContentResponse,
   HomeGiveawaysResponse,
   LeaderboardResponse,
-  MeEconomyResponse,
   MeProfileResponse,
+  MeResponse,
   ReferralsResponse,
   TaskDto,
 } from "shared";
-import type { DropSnapshot } from "../components/DropOverlay";
-import type { PredictionStatePayload } from "../hooks/useRealtimeWebSocket";
-import type { LiveBroadcastPublic } from "../store/liveBroadcastStore";
 import { api } from "../api";
 import { throwIfApiErr } from "./apiQueryError";
 
@@ -40,8 +37,9 @@ export async function fetchMeProfile(): Promise<MeProfileResponse> {
   return r.data;
 }
 
-export async function fetchMeEconomy(): Promise<MeEconomyResponse> {
-  const r = await api<MeEconomyResponse>("/api/v1/me/economy");
+/** Полный срез пользователя; экономика дальше обновляется по WS (без отдельного GET /me/economy). */
+export async function fetchMe(): Promise<MeResponse> {
+  const r = await api<MeResponse>("/api/v1/me");
   throwIfApiErr(r);
   return r.data;
 }
@@ -68,26 +66,6 @@ export async function fetchFortuneState(): Promise<FortuneStateResponse> {
   const r = await api<FortuneStateResponse>("/api/v1/games/fortune/state");
   throwIfApiErr(r);
   return r.data;
-}
-
-export async function fetchDropActive(): Promise<DropSnapshot> {
-  const r = await api<DropSnapshot>("/api/v1/drops/active");
-  throwIfApiErr(r);
-  return r.data;
-}
-
-export async function fetchLiveBroadcast(): Promise<LiveBroadcastPublic> {
-  const r = await api<LiveBroadcastPublic>("/api/v1/live-broadcast");
-  throwIfApiErr(r);
-  return r.data;
-}
-
-export async function fetchPredictionsActive(): Promise<PredictionStatePayload | null> {
-  const r = await api<{ prediction: PredictionStatePayload | null }>(
-    "/api/v1/predictions/active"
-  );
-  throwIfApiErr(r);
-  return r.data.prediction ?? null;
 }
 
 export async function fetchReferrals(): Promise<ReferralsResponse> {

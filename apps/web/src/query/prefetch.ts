@@ -9,7 +9,7 @@ import {
   fetchReferrals,
   fetchTasks,
 } from "./fetchers";
-import { meEconomyQueryFn, meProfileQueryFn } from "./meQueryFns";
+import { meProfileQueryFn } from "./meQueryFns";
 
 /** Prefetch по намерению навигации (hover по табам). */
 export function prefetchRouteData(pathname: string): void {
@@ -44,11 +44,6 @@ export function prefetchRouteData(pathname: string): void {
       queryKey: queryKeys.me.profile(),
       queryFn: meProfileQueryFn,
       staleTime: 1000 * 60 * 5,
-    });
-    void queryClient.prefetchQuery({
-      queryKey: queryKeys.me.economy(),
-      queryFn: meEconomyQueryFn,
-      staleTime: 1000 * 60 * 10,
     });
     void queryClient.prefetchQuery({
       queryKey: queryKeys.referrals.list(),

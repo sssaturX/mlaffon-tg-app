@@ -19,9 +19,15 @@ import {
   notifyStreakWatchSuccess,
 } from "../utils/streakNotifications";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
-import { fetchLiveBroadcast, fetchPredictionsActive } from "../query/fetchers";
-import { queryClient } from "../query/queryClient";
 import { queryKeys } from "../query/queryKeys";
+import type { PredictionStatePayload } from "../hooks/useRealtimeWebSocket";
+import {
+  applyPredictionStateToQuery,
+} from "../realtime/realtimeQueryUpdaters";
+import {
+  liveBroadcastWsOnlyQueryFn,
+  predictionsActiveWsOnlyQueryFn,
+} from "../realtime/wsOnlyQueryFns";
 
 const STREAK_TARGET = 7;
 
@@ -136,7 +142,7 @@ export default function Home({ me }: { me: MeResponse | null }) {
   const [watchingLive, setWatchingLive] = useState(false);
   const { data: live } = useQuery({
     queryKey: queryKeys.liveBroadcast.current(),
-    queryFn: fetchLiveBroadcast,
+    queryFn: liveBroadcastWsOnlyQueryFn,
     staleTime: Infinity,
     enabled: false,
   });
@@ -159,7 +165,7 @@ export default function Home({ me }: { me: MeResponse | null }) {
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
   const { data: prediction } = useQuery({
     queryKey: queryKeys.predictions.active(),
-    queryFn: fetchPredictionsActive,
+    queryFn: predictionsActiveWsOnlyQueryFn,
     staleTime: Infinity,
     enabled: false,
   });
@@ -262,9 +268,6 @@ export default function Home({ me }: { me: MeResponse | null }) {
         showToast("Предикт завершён: исход выбран", "info");
       }
       setPredictionOpen(false);
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.predictions.active(),
-      });
     }
     lastPredictionStatusRef.current = current;
   }, [prediction, showToast]);
@@ -441,7 +444,10 @@ export default function Home({ me }: { me: MeResponse | null }) {
       predictionCooldownTimerRef.current = null;
     }, 1500);
     setPredictionLoading(true);
-    const r = await api<{ ok: boolean }>("/api/v1/predictions/" + prediction.id + "/bet", {
+    const r = await api<{
+      ok: boolean;
+      prediction?: PredictionStatePayload;
+    }>("/api/v1/predictions/" + prediction.id + "/bet", {
       method: "POST",
       body: JSON.stringify({ option: predictionOption, amount }),
     });
@@ -449,6 +455,9 @@ export default function Home({ me }: { me: MeResponse | null }) {
     if (!r.ok) {
       showToast(formatApiError(r), "error");
       return;
+    }
+    if (r.data.prediction) {
+      applyPredictionStateToQuery(r.data.prediction);
     }
     showToast("Ставка принята", "success");
     setPredictionSuccess(true);
@@ -460,10 +469,6 @@ export default function Home({ me }: { me: MeResponse | null }) {
       predictionSuccessTimerRef.current = null;
     }, 1200);
     setPredictionAmount("");
-    await queryClient.fetchQuery({
-      queryKey: queryKeys.predictions.active(),
-      queryFn: fetchPredictionsActive,
-    });
   }
 
   return (

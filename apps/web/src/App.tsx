@@ -40,7 +40,6 @@ import {
   invalidateInflightMeRefresh,
 } from "./services/meService";
 import { prefetchRouteData } from "./query/prefetch";
-import { fetchDropActive, fetchLiveBroadcast } from "./query/fetchers";
 import { meEconomyQueryFn, meProfileQueryFn } from "./query/meQueryFns";
 import { appEventBus } from "./events/appEventBus";
 import { emitAppBootstrap } from "./meDomain/bootstrapOrchestrator";
@@ -60,7 +59,10 @@ import {
   applyLiveStartedToQuery,
   applyPredictionStateToQuery,
 } from "./realtime/realtimeQueryUpdaters";
-import { syncRealtimeHttpCatchUp } from "./realtime/syncRealtimeHttpCatchUp";
+import {
+  dropsActiveWsOnlyQueryFn,
+  liveBroadcastWsOnlyQueryFn,
+} from "./realtime/wsOnlyQueryFns";
 import {
   getStartParamFromInitData,
   looksLikeTelegramMiniApp,
@@ -394,7 +396,7 @@ function AppShell({
 
   const { data: liveForPlatform } = useQuery({
     queryKey: queryKeys.liveBroadcast.current(),
-    queryFn: fetchLiveBroadcast,
+    queryFn: liveBroadcastWsOnlyQueryFn,
     staleTime: Infinity,
     enabled: false,
   });
@@ -413,20 +415,6 @@ function AppShell({
   const docVisible = useDocumentVisible();
   /** Была скрыта вкладка — при возврате делаем один sync без ожидания таймера. */
   const tabWasHiddenRef = useRef(false);
-
-  /** Один HTTP catch-up для дропа + эфира + предикта; без дублей mount + WS onOpen за одну сессию. */
-  const lastRealtimeHttpSyncMsRef = useRef(0);
-  const syncRealtimeFromHttp = useCallback(
-    (opts?: { force?: boolean }) => {
-      if (!getToken()) return;
-      const now = Date.now();
-      const minMs = 2500;
-      if (!opts?.force && now - lastRealtimeHttpSyncMsRef.current < minMs) return;
-      lastRealtimeHttpSyncMsRef.current = now;
-      void syncRealtimeHttpCatchUp();
-    },
-    []
-  );
 
   useEffect(() => {
     if (!me || onboardingOpen || needsPlatformLink) return;
@@ -468,12 +456,6 @@ function AppShell({
       onInitialState: (data) => {
         applyWsInitialState(data);
       },
-      onBroadcastSeqGap: () => {
-        syncRealtimeFromHttp({ force: true });
-      },
-      onInitialStateMissing: () => {
-        syncRealtimeFromHttp({ force: true });
-      },
       onLegacyBalancePing: () => {
         invalidateInflightMeRefresh();
         appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
@@ -485,33 +467,10 @@ function AppShell({
 
   const { data: dropSnap } = useQuery({
     queryKey: queryKeys.drops.active(),
-    queryFn: fetchDropActive,
+    queryFn: dropsActiveWsOnlyQueryFn,
     staleTime: Infinity,
-    enabled: Boolean(me) && !needsPlatformLink && !realtimeConnected,
+    enabled: false,
   });
-
-  /**
-   * Раньше зависимость была `me` — любой патч профиля (в т.ч. после каждого `me_update` по WS)
-   * вызывал drops/active + live-broadcast + predictions/active. Достаточно привязать к `me.id`
-   * и не дублировать catch-up, пока живёт WebSocket (там initial_state + события).
-   */
-  useEffect(() => {
-    if (!me?.id || needsPlatformLink) return;
-    if (realtimeConnected) return;
-    if (!docVisible) return;
-    syncRealtimeFromHttp();
-    const id = window.setInterval(
-      () => void syncRealtimeFromHttp(),
-      90_000
-    );
-    return () => clearInterval(id);
-  }, [
-    me?.id,
-    needsPlatformLink,
-    realtimeConnected,
-    docVisible,
-    syncRealtimeFromHttp,
-  ]);
 
   useEffect(() => {
     if (needsPlatformLink) return;
@@ -522,9 +481,8 @@ function AppShell({
     if (tabWasHiddenRef.current) {
       tabWasHiddenRef.current = false;
       appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
-      syncRealtimeFromHttp({ force: true });
     }
-  }, [docVisible, needsPlatformLink, syncRealtimeFromHttp]);
+  }, [docVisible, needsPlatformLink]);
 
   /** Без WS — редкая ревалидация только экономики (не весь профиль). */
   useEffect(() => {
