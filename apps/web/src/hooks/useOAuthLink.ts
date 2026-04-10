@@ -7,10 +7,11 @@ export function useOAuthLink() {
   const { showToast } = useToast();
 
   async function startOAuth(platform: "twitch" | "kick") {
+    const returnContext = WebApp.initData ? "tma" : "web";
     const path =
       platform === "twitch"
-        ? "/api/v1/oauth/twitch/url"
-        : "/api/v1/oauth/kick/url";
+        ? `/api/v1/oauth/twitch/url?return_context=${returnContext}`
+        : `/api/v1/oauth/kick/url?return_context=${returnContext}`;
     const r = await api<{ url: string }>(path);
     if (!r.ok) {
       showToast(formatApiError(r), "error");

@@ -103,6 +103,22 @@ function hardStageDisplay(t: TaskDto): { cur: number; total: number } | null {
   return { cur, total: t.hardStageTotal };
 }
 
+/** Забрать награду / финальный «Получить» — не требует «сначала открой ссылку» для подсветки кнопки. */
+function primaryIsRewardClaim(task: TaskDto): boolean {
+  if (task.requiresEvidence && task.evidenceStageStatus === "approved") {
+    return true;
+  }
+  if (
+    typeof task.progressCurrent === "number" &&
+    typeof task.progressTarget === "number" &&
+    task.progressTarget > 0 &&
+    task.progressCurrent >= task.progressTarget
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function TaskDetailModal({
   task,
   open,
@@ -174,10 +190,20 @@ export function TaskDetailModal({
   }
 
   const canInteractPrimary = !claiming && !primaryDisabled;
+  const claimReady = primaryIsRewardClaim(task);
   const showLinkHint =
-    Boolean(actionUrl) && task.userStatus === "available" && canInteractPrimary && !openedLink;
+    Boolean(actionUrl) &&
+    task.userStatus === "available" &&
+    canInteractPrimary &&
+    !openedLink &&
+    !claimReady;
   const pulseVerify =
-    Boolean(actionUrl) && openedLink && task.userStatus === "available" && canInteractPrimary;
+    Boolean(actionUrl) &&
+    openedLink &&
+    task.userStatus === "available" &&
+    canInteractPrimary &&
+    !claimReady;
+  const primaryProminent = canInteractPrimary && claimReady;
 
   const content = (
     <div
@@ -364,7 +390,7 @@ export function TaskDetailModal({
 
               <button
                 type="button"
-                className={`task-detail-btn task-detail-btn--primary ${pulseVerify ? "task-detail-btn--primary--glow" : ""} ${showLinkHint ? "task-detail-btn--primary--soft" : ""}`}
+                className={`task-detail-btn task-detail-btn--primary ${primaryProminent ? "task-detail-btn--primary--prominent" : ""} ${pulseVerify ? "task-detail-btn--primary--glow" : ""} ${showLinkHint ? "task-detail-btn--primary--soft" : ""}`}
                 disabled={claiming || primaryDisabled}
                 onClick={onClaim}
               >

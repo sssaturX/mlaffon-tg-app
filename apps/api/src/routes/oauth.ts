@@ -21,9 +21,34 @@ import { kickValidateToken } from "../platforms/kick/api.js";
 import { markReferralPercentEligible } from "../services/referralEligibility.js";
 import { qualifyReferralOnPlatformLink } from "../services/referrals.js";
 
+type OauthRc = "tma" | "web";
+
 function webBase(): string {
   const raw = process.env.PUBLIC_WEB_URL ?? "http://localhost:5173";
   return raw.replace(/\/+$/, "");
+}
+
+function parseReturnContextQuery(v: unknown): OauthRc {
+  return v === "tma" ? "tma" : "web";
+}
+
+/** Значение в Redis для Twitch: JSON или legacy — только userId (старые state). */
+function parseTwitchOAuthRedis(
+  raw: string | null
+): { userId: string; rc: OauthRc } | null {
+  if (!raw?.trim()) return null;
+  try {
+    const o = JSON.parse(raw) as { userId?: unknown; rc?: unknown };
+    if (o && typeof o.userId === "string" && o.userId.length > 0) {
+      return {
+        userId: o.userId,
+        rc: o.rc === "tma" ? "tma" : "web",
+      };
+    }
+  } catch {
+    return { userId: raw, rc: "web" };
+  }
+  return null;
 }
 
 function twitchRedirectUri(): string | undefined {
@@ -35,12 +60,32 @@ function kickRedirectUri(): string | undefined {
 }
 
 /** Редирект на наш домен: страница `/oauth/:platform` (не только query у /profile). */
-function redirectSuccess(platform: "twitch" | "kick"): string {
-  return `${webBase()}/oauth/${platform}?connected=1`;
+function redirectSuccess(platform: "twitch" | "kick", rc: OauthRc = "web"): string {
+  const u = new URL(`${webBase()}/oauth/${platform}`);
+  u.searchParams.set("connected", "1");
+  u.searchParams.set("rc", rc);
+  return u.toString();
 }
 
-function redirectError(platform: "twitch" | "kick", msg: string): string {
-  return `${webBase()}/oauth/${platform}?error=${encodeURIComponent(msg)}`;
+function redirectError(
+  platform: "twitch" | "kick",
+  msg: string,
+  rc: OauthRc = "web"
+): string {
+  const u = new URL(`${webBase()}/oauth/${platform}`);
+  u.searchParams.set("error", msg);
+  u.searchParams.set("rc", rc);
+  return u.toString();
+}
+
+function parseKickRcOnly(raw: string | null): OauthRc {
+  if (!raw) return "web";
+  try {
+    const o = JSON.parse(raw) as { rc?: unknown };
+    return o.rc === "tma" ? "tma" : "web";
+  } catch {
+    return "web";
+  }
 }
 
 export async function registerOAuthRoutes(app: FastifyInstance) {
@@ -56,8 +101,15 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
         },
       });
     }
+    const q = req.query as { return_context?: string };
+    const rc = parseReturnContextQuery(q.return_context);
     const state = nanoid(32);
-    await getRedis().set(`oauth:tw:${state}`, userId, "EX", 600);
+    await getRedis().set(
+      `oauth:tw:${state}`,
+      JSON.stringify({ userId, rc }),
+      "EX",
+      600
+    );
     const url = buildTwitchAuthorizeUrl({ state, redirectUri });
     return { url, state };
   });
@@ -72,34 +124,45 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
       error?: string;
       error_description?: string;
     };
+
+    if (!q.state) {
+      return reply.redirect(redirectError("twitch", "bad_state"));
+    }
+
+    const rawTw = await getRedis().get(`oauth:tw:${q.state}`);
+    await getRedis().del(`oauth:tw:${q.state}`);
+    const twParsed = parseTwitchOAuthRedis(rawTw);
+    const rcFromState: OauthRc = twParsed?.rc ?? "web";
+
     if (q.error) {
       return reply.redirect(
         redirectError(
           "twitch",
-          q.error_description ?? q.error ?? "oauth_denied"
+          q.error_description ?? q.error ?? "oauth_denied",
+          rcFromState
         )
       );
     }
-    if (!q.code || !q.state) {
-      return reply.redirect(redirectError("twitch", "missing_code"));
+    if (!q.code) {
+      return reply.redirect(
+        redirectError("twitch", "missing_code", rcFromState)
+      );
     }
-
-    const userId = await getRedis().get(`oauth:tw:${q.state}`);
-    await getRedis().del(`oauth:tw:${q.state}`);
-    if (!userId) {
-      return reply.redirect(redirectError("twitch", "bad_state"));
+    if (!twParsed) {
+      return reply.redirect(redirectError("twitch", "bad_state", rcFromState));
     }
+    const { userId, rc: oauthRc } = twParsed;
 
     const redirectUri = twitchRedirectUri();
     if (!redirectUri) {
-      return reply.redirect(redirectError("twitch", "server"));
+      return reply.redirect(redirectError("twitch", "server", oauthRc));
     }
 
     try {
       const tokens = await exchangeTwitchCode(q.code, redirectUri);
       const me = await helixGetOwnUser(tokens.access_token);
       if (!me) {
-        return reply.redirect(redirectError("twitch", "helix_user"));
+        return reply.redirect(redirectError("twitch", "helix_user", oauthRc));
       }
 
       const [twitchTaken] = await db
@@ -117,7 +180,8 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
         return reply.redirect(
           redirectError(
             "twitch",
-            "Этот Twitch уже привязан к другому аккаунту Telegram"
+            "Этот Twitch уже привязан к другому аккаунту Telegram",
+            oauthRc
           )
         );
       }
@@ -158,10 +222,12 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
 
       await markReferralPercentEligible(userId);
       await qualifyReferralOnPlatformLink(userId);
-      return reply.redirect(redirectSuccess("twitch"));
+      return reply.redirect(redirectSuccess("twitch", oauthRc));
     } catch (e) {
       app.log.error(e);
-      return reply.redirect(redirectError("twitch", "token_exchange"));
+      return reply.redirect(
+        redirectError("twitch", "token_exchange", oauthRc)
+      );
     }
   });
 
@@ -177,11 +243,13 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
         },
       });
     }
+    const kq = req.query as { return_context?: string };
+    const rc = parseReturnContextQuery(kq.return_context);
     const state = nanoid(32);
     const { verifier, challenge } = generatePkcePair();
     await getRedis().set(
       `oauth:kick:${state}`,
-      JSON.stringify({ userId, codeVerifier: verifier }),
+      JSON.stringify({ userId, codeVerifier: verifier, rc }),
       "EX",
       600
     );
@@ -198,28 +266,43 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
       return reply.redirect(redirectError("kick", "rate_limited"));
     }
     const q = req.query as { code?: string; state?: string; error?: string };
-    if (q.error) {
-      return reply.redirect(redirectError("kick", q.error));
-    }
-    if (!q.code || !q.state) {
-      return reply.redirect(redirectError("kick", "missing_code"));
+
+    if (!q.state) {
+      return reply.redirect(redirectError("kick", "bad_state"));
     }
 
     const raw = await getRedis().get(`oauth:kick:${q.state}`);
     await getRedis().del(`oauth:kick:${q.state}`);
+    const rcFromState = parseKickRcOnly(raw);
+
+    if (q.error) {
+      return reply.redirect(redirectError("kick", q.error, rcFromState));
+    }
+    if (!q.code) {
+      return reply.redirect(
+        redirectError("kick", "missing_code", rcFromState)
+      );
+    }
     if (!raw) {
-      return reply.redirect(redirectError("kick", "bad_state"));
+      return reply.redirect(redirectError("kick", "bad_state", rcFromState));
     }
-    let parsed: { userId: string; codeVerifier: string };
+
+    let parsed: { userId: string; codeVerifier: string; rc?: string };
     try {
-      parsed = JSON.parse(raw) as { userId: string; codeVerifier: string };
+      parsed = JSON.parse(raw) as {
+        userId: string;
+        codeVerifier: string;
+        rc?: string;
+      };
     } catch {
-      return reply.redirect(redirectError("kick", "bad_state"));
+      return reply.redirect(redirectError("kick", "bad_state", rcFromState));
     }
+
+    const oauthRc: OauthRc = parsed.rc === "tma" ? "tma" : "web";
 
     const redirectUri = kickRedirectUri();
     if (!redirectUri) {
-      return reply.redirect(redirectError("kick", "server"));
+      return reply.redirect(redirectError("kick", "server", oauthRc));
     }
 
     try {
@@ -264,7 +347,8 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
           return reply.redirect(
             redirectError(
               "kick",
-              "Этот Kick уже привязан к другому аккаунту Telegram"
+              "Этот Kick уже привязан к другому аккаунту Telegram",
+              oauthRc
             )
           );
         }
@@ -299,10 +383,12 @@ export async function registerOAuthRoutes(app: FastifyInstance) {
 
       await markReferralPercentEligible(parsed.userId);
       await qualifyReferralOnPlatformLink(parsed.userId);
-      return reply.redirect(redirectSuccess("kick"));
+      return reply.redirect(redirectSuccess("kick", oauthRc));
     } catch (e) {
       app.log.error(e);
-      return reply.redirect(redirectError("kick", "token_exchange"));
+      return reply.redirect(
+        redirectError("kick", "token_exchange", oauthRc)
+      );
     }
   });
 }
