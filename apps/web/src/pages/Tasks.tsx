@@ -6,9 +6,15 @@ import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { HelpSheetModal } from "../components/HelpSheetModal";
 import { TaskDetailModal } from "../components/TaskDetailModal";
-import { useInvalidateTasks, useTasks } from "../hooks/queries/useTasks";
+import {
+  platformQueryParamTasks,
+  useInvalidateTasks,
+  useTasks,
+} from "../hooks/queries/useTasks";
 import { ApiQueryError } from "../query/apiQueryError";
 import { appEventBus } from "../events/appEventBus";
+import { queryClient } from "../query/queryClient";
+import { queryKeys } from "../query/queryKeys";
 
 const SECTION_ORDER = [
   "black_russia",
@@ -90,8 +96,7 @@ function taskKindPill(t: TaskDto): { label: string; variant: "sub" | "project" |
 }
 
 export default function Tasks() {
-  const { patchMe, syncMeFromNetwork, reconcileFromServer } =
-    useMeEconomySync();
+  const { patchMe, syncMeFromNetwork } = useMeEconomySync();
   const { activePlatform } = useActivePlatform();
   const invalidateTasks = useInvalidateTasks(activePlatform);
   const tasksQ = useTasks(activePlatform);
@@ -171,7 +176,6 @@ export default function Tasks() {
           coinsTwitch: r.data.coinsTwitch,
           coinsKick: r.data.coinsKick,
         }));
-        reconcileFromServer();
       } else {
         void syncMeFromNetwork();
       }
@@ -190,14 +194,38 @@ export default function Tasks() {
       });
       setEvidenceUploadingId(null);
       if (r.ok) {
-        setMsg("Скрины загружены. Дождитесь проверки админом.");
+        setMsg(
+          "Скрины отправлены — задание на рассмотрении. После одобрения админа можно забрать награду и перейти к следующему этапу."
+        );
         setEvidenceByTask((prev) => ({ ...prev, [task.id]: null }));
+        const pk = platformQueryParamTasks(activePlatform);
+        queryClient.setQueryData<TaskDto[]>(queryKeys.tasks.list(pk), (old) => {
+          if (!old) return old;
+          return old.map((x) =>
+            x.id === task.id
+              ? {
+                  ...x,
+                  evidenceStageStatus: "submitted" as const,
+                  evidenceAdminNote: null,
+                }
+              : x
+          );
+        });
+        setDetailTask((prev) =>
+          prev?.id === task.id
+            ? {
+                ...prev,
+                evidenceStageStatus: "submitted",
+                evidenceAdminNote: null,
+              }
+            : prev
+        );
         invalidateTasks();
         return;
       }
       setMsg(formatApiError(r));
     },
-    [invalidateTasks]
+    [activePlatform, invalidateTasks]
   );
 
   async function submitEvidence(task: TaskDto) {
@@ -312,6 +340,20 @@ export default function Tasks() {
               ) : null}
               {done ? (
                 <span className="pill pill--accent pill--compact">Готово</span>
+              ) : null}
+              {!done &&
+              t.requiresEvidence &&
+              t.evidenceStageStatus === "submitted" ? (
+                <span className="pill pill--task-pending pill--compact">
+                  На рассмотрении
+                </span>
+              ) : null}
+              {!done &&
+              t.validationType === "api" &&
+              t.userStatus === "pending" ? (
+                <span className="pill pill--task-pending pill--compact">
+                  Проверка…
+                </span>
               ) : null}
             </div>
             <div className="task-card-preview__reward">

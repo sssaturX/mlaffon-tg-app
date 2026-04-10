@@ -4406,6 +4406,12 @@ button.primary.auth-submit:disabled {
   border: 1px solid rgba(148, 163, 184, 0.22);
 }
 
+.pill--task-pending {
+  background: rgba(251, 191, 36, 0.14);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
 .pill--compact {
   padding: 3px 8px;
   font-size: 10px;
@@ -5244,9 +5250,21 @@ button.primary.auth-submit:disabled {
 }
 
 .task-detail-btn--secondary {
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.task-detail-btn--secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.task-detail-btn--secondary-inline {
+  width: 100%;
+  min-height: 46px;
+  border-radius: 12px;
+  font-weight: 600;
 }
 
 .task-detail-btn--primary {
@@ -5261,6 +5279,12 @@ button.primary.auth-submit:disabled {
 
 .task-detail-btn--primary:active:not(:disabled) {
   transform: scale(0.98);
+}
+
+.task-detail-btn--primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
 }
 
 .task-detail-btn--primary--soft:not(:disabled) {
@@ -5294,6 +5318,49 @@ button.primary.auth-submit:disabled {
   font-size: 12px;
   line-height: 1.4;
   text-align: center;
+}
+
+.task-detail-pending-banner {
+  padding: 14px 14px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  margin-bottom: 14px;
+}
+
+.task-detail-pending-banner__title {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  color: #fcd34d;
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+
+.task-detail-pending-banner__text {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.task-detail-replace-evidence {
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  padding: 8px 10px 10px;
+  margin-bottom: 4px;
+}
+
+.task-detail-replace-evidence__summary {
+  cursor: pointer;
+  font-size: 13px;
+  list-style: none;
+}
+
+.task-detail-replace-evidence__summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-detail-replace-evidence[open] .task-detail-replace-evidence__summary {
+  margin-bottom: 10px;
 }
 
 .help-sheet-backdrop {

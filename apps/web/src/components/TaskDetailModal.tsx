@@ -217,9 +217,6 @@ export function TaskDetailModal({
                 {(task.evidenceStageStatus ?? "none") === "none"
                   ? "Загрузите скрины по примерам и дождитесь проверки админа."
                   : null}
-                {task.evidenceStageStatus === "submitted"
-                  ? "Скрины на проверке. После одобрения нажми «Получить награду». Можно заменить загрузкой новых файлов."
-                  : null}
                 {task.evidenceStageStatus === "approved"
                   ? "Скрины приняты — забери награду кнопкой ниже."
                   : null}
@@ -231,30 +228,77 @@ export function TaskDetailModal({
               </p>
             ) : null}
 
-            {task.requiresEvidence && !done && task.evidenceStageStatus !== "approved" ? (
-              <div className="task-card__evidence task-detail-modal__block">
-                <label className="task-card__file-label muted" htmlFor="task-detail-evidence">
-                  Скриншоты (до 4, до 2,5 МБ)
-                </label>
-                <input
-                  id="task-detail-evidence"
-                  type="file"
-                  accept="image/*,.heic,.heif"
-                  multiple
-                  className="task-card__file"
-                  onChange={(e) => onEvidenceFilesChange(e.target.files)}
-                />
-                <button
-                  type="button"
-                  className="secondary task-card__btn-row"
-                  disabled={
-                    evidenceUploading || !evidenceFiles || evidenceFiles.length === 0
-                  }
-                  onClick={() => void onSubmitEvidence()}
-                >
-                  {evidenceUploading ? "Загрузка…" : "Загрузить скрины"}
-                </button>
+            {task.requiresEvidence &&
+            !done &&
+            task.evidenceStageStatus === "submitted" ? (
+              <div className="task-detail-pending-banner" role="status">
+                <span className="task-detail-pending-banner__title">На рассмотрении</span>
+                <p className="task-detail-pending-banner__text muted m-0">
+                  Админ проверит скрины. Список заданий обновляется сам — как только
+                  статус сменится, станет доступна кнопка «Получить награду» для этого
+                  этапа, затем можно перейти к следующему.
+                </p>
               </div>
+            ) : null}
+
+            {task.requiresEvidence && !done && task.evidenceStageStatus !== "approved" ? (
+              task.evidenceStageStatus === "submitted" ? (
+                <details className="task-detail-replace-evidence task-detail-modal__block">
+                  <summary className="task-detail-replace-evidence__summary muted">
+                    Заменить скрины (необязательно)
+                  </summary>
+                  <div className="task-card__evidence task-detail-modal__block">
+                    <label
+                      className="task-card__file-label muted"
+                      htmlFor="task-detail-evidence-replace"
+                    >
+                      Скриншоты (до 4, до 2,5 МБ)
+                    </label>
+                    <input
+                      id="task-detail-evidence-replace"
+                      type="file"
+                      accept="image/*,.heic,.heif"
+                      multiple
+                      className="task-card__file"
+                      onChange={(e) => onEvidenceFilesChange(e.target.files)}
+                    />
+                    <button
+                      type="button"
+                      className="secondary task-card__btn-row task-detail-btn--secondary-inline"
+                      disabled={
+                        evidenceUploading || !evidenceFiles || evidenceFiles.length === 0
+                      }
+                      onClick={() => void onSubmitEvidence()}
+                    >
+                      {evidenceUploading ? "Загрузка…" : "Загрузить снова"}
+                    </button>
+                  </div>
+                </details>
+              ) : (
+                <div className="task-card__evidence task-detail-modal__block">
+                  <label className="task-card__file-label muted" htmlFor="task-detail-evidence">
+                    Скриншоты (до 4, до 2,5 МБ)
+                  </label>
+                  <input
+                    id="task-detail-evidence"
+                    type="file"
+                    accept="image/*,.heic,.heif"
+                    multiple
+                    className="task-card__file"
+                    onChange={(e) => onEvidenceFilesChange(e.target.files)}
+                  />
+                  <button
+                    type="button"
+                    className="secondary task-card__btn-row task-detail-btn--secondary-inline"
+                    disabled={
+                      evidenceUploading || !evidenceFiles || evidenceFiles.length === 0
+                    }
+                    onClick={() => void onSubmitEvidence()}
+                  >
+                    {evidenceUploading ? "Загрузка…" : "Загрузить скрины"}
+                  </button>
+                </div>
+              )
             ) : null}
 
             {task.lastError ? <p className="err task-card__err">{task.lastError}</p> : null}

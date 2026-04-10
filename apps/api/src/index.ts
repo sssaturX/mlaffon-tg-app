@@ -784,7 +784,13 @@ app.post("/api/v1/tasks/:id/claim", async (req, reply) => {
       jobId: res.jobId,
     });
   }
-  return { ok: true, coins: res.coins, reward: res.reward };
+  return {
+    ok: true,
+    coins: res.coins,
+    coinsTwitch: res.coinsTwitch,
+    coinsKick: res.coinsKick,
+    reward: res.reward,
+  };
 });
 
 app.get("/api/v1/leaderboard", async (req, reply) => {

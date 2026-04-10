@@ -9,6 +9,7 @@ import {
   fetchReferrals,
   fetchTasks,
 } from "./fetchers";
+import { platformQueryParamTasks } from "../hooks/queries/useTasks";
 import { meProfileQueryFn } from "./meQueryFns";
 
 /** Prefetch по намерению навигации (hover по табам). */
@@ -31,9 +32,10 @@ export function prefetchRouteData(pathname: string): void {
   }
 
   if (pathname.startsWith("/tasks")) {
+    const taskPlatform = platformQueryParamTasks(platform);
     void queryClient.prefetchQuery({
-      queryKey: queryKeys.tasks.list(platform),
-      queryFn: () => fetchTasks(platform),
+      queryKey: queryKeys.tasks.list(taskPlatform),
+      queryFn: () => fetchTasks(taskPlatform),
       staleTime: 1000 * 60 * 5,
     });
     return;
