@@ -23,6 +23,7 @@ import {
 import { useToast } from "../context/ToastContext";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { UserPhotoAvatar } from "../components/UserPhotoAvatar";
 import { useOAuthLink } from "../hooks/useOAuthLink";
 import { PushNotificationsRow } from "../components/PushNotificationsRow";
 import {
@@ -205,11 +206,7 @@ export default function Profile({
 
       <div className="card card--flush">
         <div className="profile-hero">
-          {me.photoUrl ? (
-            <img className="avatar avatar-ring" src={me.photoUrl} alt="" />
-          ) : (
-            <div className="avatar avatar-ring" />
-          )}
+          <UserPhotoAvatar src={me.photoUrl} className="avatar avatar-ring" />
           <div className="profile-hero__text">
             <h2>{displayName}</h2>
             <p className="muted profile-hero__handle">{handle}</p>
@@ -301,12 +298,11 @@ export default function Profile({
             <div className="profile-platform-line">
               {me.platforms.twitch.status === "connected" &&
                 me.platforms.twitch.avatarUrl && (
-                  <img
+                  <UserPhotoAvatar
                     src={me.platforms.twitch.avatarUrl}
-                    alt=""
+                    className="platform-avatar--sm"
                     width={36}
                     height={36}
-                    className="platform-avatar--sm"
                   />
                 )}
               <div>
@@ -342,12 +338,11 @@ export default function Profile({
             <div className="profile-platform-line">
               {me.platforms.kick.status === "connected" &&
                 me.platforms.kick.avatarUrl && (
-                  <img
+                  <UserPhotoAvatar
                     src={me.platforms.kick.avatarUrl}
-                    alt=""
+                    className="platform-avatar--sm"
                     width={36}
                     height={36}
-                    className="platform-avatar--sm"
                   />
                 )}
               <div>

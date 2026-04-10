@@ -5,6 +5,7 @@ import { setToken } from "../api";
 import { useOAuthLink } from "../hooks/useOAuthLink";
 import { appEventBus } from "../events/appEventBus";
 import { looksLikeTelegramMiniApp } from "../utils/waitForTelegramInitData";
+import { UserPhotoAvatar } from "../components/UserPhotoAvatar";
 
 const creatorName =
   import.meta.env.VITE_CREATOR_DISPLAY_NAME?.trim() || "Стример";
@@ -73,19 +74,11 @@ export default function WelcomeGate({ me }: { me: MeResponse }) {
       <div className="welcome-gate__scroll">
         <div className="card welcome-gate__creator">
           <div className="welcome-gate__creator-row">
-            {creatorAvatar ? (
-              <img
-                src={creatorAvatar}
-                alt=""
-                className="welcome-gate__avatar welcome-gate__avatar--lg"
-                loading="lazy"
-              />
-            ) : (
-              <div
-                className="welcome-gate__avatar welcome-gate__avatar--lg welcome-gate__avatar--ph"
-                aria-hidden
-              />
-            )}
+            <UserPhotoAvatar
+              src={creatorAvatar || undefined}
+              className="welcome-gate__avatar welcome-gate__avatar--lg"
+              placeholderClassName="welcome-gate__avatar--ph"
+            />
             <div className="welcome-gate__creator-meta">
               <div className="welcome-gate__creator-name">{creatorName}</div>
               {creatorKickUrl ? (
@@ -110,19 +103,11 @@ export default function WelcomeGate({ me }: { me: MeResponse }) {
 
         <div className="card welcome-gate__user">
           <div className="welcome-gate__creator-row">
-            {me.photoUrl ? (
-              <img
-                src={me.photoUrl}
-                alt=""
-                className="welcome-gate__avatar"
-                loading="lazy"
-              />
-            ) : (
-              <div
-                className="welcome-gate__avatar welcome-gate__avatar--ph"
-                aria-hidden
-              />
-            )}
+            <UserPhotoAvatar
+              src={me.photoUrl}
+              className="welcome-gate__avatar"
+              placeholderClassName="welcome-gate__avatar--ph"
+            />
             <div className="welcome-gate__creator-meta">
               <div className="welcome-gate__user-name">{userLabel}</div>
               <div className="welcome-gate__user-handle muted">{userHandle}</div>

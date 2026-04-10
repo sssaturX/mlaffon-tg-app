@@ -58,16 +58,27 @@ export function getConnectedUserIds(): string[] {
   return Array.from(userSockets.keys());
 }
 
+function extractWsToken(pathAndQuery: string): string | null {
+  try {
+    const u = new URL(pathAndQuery, "http://localhost");
+    const t = u.searchParams.get("token");
+    if (t) return t;
+  } catch {
+    /* ignore */
+  }
+  const m = pathAndQuery.match(/[?&]token=([^&]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 export async function handleRealtimeWsConnection(
   socket: WebSocket,
-  reqUrl: string
+  pathAndQuery: string
 ): Promise<void> {
   socket.on("message", () => {
     /* ignore */
   });
 
-  const url = new URL(reqUrl, "http://localhost");
-  const token = url.searchParams.get("token");
+  const token = extractWsToken(pathAndQuery);
   if (!token) {
     socket.close(4001, "missing token");
     return;

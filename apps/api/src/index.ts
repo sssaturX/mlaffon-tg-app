@@ -119,7 +119,9 @@ await app.register(websocket);
 await registerAuth(app);
 
 app.get("/api/v1/ws", { websocket: true }, (socket, req) => {
-  void handleRealtimeWsConnection(socket, req.url);
+  /** `req.url` иногда без query за прокси; у Node `raw.url` — путь + `?token=`. */
+  const pathAndQuery = req.raw.url ?? req.url;
+  void handleRealtimeWsConnection(socket, pathAndQuery);
 });
 await registerOAuthRoutes(app);
 await registerAdminRoutes(app);

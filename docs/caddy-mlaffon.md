@@ -38,7 +38,7 @@ sudo cp /opt/mlaffon/mlaffon-tg-app/deploy/Caddyfile /etc/caddy/Caddyfile
 ```
 
 В **[deploy/Caddyfile](../deploy/Caddyfile)** указан `root` на  
-`/opt/mlaffon/mlaffon-tg-app/apps/web/dist`.
+`/opt/mlaffon/mlaffon-tg-app/apps/web/dist`. Для **WebSocket** (`/api/v1/ws`) у прокси задано `flush_interval -1` — иначе в браузере часто видно обрыв соединения.
 
 Проверка, **первый запуск** (если `caddy.service is not active`):
 

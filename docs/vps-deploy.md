@@ -267,6 +267,19 @@ server {
     root /opt/mlaffon/mlaffon-tg-app/apps/web/dist;
     index index.html;
 
+    # WebSocket должен быть до общего /api/ (иначе не пробросится Upgrade).
+    location ^~ /api/v1/ws {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400s;
+    }
+
     location /api/ {
         proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;
