@@ -93,7 +93,11 @@ const authRouteRateHeaders = {
   "retry-after": true,
 } as const;
 
+/** Base64-скрины в JSON; дефолт Fastify 1 МБ режет загрузку evidence. */
+const JSON_BODY_LIMIT_BYTES = 32 * 1024 * 1024;
+
 const app = Fastify({
+  bodyLimit: JSON_BODY_LIMIT_BYTES,
   logger: {
     level: process.env.LOG_LEVEL ?? "info",
     serializers: {
@@ -1073,7 +1077,10 @@ const taskEvidenceBody = z.object({
 
 function isValidEvidenceImage(raw: string): boolean {
   if (/^https?:\/\//i.test(raw)) return raw.length <= 2000;
-  return /^data:image\/(png|jpeg|jpg|webp);base64,/i.test(raw) && raw.length <= 4_000_000;
+  const dataUrl =
+    /^data:image\/(png|pjpeg|jpeg|jpg|jpe|webp|heic|heif|gif);base64,/i.test(raw);
+  /** ~2.5 МБ файл → data URL ≈ 3.5 МБ строки; запас на 4 скрина в одном запросе — bodyLimit. */
+  return dataUrl && raw.length <= 6_500_000;
 }
 
 app.post("/api/v1/tasks/:id/evidence", async (req, reply) => {

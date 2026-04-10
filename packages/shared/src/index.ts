@@ -11,18 +11,10 @@ export interface TaskHelpHint {
   icon?: TaskHelpIcon;
 }
 
-/** Примеры скринов для ручных заданий с доказательствами (meta.evidenceExamples). */
-export interface TaskEvidenceExampleItem {
-  /** Подпись под миниатюрой. */
-  label?: string;
-  /** URL или путь `/…` относительно мини-приложения. */
-  imageUrl: string;
-}
-
-export interface TaskEvidenceExamples {
-  /** Текст свёрнутой строки («Примеры скриншотов»). */
-  title: string;
-  items: TaskEvidenceExampleItem[];
+/** Примеры скринов для HARD-заданий (URL от корня сайта, например /tasks/br/…). */
+export interface TaskEvidenceExample {
+  src: string;
+  caption?: string;
 }
 
 export interface TaskDto {
@@ -46,8 +38,6 @@ export interface TaskDto {
   verifyLabel?: string | null;
   /** Справка в стиле отдельной модалки (из meta.help). */
   help?: TaskHelpHint | null;
-  /** Сворачиваемые примеры скриншотов для этапа (из meta.evidenceExamples). */
-  evidenceExamples?: TaskEvidenceExamples | null;
   /** Единый прогресс для цепочек (invite/streams/messages/subscriptions). */
   progressCurrent?: number;
   progressTarget?: number;
@@ -63,6 +53,13 @@ export interface TaskDto {
   uiSection?: string | null;
   /** Порядок внутри группы (из meta.uiOrder). */
   uiOrder?: number;
+  /** Нужны скрины + модерация перед получением награды. */
+  requiresEvidence?: boolean;
+  evidenceExamples?: TaskEvidenceExample[];
+  /** Статус скринов для этапа этого задания (stage = hardStageCurrent+1). */
+  evidenceStageStatus?: "none" | "submitted" | "approved" | "rejected";
+  /** Комментарий админа при отклонении. */
+  evidenceAdminNote?: string | null;
 }
 
 export type UserTaskStatus =

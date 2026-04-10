@@ -19,7 +19,7 @@ import { applyCredit, applyCreditSplit } from "./economy.js";
 import { reverseTaskRewardCredit } from "./taskRewardCompensation.js";
 import { getTaskVerifyQueue } from "../queue/bullmq.js";
 import type { TaskDto, UserTaskStatus } from "shared";
-import { extractTaskUiFields } from "./taskUiMeta.js";
+import { extractEvidenceExamples, extractTaskUiFields } from "./taskUiMeta.js";
 import { verifyPlatformTask } from "./taskVerifyLogic.js";
 import { getActiveTasksCached } from "./taskCatalogCache.js";
 
@@ -49,6 +49,11 @@ function asString(v: unknown): string | null {
 
 function asNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function evidenceStageFromMeta(meta: Record<string, unknown>): number {
+  const stageRaw = asNumber(meta.hardStageCurrent);
+  return stageRaw != null ? Math.max(1, Math.floor(stageRaw) + 1) : 1;
 }
 
 function readProgress(
@@ -359,6 +364,36 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     return p;
   };
 
+  const evidenceTaskIds = selectedTasks
+    .filter((t) => toTaskMeta(t.meta).requiresEvidence === true)
+    .map((t) => t.id);
+  const evidenceByTaskStage = new Map<
+    string,
+    { status: string; adminNote: string | null }
+  >();
+  if (evidenceTaskIds.length > 0) {
+    const evRows = await db
+      .select({
+        taskId: taskEvidence.taskId,
+        stage: taskEvidence.stage,
+        status: taskEvidence.status,
+        adminNote: taskEvidence.adminNote,
+      })
+      .from(taskEvidence)
+      .where(
+        and(
+          eq(taskEvidence.userId, userId),
+          inArray(taskEvidence.taskId, evidenceTaskIds)
+        )
+      );
+    for (const e of evRows) {
+      evidenceByTaskStage.set(`${e.taskId}:${e.stage}`, {
+        status: e.status,
+        adminNote: e.adminNote ?? null,
+      });
+    }
+  }
+
   const rows: TaskDto[] = [];
   for (const t of selectedTasks) {
     const pk = periodKeyForTask(t);
@@ -386,6 +421,21 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     const ui = extractTaskUiFields(meta);
     const uiSection = asString(meta.uiSection);
     const uiOrder = asNumber(meta.uiOrder);
+    const requiresEvidence = meta.requiresEvidence === true;
+    const evidenceExamples = extractEvidenceExamples(meta);
+    let evidenceStageStatus: TaskDto["evidenceStageStatus"];
+    let evidenceAdminNote: string | null | undefined;
+    if (requiresEvidence) {
+      const st = evidenceStageFromMeta(meta);
+      const ev = evidenceByTaskStage.get(`${t.id}:${st}`);
+      if (!ev) evidenceStageStatus = "none";
+      else if (ev.status === "submitted") evidenceStageStatus = "submitted";
+      else if (ev.status === "approved") evidenceStageStatus = "approved";
+      else if (ev.status === "rejected") evidenceStageStatus = "rejected";
+      else evidenceStageStatus = "none";
+      if (evidenceStageStatus === "rejected" && ev?.adminNote)
+        evidenceAdminNote = ev.adminNote;
+    }
     rows.push({
       id: t.id,
       title: t.title,
@@ -402,7 +452,6 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       actionLabel: ui.actionLabel,
       verifyLabel: ui.verifyLabel,
       help: ui.help,
-      evidenceExamples: ui.evidenceExamples,
       progressCurrent: progress?.current,
       progressTarget: progress?.target,
       progressLabel: progress?.label ?? null,
@@ -412,6 +461,11 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       hardStageTotal: hardStageTotal != null ? Math.floor(hardStageTotal) : undefined,
       uiSection: uiSection ?? null,
       uiOrder: uiOrder != null ? Math.floor(uiOrder) : undefined,
+      ...(requiresEvidence ? { requiresEvidence: true } : {}),
+      ...(evidenceExamples?.length ? { evidenceExamples } : {}),
+      ...(requiresEvidence
+        ? { evidenceStageStatus, evidenceAdminNote: evidenceAdminNote ?? null }
+        : {}),
     });
   }
   rows.sort((a, b) => {
@@ -493,8 +547,7 @@ export async function claimTask(
 
   const meta = toTaskMeta(t.meta);
   if (meta.requiresEvidence === true) {
-    const stageRaw = asNumber(meta.hardStageCurrent);
-    const stage = stageRaw != null ? Math.max(1, Math.floor(stageRaw) + 1) : 1;
+    const stage = evidenceStageFromMeta(meta);
     const [ev] = await db
       .select()
       .from(taskEvidence)

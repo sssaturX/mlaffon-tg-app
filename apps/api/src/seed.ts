@@ -173,22 +173,18 @@ async function seed() {
         requiresEvidence: true,
         actionUrl: "https://blackrussia.online/registration?n=mlaffon",
         actionLabel: "Регистрация Black Russia",
-        verifyLabel: "Получить награду",
         uiSection: "black_russia",
         uiOrder: 0,
-        evidenceExamples: {
-          title: "Примеры скриншотов (этап 1)",
-          items: [
-            {
-              label: "Регистрация / сайт или аккаунт",
-              imageUrl: "/br-examples/stage1-register.svg",
-            },
-            {
-              label: "Ник, сервер, что ты в игре",
-              imageUrl: "/br-examples/stage1-ingame.svg",
-            },
-          ],
-        },
+        evidenceExamples: [
+          {
+            src: "/tasks/br/stage1-registration.svg",
+            caption: "Пример 1: регистрация / аккаунт по ссылке",
+          },
+          {
+            src: "/tasks/br/stage1-ingame.svg",
+            caption: "Пример 2: ник, сервер, в игре",
+          },
+        ],
       },
     },
     {
@@ -207,22 +203,14 @@ async function seed() {
         hardStageCurrent: 1,
         hardStageTotal: 2,
         requiresEvidence: true,
-        verifyLabel: "Получить награду",
         uiSection: "black_russia",
         uiOrder: 1,
-        evidenceExamples: {
-          title: "Примеры скриншотов (этап 2)",
-          items: [
-            {
-              label: "5 уровень, ник и сервер видны",
-              imageUrl: "/br-examples/stage2-level5.svg",
-            },
-            {
-              label: "В семье во время стрима",
-              imageUrl: "/br-examples/stage2-family.svg",
-            },
-          ],
-        },
+        evidenceExamples: [
+          {
+            src: "/tasks/br/stage2-level.svg",
+            caption: "Пример: уровень 5, ник и сервер хорошо видны",
+          },
+        ],
       },
     },
     {

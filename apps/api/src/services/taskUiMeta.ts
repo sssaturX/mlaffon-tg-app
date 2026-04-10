@@ -1,9 +1,4 @@
-import type {
-  TaskEvidenceExampleItem,
-  TaskEvidenceExamples,
-  TaskHelpHint,
-  TaskHelpIcon,
-} from "shared";
+import type { TaskEvidenceExample, TaskHelpHint, TaskHelpIcon } from "shared";
 
 const HELP_ICONS: TaskHelpIcon[] = ["tv", "gift", "help", "radio"];
 
@@ -11,41 +6,11 @@ function isHelpIcon(v: unknown): v is TaskHelpIcon {
   return typeof v === "string" && HELP_ICONS.includes(v as TaskHelpIcon);
 }
 
-function parseEvidenceExamples(
-  raw: unknown
-): TaskEvidenceExamples | null {
-  if (!raw || typeof raw !== "object") return null;
-  const o = raw as Record<string, unknown>;
-  const title =
-    typeof o.title === "string" && o.title.trim()
-      ? o.title.trim()
-      : "Примеры скриншотов";
-  const arr = o.items;
-  if (!Array.isArray(arr)) return null;
-  const items: TaskEvidenceExampleItem[] = [];
-  for (const it of arr) {
-    if (!it || typeof it !== "object") continue;
-    const r = it as Record<string, unknown>;
-    const imageUrl =
-      typeof r.imageUrl === "string" && r.imageUrl.trim()
-        ? r.imageUrl.trim()
-        : null;
-    if (!imageUrl) continue;
-    const label =
-      typeof r.label === "string" && r.label.trim()
-        ? r.label.trim()
-        : undefined;
-    items.push(label ? { label, imageUrl } : { imageUrl });
-  }
-  return items.length > 0 ? { title, items } : null;
-}
-
 export function extractTaskUiFields(meta: Record<string, unknown> | null): {
   actionUrl: string | null;
   actionLabel: string | null;
   verifyLabel: string | null;
   help: TaskHelpHint | null;
-  evidenceExamples: TaskEvidenceExamples | null;
 } {
   if (!meta) {
     return {
@@ -53,7 +18,6 @@ export function extractTaskUiFields(meta: Record<string, unknown> | null): {
       actionLabel: null,
       verifyLabel: null,
       help: null,
-      evidenceExamples: null,
     };
   }
   const actionUrl = typeof meta.actionUrl === "string" ? meta.actionUrl : null;
@@ -71,6 +35,22 @@ export function extractTaskUiFields(meta: Record<string, unknown> | null): {
       };
     }
   }
-  const evidenceExamples = parseEvidenceExamples(meta.evidenceExamples);
-  return { actionUrl, actionLabel, verifyLabel, help, evidenceExamples };
+  return { actionUrl, actionLabel, verifyLabel, help };
+}
+
+export function extractEvidenceExamples(
+  meta: Record<string, unknown> | null
+): TaskEvidenceExample[] | undefined {
+  if (!meta || !Array.isArray(meta.evidenceExamples)) return undefined;
+  const out: TaskEvidenceExample[] = [];
+  for (const item of meta.evidenceExamples) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const src = typeof o.src === "string" ? o.src.trim() : "";
+    if (!src) continue;
+    const caption =
+      typeof o.caption === "string" && o.caption.trim() ? o.caption.trim() : undefined;
+    out.push(caption ? { src, caption } : { src });
+  }
+  return out.length ? out : undefined;
 }
