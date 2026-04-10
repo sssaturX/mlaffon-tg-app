@@ -194,12 +194,12 @@ export default function Tasks() {
               }
             : prev
         );
-        invalidateTasks();
+        void refetchTasks();
         return;
       }
       setMsg(formatApiError(r));
     },
-    [activePlatform, invalidateTasks]
+    [activePlatform, refetchTasks]
   );
 
   async function submitEvidence(task: TaskDto) {
