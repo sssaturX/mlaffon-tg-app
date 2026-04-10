@@ -56,6 +56,52 @@ function evidenceStageFromMeta(meta: Record<string, unknown>): number {
   return stageRaw != null ? Math.max(1, Math.floor(stageRaw) + 1) : 1;
 }
 
+/** Ключи meta, уже поднятые в корень TaskDto — не дублируем в ответе GET /tasks. */
+const META_KEYS_HOISTED_TO_ROOT = new Set([
+  "actionUrl",
+  "actionLabel",
+  "verifyLabel",
+  "help",
+  "chainKey",
+  "hard",
+  "hardStageCurrent",
+  "hardStageTotal",
+  "uiSection",
+  "uiOrder",
+  "requiresEvidence",
+  "evidenceExamples",
+  "progressSource",
+  "targetValue",
+  "progressLabel",
+]);
+
+function slimMetaForTaskList(meta: Record<string, unknown>): Record<string, unknown> | null {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(meta)) {
+    if (META_KEYS_HOISTED_TO_ROOT.has(k)) continue;
+    out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+export function filterTasksForPlatform(
+  list: TaskDto[],
+  platform: string
+): TaskDto[] {
+  if (platform === "twitch" || platform === "kick") {
+    return list.filter(
+      (t) =>
+        t.platform === platform ||
+        t.platform === "global" ||
+        t.platform === "telegram"
+    );
+  }
+  if (platform === "global") {
+    return list.filter((t) => t.platform === "global");
+  }
+  return list;
+}
+
 function readProgress(
   meta: Record<string, unknown>,
   snapshot: ProgressSnapshot
@@ -436,6 +482,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       if (evidenceStageStatus === "rejected" && ev?.adminNote)
         evidenceAdminNote = ev.adminNote;
     }
+    const slimMeta = slimMetaForTaskList(meta);
     rows.push({
       id: t.id,
       title: t.title,
@@ -446,7 +493,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       validationType: t.validationType as TaskDto["validationType"],
       userStatus,
       periodKey: t.type === "daily" ? pk : null,
-      meta,
+      ...(slimMeta ? { meta: slimMeta } : {}),
       lastError: ut?.lastError ?? null,
       actionUrl: ui.actionUrl,
       actionLabel: ui.actionLabel,
@@ -483,14 +530,7 @@ export async function claimTask(
   userId: string,
   taskId: string
 ): Promise<
-  | {
-      ok: true;
-      mode: "sync";
-      coins: number;
-      coinsTwitch: number;
-      coinsKick: number;
-      reward: number;
-    }
+  | { ok: true; mode: "sync"; reward: number }
   | { ok: true; mode: "async"; jobId: string }
   | { ok: false; error: string }
 > {
@@ -711,9 +751,6 @@ export async function claimTask(
   return {
     ok: true,
     mode: "sync",
-    coins: credit.newCoins,
-    coinsTwitch: credit.newTwitchCoins,
-    coinsKick: credit.newKickCoins,
     reward: credit.creditedAmount,
   };
 }

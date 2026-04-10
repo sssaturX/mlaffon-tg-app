@@ -8,15 +8,7 @@ export async function purchaseItem(
   userId: string,
   itemId: string,
   platform: EconomyPlatform
-): Promise<
-  | {
-      ok: true;
-      coins: number;
-      coinsTwitch: number;
-      coinsKick: number;
-    }
-  | { ok: false; error: string }
-> {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const [item] = await db
     .select()
     .from(shopItems)
@@ -58,12 +50,7 @@ export async function purchaseItem(
       },
     });
 
-  return {
-    ok: true,
-    coins: debit.newCoins,
-    coinsTwitch: debit.newTwitchCoins,
-    coinsKick: debit.newKickCoins,
-  };
+  return { ok: true };
 }
 
 export async function listShopItems() {

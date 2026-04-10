@@ -9,7 +9,6 @@ import {
   users,
 } from "../db/schema.js";
 import { applyDebit } from "./economy.js";
-import { buildMeEconomyPatch } from "./me.js";
 import { checkTelegramChannelMembership } from "./telegramChannel.js";
 
 export function displayUsername(u: {
@@ -211,7 +210,6 @@ export async function joinGiveaway(params: {
   | {
       ok: true;
       joinedAt: string;
-      economy: Awaited<ReturnType<typeof buildMeEconomyPatch>>;
     }
   | {
       ok: false;
@@ -313,8 +311,7 @@ export async function joinGiveaway(params: {
     throw e;
   }
 
-  const economy = await buildMeEconomyPatch(userId);
-  return { ok: true, joinedAt: ins!.createdAt.toISOString(), economy };
+  return { ok: true, joinedAt: ins!.createdAt.toISOString() };
 }
 
 function shuffleUserIds(ids: string[]): string[] {

@@ -2,20 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronRight, Coins, HelpCircle, Lightbulb } from "lucide-react";
 import type { Platform, TaskDto } from "shared";
 import { api, formatApiError } from "../api";
-import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { HelpSheetModal } from "../components/HelpSheetModal";
 import { TaskDetailModal } from "../components/TaskDetailModal";
+import { useRefetchTasks, useTasks } from "../hooks/queries/useTasks";
 import {
-  platformQueryParamTasks,
-  useInvalidateTasks,
-  useTasks,
-} from "../hooks/queries/useTasks";
+  markTaskEvidenceSubmitted,
+  replaceTasksListFromClaim,
+} from "../query/tasksCache";
 import { ApiQueryError } from "../query/apiQueryError";
-import { appEventBus } from "../events/appEventBus";
-import { queryClient } from "../query/queryClient";
-import { queryKeys } from "../query/queryKeys";
-
 const SECTION_ORDER = [
   "black_russia",
   "stream_tasks",
@@ -96,9 +91,8 @@ function taskKindPill(t: TaskDto): { label: string; variant: "sub" | "project" |
 }
 
 export default function Tasks() {
-  const { patchMe, syncMeFromNetwork } = useMeEconomySync();
   const { activePlatform } = useActivePlatform();
-  const invalidateTasks = useInvalidateTasks(activePlatform);
+  const refetchTasks = useRefetchTasks(activePlatform);
   const tasksQ = useTasks(activePlatform);
   const tasks = tasksQ.data ?? [];
   const [msg, setMsg] = useState<string | null>(null);
@@ -146,38 +140,30 @@ export default function Tasks() {
     setMsg(null);
     setClaimingId(id);
     const r = await api<{
+      ok?: boolean;
       reward?: number;
-      coins?: number;
-      coinsTwitch?: number;
-      coinsKick?: number;
       status?: string;
       jobId?: string;
-    }>(`/api/v1/tasks/${id}/claim`, { method: "POST" });
+      tasks?: TaskDto[];
+    }>(
+      `/api/v1/tasks/${id}/claim?platform=${encodeURIComponent(activePlatform)}`,
+      { method: "POST" }
+    );
     setClaimingId(null);
     if (r.ok) {
       if (r.data.status === "pending") {
         const m =
           "Задание в очереди на проверку. Обновите через несколько секунд.";
         setMsg(m);
-        invalidateTasks();
-        appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
+        void refetchTasks();
         return;
       }
       const okMsg = `+${r.data.reward ?? 0} монет`;
       setMsg(okMsg);
-      invalidateTasks();
-      if (
-        typeof r.data.coins === "number" &&
-        typeof r.data.coinsTwitch === "number" &&
-        typeof r.data.coinsKick === "number"
-      ) {
-        patchMe(() => ({
-          coins: r.data.coins,
-          coinsTwitch: r.data.coinsTwitch,
-          coinsKick: r.data.coinsKick,
-        }));
+      if (Array.isArray(r.data.tasks)) {
+        replaceTasksListFromClaim(activePlatform, r.data.tasks);
       } else {
-        void syncMeFromNetwork();
+        void refetchTasks();
       }
     } else {
       setMsg(formatApiError(r));
@@ -198,19 +184,7 @@ export default function Tasks() {
           "Скрины отправлены — задание на рассмотрении. После одобрения админа можно забрать награду и перейти к следующему этапу."
         );
         setEvidenceByTask((prev) => ({ ...prev, [task.id]: null }));
-        const pk = platformQueryParamTasks(activePlatform);
-        queryClient.setQueryData<TaskDto[]>(queryKeys.tasks.list(pk), (old) => {
-          if (!old) return old;
-          return old.map((x) =>
-            x.id === task.id
-              ? {
-                  ...x,
-                  evidenceStageStatus: "submitted" as const,
-                  evidenceAdminNote: null,
-                }
-              : x
-          );
-        });
+        markTaskEvidenceSubmitted(activePlatform, task.id);
         setDetailTask((prev) =>
           prev?.id === task.id
             ? {

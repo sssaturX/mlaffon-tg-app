@@ -9,7 +9,12 @@ import {
 import { computeLevel, computeRewardMultiplier } from "../config.js";
 import { ensureStreamStreakRow } from "./streamStreak.js";
 import { hasPendingBanAppeal } from "./banAppeals.js";
-import type { MeEconomyResponse, MeProfileResponse, MeResponse } from "shared";
+import type {
+  MeEconomyPatch,
+  MeEconomyResponse,
+  MeProfileResponse,
+  MeResponse,
+} from "shared";
 
 export async function buildMeProfileResponse(
   userId: string
@@ -128,19 +133,8 @@ export async function buildMeResponse(userId: string): Promise<MeResponse> {
   return { ...profile, ...economy };
 }
 
-/** Поля для WS `me_update` после экономики (без стриков/платформ). */
-export type MeEconomyPatch = {
-  coins: number;
-  coinsTwitch: number;
-  coinsKick: number;
-  lifetimeEarned: number;
-  lifetimeTwitch: number;
-  lifetimeKick: number;
-  level: number;
-  rewardMultiplier: number;
-};
-
 export async function buildMeEconomyPatch(userId: string): Promise<MeEconomyPatch> {
+  const streamStreak = await ensureStreamStreakRow(userId);
   const [b] = await db
     .select()
     .from(userBalances)
@@ -154,6 +148,9 @@ export async function buildMeEconomyPatch(userId: string): Promise<MeEconomyPatc
   const lifetimeEarned = lifetimeTwitch + lifetimeKick;
   const coins = coinsTwitch + coinsKick;
   const level = computeLevel(lifetimeEarned);
+  const streakTwitch = streamStreak.twitch;
+  const streakKick = streamStreak.kick;
+  const streak = Math.max(streakTwitch, streakKick);
   return {
     coins,
     coinsTwitch,
@@ -163,5 +160,8 @@ export async function buildMeEconomyPatch(userId: string): Promise<MeEconomyPatc
     lifetimeKick,
     level,
     rewardMultiplier: computeRewardMultiplier(level),
+    streak,
+    streakTwitch,
+    streakKick,
   };
 }

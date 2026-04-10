@@ -1152,19 +1152,19 @@ select:focus-visible {
 
 .app-main {
   flex: 1;
+  min-height: 0;
   padding: var(--space-3) var(--space-4) var(--space-4);
-  animation: app-route-in var(--dur-normal) var(--ease-out);
+  /* Фон как у body — без вспышки при cross-fade между страницами */
+  background: var(--bg);
 }
 
-@keyframes app-route-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Обёртка framer-motion внутри main: тянется на высоту контента */
+.app-route-transition {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
 }
 
 .card {

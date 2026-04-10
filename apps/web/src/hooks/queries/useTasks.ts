@@ -4,9 +4,10 @@ import { queryKeys } from "../../query/queryKeys";
 import { fetchTasks } from "../../query/fetchers";
 
 const STALE_TASKS = 1000 * 60 * 5;
+const GC_TASKS = 1000 * 60 * 30;
 
-/** Polling пока ждём модерацию скринов или API-проверку — без ручного «обнови». */
-const TASKS_AWAITING_ADMIN_MS = 12_000;
+/** Polling только при ожидании модерации / API — вкладка на переднем плане. */
+const TASKS_AWAITING_ADMIN_MS = 15_000;
 
 export function platformQueryParamTasks(p: Platform): string {
   if (p === "twitch" || p === "kick") return p;
@@ -22,29 +23,36 @@ function tasksNeedModerationPoll(list: TaskDto[] | undefined): boolean {
   );
 }
 
-/** SEMI_STATIC: задания с прогрессом пользователя. */
+/** SEMI_STATIC: задания с прогрессом пользователя; без лишних GET при навигации. */
 export function useTasks(activePlatform: Platform) {
   const platform = platformQueryParamTasks(activePlatform);
   return useQuery({
     queryKey: queryKeys.tasks.list(platform),
     queryFn: () => fetchTasks(platform),
     staleTime: STALE_TASKS,
-    refetchInterval: (q) =>
-      tasksNeedModerationPoll(q.state.data) ? TASKS_AWAITING_ADMIN_MS : false,
+    gcTime: GC_TASKS,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchInterval: (q) => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return false;
+      }
+      return tasksNeedModerationPoll(q.state.data)
+        ? TASKS_AWAITING_ADMIN_MS
+        : false;
+    },
   });
 }
 
-let tasksInvalidateTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** Инвалидация с дебаунсом — claim + hover prefetch не дёргают два GET подряд. */
-export function useInvalidateTasks(platform: Platform) {
+/** Один дедуплицированный fetch (например после async claim) — не invalidate. */
+export function useRefetchTasks(platform: Platform) {
   const qc = useQueryClient();
   const key = platformQueryParamTasks(platform);
-  return () => {
-    if (tasksInvalidateTimer) clearTimeout(tasksInvalidateTimer);
-    tasksInvalidateTimer = setTimeout(() => {
-      tasksInvalidateTimer = null;
-      void qc.invalidateQueries({ queryKey: queryKeys.tasks.list(key) });
-    }, 400);
-  };
+  return () =>
+    void qc.fetchQuery({
+      queryKey: queryKeys.tasks.list(key),
+      queryFn: () => fetchTasks(key),
+      staleTime: STALE_TASKS,
+    });
 }

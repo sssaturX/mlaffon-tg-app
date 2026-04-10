@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import WebApp from "@twa-dev/sdk";
 import { Sparkles, Ban } from "lucide-react";
 import { api, formatApiError } from "../api";
-import { useMeEconomySync } from "../context/MeEconomySyncContext";
-import { scheduleSmartRefresh } from "../services/meService";
 import { useActivePlatform } from "../context/PlatformContext";
 import { AppLoadingSpinner } from "../components/AppLoadingSpinner";
 import {
@@ -59,7 +57,6 @@ function SpinResultCard({ result }: { result: SpinReveal }) {
 }
 
 export default function Games() {
-  const { patchMe, reconcileFromServer } = useMeEconomySync();
   const { activePlatform } = useActivePlatform();
   const fortuneConfigQ = useFortuneConfig();
   const fortuneStateQ = useFortuneState();
@@ -106,9 +103,6 @@ export default function Games() {
       segmentIndex: number;
       outcome: "coins" | "nothing";
       amount?: number;
-      coins: number;
-      coinsTwitch: number;
-      coinsKick: number;
     }>("/api/v1/games/fortune/spin", {
       method: "POST",
       body: JSON.stringify({ mode, platform: activePlatform }),
@@ -119,14 +113,6 @@ export default function Games() {
       setSpinErr(formatApiError(r));
       return;
     }
-
-    patchMe(() => ({
-      coins: r.data.coins,
-      coinsTwitch: r.data.coinsTwitch,
-      coinsKick: r.data.coinsKick,
-    }));
-    scheduleSmartRefresh(300);
-    reconcileFromServer();
 
     const n = status.segments.length;
     const rawIdx = Number(r.data.segmentIndex);

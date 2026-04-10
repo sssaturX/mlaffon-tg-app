@@ -9,6 +9,9 @@ const ECONOMY_KEYS: (keyof MeEconomyPatch)[] = [
   "lifetimeKick",
   "level",
   "rewardMultiplier",
+  "streak",
+  "streakTwitch",
+  "streakKick",
 ];
 
 /** Полный валидный срез экономики (ответ API/WS может быть неполным). */
@@ -46,5 +49,8 @@ export function mergeEconomyIntoMe(
     lifetimeKick: patch.lifetimeKick,
     level: patch.level,
     rewardMultiplier: patch.rewardMultiplier,
+    streak: patch.streak,
+    streakTwitch: patch.streakTwitch,
+    streakKick: patch.streakKick,
   });
 }

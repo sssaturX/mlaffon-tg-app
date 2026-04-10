@@ -39,6 +39,7 @@ import { OnboardingModal, hasSeenOnboarding } from "./components/OnboardingModal
 import { FirstVisitTour, hasSeenTour } from "./components/FirstVisitTour";
 import { routeTitle, ScreenHeader } from "./components/ScreenHeader";
 import { AppLoadingSpinner } from "./components/AppLoadingSpinner";
+import { RouteTransition } from "./components/RouteTransition";
 import { hasLinkedStreamingAccount } from "./utils/streamingAccount";
 import { MeEconomySyncProvider } from "./context/MeEconomySyncContext";
 import { useSyncMeFromNetwork } from "./hooks/useSyncMeFromNetwork";
@@ -47,7 +48,7 @@ import {
   handleMeUpdateFromWs,
   invalidateInflightMeRefresh,
 } from "./services/meService";
-import { prefetchRouteData } from "./query/prefetch";
+import { navPrefetchHandlers } from "./query/prefetch";
 import { meEconomyQueryFn, meProfileQueryFn } from "./query/meQueryFns";
 import { appEventBus } from "./events/appEventBus";
 import { emitAppBootstrap } from "./meDomain/bootstrapOrchestrator";
@@ -470,7 +471,6 @@ function AppShell({
       },
       onLegacyBalancePing: () => {
         invalidateInflightMeRefresh();
-        appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
       },
     },
     /** WS нужен и до привязки стрима: `me_update` и `initial_state` без лишнего REST. Сервер не требует OAuth-платформы. */
@@ -492,9 +492,11 @@ function AppShell({
     }
     if (tabWasHiddenRef.current) {
       tabWasHiddenRef.current = false;
-      appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
+      if (!realtimeConnected) {
+        appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
+      }
     }
-  }, [docVisible, needsPlatformLink]);
+  }, [docVisible, needsPlatformLink, realtimeConnected]);
 
   /** Без WS — редкая ревалидация только экономики (не весь профиль). */
   useEffect(() => {
@@ -626,8 +628,9 @@ function AppShell({
         ) : null}
 
         <main className="app-main">
-          <Suspense fallback={<AppLoadingSpinner />}>
-            <Routes>
+          <RouteTransition routeKey={location.pathname}>
+            <Suspense fallback={<AppLoadingSpinner />}>
+              <Routes>
               <Route
                 path="/"
                 element={<HomePage me={me} />}
@@ -661,8 +664,9 @@ function AppShell({
               />
               <Route path="/stream" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
+              </Routes>
+            </Suspense>
+          </RouteTransition>
         </main>
 
         {!needsPlatformLink ? (
@@ -672,7 +676,7 @@ function AppShell({
               end
               className={({ isActive }) => (isActive ? "active" : "")}
               to="/"
-              onMouseEnter={() => prefetchRouteData("/")}
+              {...navPrefetchHandlers("/")}
             >
               <Home className="nav__icon" aria-hidden />
               <span>Главная</span>
@@ -681,7 +685,7 @@ function AppShell({
               data-tour-target="nav-tasks"
               className={({ isActive }) => (isActive ? "active" : "")}
               to="/tasks"
-              onMouseEnter={() => prefetchRouteData("/tasks")}
+              {...navPrefetchHandlers("/tasks")}
             >
               <ListTodo className="nav__icon" aria-hidden />
               <span>Задания</span>
@@ -689,6 +693,7 @@ function AppShell({
             <NavLink
               className={({ isActive }) => (isActive ? "active" : "")}
               to="/games"
+              {...navPrefetchHandlers("/games")}
             >
               <Gamepad2 className="nav__icon" aria-hidden />
               <span>Игры</span>
@@ -703,7 +708,7 @@ function AppShell({
             <NavLink
               className={({ isActive }) => (isActive ? "active" : "")}
               to="/profile"
-              onMouseEnter={() => prefetchRouteData("/profile")}
+              {...navPrefetchHandlers("/profile")}
             >
               <User className="nav__icon" aria-hidden />
               <span>Профиль</span>

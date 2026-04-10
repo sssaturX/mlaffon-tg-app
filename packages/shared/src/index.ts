@@ -212,7 +212,7 @@ export interface MeResponse {
   leaderboardRankCoins: number | null;
 }
 
-/** Фрагмент профиля из WS `me_update` после экономики. */
+/** Срез экономики из WS `me_update` / мутаций (совпадает с числовыми полями MeEconomyResponse). */
 export interface MeEconomyPatch {
   coins: number;
   coinsTwitch: number;
@@ -222,6 +222,9 @@ export interface MeEconomyPatch {
   lifetimeKick: number;
   level: number;
   rewardMultiplier: number;
+  streak: number;
+  streakTwitch: number;
+  streakKick: number;
 }
 
 export interface LeaderboardEntry {

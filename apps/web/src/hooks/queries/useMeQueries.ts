@@ -7,8 +7,10 @@ import {
 import { queryKeys } from "../../query/queryKeys";
 
 const STALE_ME_PROFILE = 1000 * 60 * 5;
-/** Экономика: HTTP только гидратация; дальше WS + setQueryData. */
+const GC_ME_PROFILE = 1000 * 60 * 30;
+/** Экономика: HTTP только bootstrap; дальше WS + reconcile при офлайне. */
 const STALE_ME_ECONOMY = 1000 * 60 * 10;
+const GC_ME_ECONOMY = 1000 * 60 * 30;
 
 export function useMeProfileQuery(enabled: boolean) {
   return useQuery({
@@ -16,15 +18,23 @@ export function useMeProfileQuery(enabled: boolean) {
     queryFn: meProfileQueryFn,
     enabled: enabled && Boolean(getToken()),
     staleTime: STALE_ME_PROFILE,
+    gcTime: GC_ME_PROFILE,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
 
-/** После профиля — `GET /me/economy` или кэш; дальше инкременты по WS и reconcile. */
+/** После профиля — `GET /me/economy` или кэш; дальше только WS. */
 export function useMeEconomyQuery(enabled: boolean, profileFetchSettled: boolean) {
   return useQuery({
     queryKey: queryKeys.me.economy(),
     queryFn: meEconomyQueryFn,
     enabled: enabled && Boolean(getToken()) && profileFetchSettled,
     staleTime: STALE_ME_ECONOMY,
+    gcTime: GC_ME_ECONOMY,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }

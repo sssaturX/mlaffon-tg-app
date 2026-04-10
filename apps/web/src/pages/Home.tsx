@@ -5,7 +5,7 @@ import { useHomeContent, useHomeGiveaways } from "../hooks/queries/useHomeQuerie
 import { flushSync } from "react-dom";
 import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
-import type { MeEconomyPatch, MeResponse } from "shared";
+import type { MeResponse } from "shared";
 import { api, formatApiError, getToken } from "../api";
 import { hydrateMeThroughEventBus } from "../meDomain/meHydration";
 import { useToast } from "../context/ToastContext";
@@ -21,6 +21,7 @@ import {
 } from "../utils/streakNotifications";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { queryKeys } from "../query/queryKeys";
+import { prefetchRouteData } from "../query/prefetch";
 import type { PredictionStatePayload } from "../hooks/useRealtimeWebSocket";
 import {
   applyPredictionStateToQuery,
@@ -106,7 +107,7 @@ function AnimatedInt({ value }: { value: number }) {
 }
 
 export default function Home({ me }: { me: MeResponse | null }) {
-  const { patchMe, patchEconomy } = useMeEconomySync();
+  const { patchMe } = useMeEconomySync();
   const { showToast } = useToast();
 
   const oauthHomeToastDoneRef = useRef(false);
@@ -350,7 +351,6 @@ export default function Home({ me }: { me: MeResponse | null }) {
         streakIncremented: boolean;
         alreadyWatchedThisBroadcast: boolean;
         bonusCoinsAwarded: number;
-        economy: MeEconomyPatch;
       }>("/api/v1/live-broadcast/watch", {
         method: "POST",
         body: JSON.stringify({ broadcastId: live.id }),
@@ -359,7 +359,6 @@ export default function Home({ me }: { me: MeResponse | null }) {
         notifyStreakWatchError(showToast, formatApiError(r));
         return;
       }
-      patchEconomy(r.data.economy);
       if (!r.data.alreadyWatchedThisBroadcast) {
         flushSync(() => {
           setStreakDisplay({
@@ -407,7 +406,6 @@ export default function Home({ me }: { me: MeResponse | null }) {
     const r = await api<{
       ok: boolean;
       reward: number;
-      economy: MeEconomyPatch;
     }>("/api/v1/promo/apply", {
       method: "POST",
       body: JSON.stringify({ code }),
@@ -416,7 +414,6 @@ export default function Home({ me }: { me: MeResponse | null }) {
       showToast(formatApiError(r), "error");
       return;
     }
-    patchEconomy(r.data.economy);
     showToast(`+${r.data.reward} монет`, "success");
     setPromo("");
   }
@@ -773,7 +770,12 @@ export default function Home({ me }: { me: MeResponse | null }) {
         <div className="stack section-stack-top">
           <div className="row section-head">
             <h2>Активные розыгрыши</h2>
-            <Link to="/giveaways" className="muted home-giveaways-all">
+            <Link
+              to="/giveaways"
+              className="muted home-giveaways-all"
+              onPointerEnter={() => prefetchRouteData("/giveaways")}
+              onPointerDown={() => prefetchRouteData("/giveaways")}
+            >
               Все
             </Link>
           </div>
@@ -783,6 +785,8 @@ export default function Home({ me }: { me: MeResponse | null }) {
                 key={g.id}
                 to={`/giveaway/${g.id}`}
                 className="card giveaway-card giveaway-card--link"
+                onPointerEnter={() => prefetchRouteData(`/giveaway/${g.id}`)}
+                onPointerDown={() => prefetchRouteData(`/giveaway/${g.id}`)}
               >
                 {g.imageUrl ? (
                   <img

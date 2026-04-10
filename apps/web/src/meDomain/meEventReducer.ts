@@ -35,6 +35,9 @@ function mergeEconomyIntoCache(partial: Partial<MeResponse>): void {
       "lifetimeKick",
       "level",
       "rewardMultiplier",
+      "streak",
+      "streakTwitch",
+      "streakKick",
     ] as const) {
       const v = partial[k];
       if (typeof v === "number") next[k] = v;
@@ -47,7 +50,7 @@ function applyWsRaw(data: unknown): void {
   if (isMeEconomyPatch(data)) {
     bumpDomainVersion("economy");
     queryClient.setQueryData<MeEconomyResponse>(queryKeys.me.economy(), (prev) =>
-      prev ? { ...prev, ...data } : prev
+      prev ? { ...prev, ...data } : (data as MeEconomyResponse)
     );
     return;
   }
@@ -56,13 +59,12 @@ function applyWsRaw(data: unknown): void {
     if (partial) {
       bumpDomainVersion("economy");
       mergeEconomyIntoCache(partial);
-      if (!isMeEconomyPatch(partial)) {
-        appEventBus.emit("me:reconcile:economy", { delayMs: 200 });
-      }
       return;
     }
   }
-  appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
+  if (!queryClient.getQueryData<MeEconomyResponse>(queryKeys.me.economy())) {
+    appEventBus.emit("me:reconcile:economy", { delayMs: 0 });
+  }
 }
 
 /**
@@ -96,9 +98,6 @@ export function reduceMeUpdate(event: MeUpdateEvent): void {
       } else if (patch && typeof patch === "object") {
         mergeEconomyIntoCache(patch as Partial<MeResponse>);
       }
-      if (event.source === "mutation") {
-        appEventBus.emit("me:reconcile:economy", { delayMs: 450 });
-      }
       return;
     }
 
@@ -115,9 +114,6 @@ export function reduceMeUpdate(event: MeUpdateEvent): void {
         queryClient.setQueryData<MeEconomyResponse>(queryKeys.me.economy(), (old) =>
           old ? { ...old, ...ep } : old
         );
-      }
-      if (event.source === "optimistic") {
-        appEventBus.emit("me:reconcile:economy", { delayMs: 450 });
       }
       return;
     }

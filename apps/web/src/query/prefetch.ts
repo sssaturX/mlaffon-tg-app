@@ -3,6 +3,8 @@ import { getStoredActivePlatform } from "../context/PlatformContext";
 import { queryClient } from "./queryClient";
 import { queryKeys } from "./queryKeys";
 import {
+  fetchFortuneConfig,
+  fetchFortuneState,
   fetchGiveawaysList,
   fetchHomeContent,
   fetchHomeGiveaways,
@@ -10,7 +12,18 @@ import {
   fetchTasks,
 } from "./fetchers";
 import { platformQueryParamTasks } from "../hooks/queries/useTasks";
-import { meProfileQueryFn } from "./meQueryFns";
+import { meEconomyQueryFn, meProfileQueryFn } from "./meQueryFns";
+
+/** Hover / touch-down на табах — дедупликация в TanStack Query. */
+export function navPrefetchHandlers(pathname: string): {
+  onPointerEnter: () => void;
+  onPointerDown: () => void;
+} {
+  const run = (): void => {
+    prefetchRouteData(pathname);
+  };
+  return { onPointerEnter: run, onPointerDown: run };
+}
 
 /** Prefetch по намерению навигации (hover по табам). */
 export function prefetchRouteData(pathname: string): void {
@@ -41,11 +54,30 @@ export function prefetchRouteData(pathname: string): void {
     return;
   }
 
+  if (pathname.startsWith("/games")) {
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.fortune.config(),
+      queryFn: fetchFortuneConfig,
+      staleTime: 1000 * 60 * 60 * 24,
+    });
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.fortune.state(),
+      queryFn: fetchFortuneState,
+      staleTime: 0,
+    });
+    return;
+  }
+
   if (pathname.startsWith("/profile")) {
     void queryClient.prefetchQuery({
       queryKey: queryKeys.me.profile(),
       queryFn: meProfileQueryFn,
       staleTime: 1000 * 60 * 5,
+    });
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.me.economy(),
+      queryFn: meEconomyQueryFn,
+      staleTime: 1000 * 60 * 10,
     });
     void queryClient.prefetchQuery({
       queryKey: queryKeys.referrals.list(),

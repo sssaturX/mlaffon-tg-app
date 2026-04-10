@@ -93,7 +93,7 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
         });
       }
       void publishGiveawaysRealtimeSnapshot();
-      return { ok: true, joinedAt: r.joinedAt, economy: r.economy };
+      return { ok: true, joinedAt: r.joinedAt };
     }
   );
 }

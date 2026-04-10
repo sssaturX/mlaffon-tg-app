@@ -11,7 +11,7 @@ export async function grantTaskReward(params: {
   userId: string;
   task: TaskRow;
   periodKey: string;
-}): Promise<{ ok: true; coins: number; reward: number }> {
+}): Promise<{ ok: true; reward: number }> {
   const { userId, task, periodKey } = params;
   const rewardPlatform: "twitch" | "kick" | "split" =
     task.platform === "twitch" ? "twitch" : task.platform === "kick" ? "kick" : "split";
@@ -62,16 +62,7 @@ export async function grantTaskReward(params: {
 
   if (!credit.ok) {
     if (credit.reason === "duplicate") {
-      const [bal] = await db
-        .select({ coins: userBalances.coins })
-        .from(userBalances)
-        .where(eq(userBalances.userId, userId))
-        .limit(1);
-      return {
-        ok: true,
-        coins: bal?.coins ?? 0,
-        reward,
-      };
+      return { ok: true, reward };
     }
     throw new Error("credit_failed");
   }
@@ -130,5 +121,5 @@ export async function grantTaskReward(params: {
 
   await maybeQualifyReferral(userId);
 
-  return { ok: true, coins: credit.newCoins, reward: credit.creditedAmount };
+  return { ok: true, reward: credit.creditedAmount };
 }

@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "../db/index.js";
-import { fortuneSpins, userBalances } from "../db/schema.js";
+import { fortuneSpins } from "../db/schema.js";
 import { gameConfig } from "../config.js";
 import {
   applyCredit,
@@ -105,9 +105,6 @@ export async function spinFortuneWheel(
       /** Индекс сектора на колесе (0..n-1), совпадает с GET /games/fortune segments. */
       segmentIndex: number;
       amount?: number;
-      coins: number;
-      coinsTwitch: number;
-      coinsKick: number;
     }
   | { ok: false; error: string }
 > {
@@ -197,23 +194,10 @@ export async function spinFortuneWheel(
       });
   }
 
-  const [b] = await db
-    .select({
-      coins: userBalances.coins,
-      twitchCoins: userBalances.twitchCoins,
-      kickCoins: userBalances.kickCoins,
-    })
-    .from(userBalances)
-    .where(eq(userBalances.userId, userId))
-    .limit(1);
-
   return {
     ok: true,
     outcome: outcome.type,
     segmentIndex,
     amount: outcome.type === "coins" ? coinsCredited : undefined,
-    coins: b?.coins ?? 0,
-    coinsTwitch: b?.twitchCoins ?? 0,
-    coinsKick: b?.kickCoins ?? 0,
   };
 }

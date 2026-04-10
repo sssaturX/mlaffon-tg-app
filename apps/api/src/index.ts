@@ -28,13 +28,16 @@ import {
   deleteUserAccount,
 } from "./services/users.js";
 import {
-  buildMeEconomyPatch,
   buildMeEconomyResponse,
   buildMeProfileResponse,
   buildMeResponse,
 } from "./services/me.js";
 import { createBanAppeal } from "./services/banAppeals.js";
-import { listTasksForUser, claimTask } from "./services/tasks.js";
+import {
+  claimTask,
+  filterTasksForPlatform,
+  listTasksForUser,
+} from "./services/tasks.js";
 import { registerStreamTaskMessage } from "./services/taskStreamMessages.js";
 import { getLeaderboard, rankOfUser } from "./services/leaderboard.js";
 import { referrals, users } from "./db/schema.js";
@@ -265,7 +268,7 @@ app.post(
       },
     });
   }
-  return { ok: true, reward: r.reward, economy: r.economy };
+  return { ok: true, reward: r.reward };
   }
 );
 
@@ -680,7 +683,6 @@ app.post("/api/v1/live-broadcast/watch", async (req, reply) => {
       error: { code: res.code, message: msg },
     });
   }
-  const economy = await buildMeEconomyPatch(userId);
   return {
     ok: true,
     platform: res.platform,
@@ -688,7 +690,6 @@ app.post("/api/v1/live-broadcast/watch", async (req, reply) => {
     streakIncremented: res.streakIncremented,
     alreadyWatchedThisBroadcast: res.alreadyWatchedThisBroadcast,
     bonusCoinsAwarded: res.bonusCoinsAwarded,
-    economy,
   };
 });
 
@@ -698,17 +699,10 @@ app.get("/api/v1/tasks", async (req, reply) => {
   const platform = String(
     (req.query as { platform?: string }).platform ?? "all"
   );
-  let list = await listTasksForUser(userId);
-  if (platform === "twitch" || platform === "kick") {
-    list = list.filter(
-      (t) =>
-        t.platform === platform ||
-        t.platform === "global" ||
-        t.platform === "telegram"
-    );
-  } else if (platform === "global") {
-    list = list.filter((t) => t.platform === "global");
-  }
+  const list = filterTasksForPlatform(
+    await listTasksForUser(userId),
+    platform
+  );
   return { tasks: list };
 });
 
@@ -784,12 +778,16 @@ app.post("/api/v1/tasks/:id/claim", async (req, reply) => {
       jobId: res.jobId,
     });
   }
+  const q = req.query as { platform?: string };
+  const platform = String(q.platform ?? "all");
+  const tasks = filterTasksForPlatform(
+    await listTasksForUser(userId),
+    platform
+  );
   return {
     ok: true,
-    coins: res.coins,
-    coinsTwitch: res.coinsTwitch,
-    coinsKick: res.coinsKick,
     reward: res.reward,
+    tasks,
   };
 });
 

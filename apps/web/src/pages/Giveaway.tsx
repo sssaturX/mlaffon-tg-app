@@ -10,12 +10,11 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import WebApp from "@twa-dev/sdk";
-import type { MeEconomyPatch, MeResponse } from "shared";
+import type { MeResponse } from "shared";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useGiveawayDetail } from "../hooks/queries/useGiveaways";
 import { queryKeys } from "../query/queryKeys";
 
@@ -30,7 +29,6 @@ function formatCountdownFull(iso: string): string {
 }
 
 export default function GiveawayPage({ me }: { me: MeResponse | null }) {
-  const { patchEconomy } = useMeEconomySync();
   const { id } = useParams<{ id: string }>();
   const { showToast } = useToast();
   const { activePlatform } = useActivePlatform();
@@ -68,7 +66,6 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     const r = await api<{
       ok: boolean;
       joinedAt: string;
-      economy: MeEconomyPatch;
     }>(`/api/v1/giveaways/${id}/join`, {
       method: "POST",
       body: JSON.stringify({ platform: activePlatform }),
@@ -78,7 +75,6 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
       showToast(formatApiError(r), "error");
       return;
     }
-    patchEconomy(r.data.economy);
     showToast("Вы участвуете в розыгрыше", "success");
     void queryClient.invalidateQueries({
       queryKey: queryKeys.giveaways.detail(id),
