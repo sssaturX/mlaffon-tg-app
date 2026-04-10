@@ -111,46 +111,6 @@ export function mergeMeProfileAndEconomy(
   return { ...profile, ...economy };
 }
 
-/** Разделить полный ответ `GET /api/v1/me` на срезы кэша profile / economy. */
-export function splitMeResponse(me: MeResponse): {
-  profile: MeProfileResponse;
-  economy: MeEconomyResponse;
-} {
-  return {
-    profile: {
-      id: me.id,
-      telegramId: me.telegramId,
-      email: me.email,
-      username: me.username,
-      firstName: me.firstName,
-      photoUrl: me.photoUrl,
-      referralCode: me.referralCode,
-      referralLinkMiniApp: me.referralLinkMiniApp,
-      referralLinkWeb: me.referralLinkWeb,
-      referralLink: me.referralLink,
-      referralCount: me.referralCount,
-      platforms: me.platforms,
-      banned: me.banned,
-      banReason: me.banReason,
-      banAppealPending: me.banAppealPending,
-      leaderboardRankCoins: me.leaderboardRankCoins,
-    },
-    economy: {
-      coins: me.coins,
-      coinsTwitch: me.coinsTwitch,
-      coinsKick: me.coinsKick,
-      lifetimeEarned: me.lifetimeEarned,
-      lifetimeTwitch: me.lifetimeTwitch,
-      lifetimeKick: me.lifetimeKick,
-      level: me.level,
-      rewardMultiplier: me.rewardMultiplier,
-      streak: me.streak,
-      streakTwitch: me.streakTwitch,
-      streakKick: me.streakKick,
-    },
-  };
-}
-
 export interface HomeContentResponse {
   cashback: {
     enabled: boolean;

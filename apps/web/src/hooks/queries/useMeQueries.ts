@@ -19,7 +19,7 @@ export function useMeProfileQuery(enabled: boolean) {
   });
 }
 
-/** Экономика приезжает в том же `GET /me`, что и профиль; отдельный запрос к /me/economy не делаем. */
+/** После профиля — `GET /me/economy` или кэш; дальше инкременты по WS и reconcile. */
 export function useMeEconomyQuery(enabled: boolean, profileFetchSettled: boolean) {
   return useQuery({
     queryKey: queryKeys.me.economy(),

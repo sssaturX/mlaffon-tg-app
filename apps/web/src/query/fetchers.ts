@@ -4,8 +4,8 @@ import type {
   HomeContentResponse,
   HomeGiveawaysResponse,
   LeaderboardResponse,
+  MeEconomyResponse,
   MeProfileResponse,
-  MeResponse,
   ReferralsResponse,
   TaskDto,
 } from "shared";
@@ -37,9 +37,9 @@ export async function fetchMeProfile(): Promise<MeProfileResponse> {
   return r.data;
 }
 
-/** Полный срез пользователя; экономика дальше обновляется по WS (без отдельного GET /me/economy). */
-export async function fetchMe(): Promise<MeResponse> {
-  const r = await api<MeResponse>("/api/v1/me");
+/** Баланс / уровень / стрики; инкременты — по WS `me_update`, reconcile — этот GET. */
+export async function fetchMeEconomy(): Promise<MeEconomyResponse> {
+  const r = await api<MeEconomyResponse>("/api/v1/me/economy");
   throwIfApiErr(r);
   return r.data;
 }

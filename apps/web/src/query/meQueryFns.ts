@@ -1,22 +1,19 @@
 import type { MeEconomyResponse, MeProfileResponse } from "shared";
-import { splitMeResponse } from "shared";
-import { fetchMe } from "./fetchers";
+import { fetchMeEconomy, fetchMeProfile } from "./fetchers";
 import { queryClient } from "./queryClient";
 import { queryKeys } from "./queryKeys";
 import { appEventBus } from "../events/appEventBus";
 import { getDomainVersion } from "../meDomain/domainVersion";
 
-/** Профиль + экономика одним `GET /me`; экономика дальше только WS + reconcile. */
+/** Профиль без «тяжёлого» объединённого `GET /me` — экономика отдельно и по WS. */
 export async function meProfileQueryFn(): Promise<MeProfileResponse> {
   const profileV0 = getDomainVersion().profile;
   const economyV0 = getDomainVersion().economy;
-  const me = await fetchMe();
-  const { profile, economy } = splitMeResponse(me);
+  const profile = await fetchMeProfile();
   appEventBus.emit("me:update", {
     kind: "http_snapshot",
     source: "http",
     profile,
-    economy,
     profileV0,
     economyV0,
   });
@@ -25,7 +22,6 @@ export async function meProfileQueryFn(): Promise<MeProfileResponse> {
   );
 }
 
-/** Заполняется из того же ответа, что и profile; отдельного HTTP к economy нет. */
 export async function meEconomyQueryFn(): Promise<MeEconomyResponse> {
   const cached = queryClient.getQueryData<MeEconomyResponse>(
     queryKeys.me.economy()
@@ -34,12 +30,10 @@ export async function meEconomyQueryFn(): Promise<MeEconomyResponse> {
 
   const profileV0 = getDomainVersion().profile;
   const economyV0 = getDomainVersion().economy;
-  const me = await fetchMe();
-  const { profile, economy } = splitMeResponse(me);
+  const economy = await fetchMeEconomy();
   appEventBus.emit("me:update", {
     kind: "http_snapshot",
     source: "http",
-    profile,
     economy,
     profileV0,
     economyV0,

@@ -1,9 +1,7 @@
 import { Gift, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import WebApp from "@twa-dev/sdk";
-import type { MeEconomyPatch } from "shared";
 import { api } from "../api";
-import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useSyncedCountdownMs } from "../hooks/useSyncedCountdown";
 
 const DIGITS = 4;
@@ -90,7 +88,6 @@ export function DropOverlay({
   onAfterClaim: (reward: number) => void | Promise<void>;
   onRefreshSnapshot?: () => void | Promise<void>;
 }) {
-  const { patchEconomy } = useMeEconomySync();
   const [digits, setDigits] = useState<string[]>(() => Array(DIGITS).fill(""));
   const [err, setErr] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
@@ -149,7 +146,6 @@ export function DropOverlay({
     const r = await api<{
       ok: boolean;
       reward?: number;
-      economy?: MeEconomyPatch;
     }>("/api/v1/drops/attempt", {
       method: "POST",
       body: JSON.stringify({ code }),
@@ -159,7 +155,6 @@ export function DropOverlay({
       setDisplayReward(0);
       setDigits(Array(DIGITS).fill(""));
       setSubmitting(false);
-      patchEconomy(r.data.economy);
       await Promise.resolve(onAfterClaim(r.data.reward));
       return;
     }
@@ -187,7 +182,7 @@ export function DropOverlay({
     }
     queueMicrotask(() => inputsRef.current[0]?.focus());
     await Promise.resolve(onRefreshSnapshot?.());
-  }, [digits, onAfterClaim, patchEconomy, onRefreshSnapshot]);
+  }, [digits, onAfterClaim, onRefreshSnapshot]);
 
   submitRef.current = submit;
 

@@ -29,6 +29,7 @@ import {
 } from "./services/users.js";
 import {
   buildMeEconomyPatch,
+  buildMeEconomyResponse,
   buildMeProfileResponse,
   buildMeResponse,
 } from "./services/me.js";
@@ -407,6 +408,16 @@ app.get("/api/v1/me/profile", async (req, reply) => {
     "private, max-age=60, stale-while-revalidate=300"
   );
   return buildMeProfileResponse(userId);
+});
+
+app.get("/api/v1/me/economy", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  void reply.header(
+    "Cache-Control",
+    "private, no-store, no-cache, must-revalidate"
+  );
+  return buildMeEconomyResponse(userId);
 });
 
 const meWebCredentialsBody = z.object({

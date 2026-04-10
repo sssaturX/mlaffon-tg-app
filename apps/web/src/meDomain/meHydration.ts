@@ -1,7 +1,7 @@
-import { splitMeResponse, type MeResponse } from "shared";
+import type { MeResponse } from "shared";
 import { formatApiError, getToken, setToken } from "../api";
 import { ApiQueryError } from "../query/apiQueryError";
-import { fetchMe } from "../query/fetchers";
+import { fetchMeEconomy, fetchMeProfile } from "../query/fetchers";
 import { getMeFromCache } from "../hooks/queries/useMergedMe";
 import { appEventBus } from "../events/appEventBus";
 import { getDomainVersion } from "./domainVersion";
@@ -28,8 +28,10 @@ export async function hydrateMeThroughEventBus(
   const economyV0 = getDomainVersion().economy;
 
   try {
-    const me = await fetchMe();
-    const { profile, economy } = splitMeResponse(me);
+    const [profile, economy] = await Promise.all([
+      fetchMeProfile(),
+      fetchMeEconomy(),
+    ]);
     appEventBus.emit("me:update", {
       kind: "http_snapshot",
       source: "http",
