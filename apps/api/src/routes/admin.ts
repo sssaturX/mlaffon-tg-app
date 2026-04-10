@@ -23,6 +23,7 @@ import {
   getParticipantCountsForGiveawayIds,
   listGiveawayParticipantsWithUsernames,
 } from "../services/giveaways.js";
+import { publishGiveawaysRealtimeSnapshot } from "../services/giveawaysRealtime.js";
 import {
   getAdminDropStatus,
   getDropClaimantsAdmin,
@@ -509,6 +510,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         channelInviteUrl: reqCh ? invUrl : null,
       })
       .returning({ id: giveaways.id });
+    void publishGiveawaysRealtimeSnapshot();
     return { id: ins!.id };
   });
 
@@ -555,6 +557,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Розыгрыш не найден" },
       });
     }
+    void publishGiveawaysRealtimeSnapshot();
     return { ok: true };
   });
 
@@ -579,6 +582,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: r.code, message: messages[r.code] },
       });
     }
+    void publishGiveawaysRealtimeSnapshot();
     return { ok: true, winners: r.winners };
   });
 

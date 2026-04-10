@@ -1,8 +1,10 @@
+import type { HomeGiveawaysResponse } from "shared";
 import { getRedis } from "../lib/redis.js";
 import { REALTIME_REDIS_CHANNEL } from "../lib/realtimeChannel.js";
 import { db } from "../db/index.js";
 import { outboxEvents } from "../db/schema.js";
 import { broadcastJson, sendToUser } from "./realtimeWs.js";
+import type { GiveawayListItem } from "./giveaways.js";
 import { buildMeEconomyPatch } from "./me.js";
 const PUBLISH_RETRIES = 2;
 const PUBLISH_RETRY_DELAY_MS = 150;
@@ -83,6 +85,14 @@ export type BroadcastWsEvent =
         winnerOption: "A" | "B" | null;
         myBet: { option: "A" | "B"; amount: number } | null;
         myPlatformBalance: number | null;
+      };
+    }
+  | {
+      type: "giveaways_updated";
+      v: 1;
+      data: {
+        home: HomeGiveawaysResponse;
+        list: GiveawayListItem[];
       };
     };
 

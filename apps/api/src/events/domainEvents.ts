@@ -17,6 +17,7 @@ export const BROADCAST_EVENT_TYPES = [
   "live_started",
   "live_ended",
   "prediction_state",
+  "giveaways_updated",
 ] as const;
 
 export type MeUpdateEvent = {

@@ -55,6 +55,7 @@ import {
   applyDropClaimedToQuery,
   applyDropFinishedToQuery,
   applyDropStartedToQuery,
+  applyGiveawaysSnapshotToQueries,
   applyLiveEndedToQuery,
   applyLiveStartedToQuery,
   applyPredictionStateToQuery,
@@ -448,6 +449,9 @@ function AppShell({
       },
       onPredictionState: (data) => {
         applyPredictionStateToQuery(data);
+      },
+      onGiveawaysUpdated: (data) => {
+        applyGiveawaysSnapshotToQueries(data);
       },
       /** Не делаем HTTP refetch на каждый reconnect — придёт `initial_state` / инкрементальные события. */
       onOpen: () => {

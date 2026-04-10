@@ -1,9 +1,12 @@
 import type { DropSnapshot } from "../components/DropOverlay";
 import type {
   DropStartedPayload,
+  GiveawaysWsSnapshotPayload,
   PredictionStatePayload,
   WsInitialStatePayload,
 } from "../hooks/useRealtimeWebSocket";
+import type { HomeGiveawaysResponse } from "shared";
+import type { GiveawayListItemDto } from "../query/fetchers";
 import type { LiveBroadcastActive } from "../components/LiveBroadcastCard";
 import type { LiveBroadcastPublic } from "../store/liveBroadcastStore";
 import { queryClient } from "../query/queryClient";
@@ -106,6 +109,19 @@ export function applyPredictionStateToQuery(data: PredictionStatePayload): void 
   );
 }
 
+export function applyGiveawaysSnapshotToQueries(
+  data: GiveawaysWsSnapshotPayload
+): void {
+  queryClient.setQueryData<HomeGiveawaysResponse>(
+    queryKeys.home.giveaways(),
+    data.home
+  );
+  queryClient.setQueryData<GiveawayListItemDto[]>(
+    queryKeys.giveaways.list(),
+    data.list
+  );
+}
+
 /** Снимок `initial_state` — единственная запись в кэш, без HTTP. */
 export function applyWsInitialStateToQueries(
   data: WsInitialStatePayload
@@ -131,5 +147,9 @@ export function applyWsInitialStateToQueries(
     applyPredictionStateToQuery(data.prediction);
   } else {
     queryClient.setQueryData(queryKeys.predictions.active(), null);
+  }
+
+  if (data.giveaways?.home && Array.isArray(data.giveaways.list)) {
+    applyGiveawaysSnapshotToQueries(data.giveaways);
   }
 }

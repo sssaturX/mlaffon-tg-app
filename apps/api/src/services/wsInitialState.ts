@@ -1,5 +1,9 @@
 import { getLastBroadcastSeq } from "../lib/realtimeSeq.js";
 import { getActiveDropSnapshot } from "./drops.js";
+import {
+  buildGiveawaysWsSnapshot,
+  type GiveawaysWsSnapshot,
+} from "./giveawaysRealtime.js";
 import { getActiveLiveBroadcast } from "./liveBroadcast.js";
 import { getActivePrediction } from "./predictions.js";
 import { WS_EVENT_VERSION } from "../events/domainEvents.js";
@@ -23,16 +27,18 @@ export type WsInitialStateEvent = {
         };
     drop: Awaited<ReturnType<typeof getActiveDropSnapshot>>;
     prediction: Awaited<ReturnType<typeof getActivePrediction>>;
+    giveaways: GiveawaysWsSnapshot;
   };
 };
 
 export async function buildWsInitialState(userId: string): Promise<WsInitialStateEvent> {
   const serverNow = new Date().toISOString();
-  const [broadcastSeq, liveRow, drop, prediction] = await Promise.all([
+  const [broadcastSeq, liveRow, drop, prediction, giveaways] = await Promise.all([
     getLastBroadcastSeq(),
     getActiveLiveBroadcast(),
     getActiveDropSnapshot(userId),
     getActivePrediction(userId),
+    buildGiveawaysWsSnapshot(),
   ]);
 
   const live = liveRow
@@ -55,6 +61,7 @@ export async function buildWsInitialState(userId: string): Promise<WsInitialStat
       live,
       drop,
       prediction,
+      giveaways,
     },
   };
 }

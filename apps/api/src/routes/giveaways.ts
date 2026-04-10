@@ -7,6 +7,7 @@ import {
   joinGiveaway,
   listGiveawaysPublic,
 } from "../services/giveaways.js";
+import { publishGiveawaysRealtimeSnapshot } from "../services/giveawaysRealtime.js";
 
 export async function registerGiveawayRoutes(app: FastifyInstance) {
   app.get("/api/v1/giveaways", async () => {
@@ -91,6 +92,7 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
           error: { code: r.code, message: messages[r.code] },
         });
       }
+      void publishGiveawaysRealtimeSnapshot();
       return { ok: true, joinedAt: r.joinedAt, economy: r.economy };
     }
   );

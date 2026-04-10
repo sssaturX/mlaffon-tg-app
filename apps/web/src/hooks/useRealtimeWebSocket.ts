@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import type { HomeGiveawaysResponse } from "shared";
 import { getToken } from "../api";
 import type { DropSnapshot } from "../components/DropOverlay";
+import type { GiveawayListItemDto } from "../query/fetchers";
 
 type LiveStartedPayload = {
   id: string;
@@ -57,11 +59,17 @@ export type WsInitialStatePayload = {
       };
   drop: DropSnapshot;
   prediction: PredictionStatePayload | null;
+  giveaways: {
+    home: HomeGiveawaysResponse;
+    list: GiveawayListItemDto[];
+  };
 };
+
+export type GiveawaysWsSnapshotPayload = WsInitialStatePayload["giveaways"];
 
 /**
  * WebSocket `/api/v1/ws?token=…`
- * События: `initial_state`, затем `me_update`, `drop_*`, `live_*`, `prediction_state`.
+ * События: `initial_state`, затем `me_update`, `drop_*`, `live_*`, `prediction_state`, `giveaways_updated`.
  * `balance_updated` — legacy, без действия (экономика приходит через `me_update`).
  */
 export function useRealtimeWebSocket(
@@ -73,6 +81,7 @@ export function useRealtimeWebSocket(
     onLiveStarted: (data: LiveStartedPayload) => void;
     onLiveEnded: () => void;
     onPredictionState: (data: PredictionStatePayload) => void;
+    onGiveawaysUpdated?: (data: GiveawaysWsSnapshotPayload) => void;
     onOpen: () => void;
     /** Первое сообщение после connect / reconnect — снимок эфира/дропа/предикта. */
     onInitialState?: (data: WsInitialStatePayload) => void;
@@ -249,6 +258,14 @@ export function useRealtimeWebSocket(
           if (d.type === "prediction_state" && d.data && typeof d.data === "object") {
             observeBroadcastSeq(d);
             h.onPredictionState(d.data as PredictionStatePayload);
+            return;
+          }
+          if (d.type === "giveaways_updated" && d.data && typeof d.data === "object") {
+            observeBroadcastSeq(d);
+            const payload = d.data as GiveawaysWsSnapshotPayload;
+            if (payload.home?.giveaways && Array.isArray(payload.list)) {
+              h.onGiveawaysUpdated?.(payload);
+            }
             return;
           }
           if (d.type === "balance_updated") {
