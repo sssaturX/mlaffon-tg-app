@@ -2467,6 +2467,68 @@ export function App() {
                       >
                         {row.active ? "Скрыть" : "Включить"}
                       </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={loading}
+                        style={{ borderColor: "#f87171", color: "#f87171" }}
+                        title="Удалить задание и связанные user_tasks / evidence из БД"
+                        onClick={async () => {
+                          if (!token) return;
+                          if (
+                            !window.confirm(
+                              `Удалить задание «${row.id}» безвозвратно?\n\nБудут удалены прогресс пользователей и загруженные доказательства по этому заданию.`
+                            )
+                          ) {
+                            return;
+                          }
+                          setLoading(true);
+                          setErr(null);
+                          try {
+                            const r = await fetch(
+                              `${apiBase()}/api/admin/tasks/${encodeURIComponent(row.id)}`,
+                              {
+                                method: "DELETE",
+                                headers: authHeaders(),
+                              }
+                            );
+                            const j = (await r.json()) as { error?: { message?: string } };
+                            if (!r.ok) {
+                              setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                              return;
+                            }
+                            if (taskEditingId === row.id) {
+                              setTaskEditingId(null);
+                              setTaskFormId("");
+                              setTaskFormTitle("");
+                              setTaskFormDescription("");
+                              setTaskFormReward(10);
+                              setTaskFormPlatform("kick");
+                              setTaskFormType("daily");
+                              setTaskFormValidation("manual");
+                              setTaskFormActionUrl("");
+                              setTaskFormActionLabel("");
+                              setTaskFormVerifyLabel("");
+                              setTaskFormHelpTitle("");
+                              setTaskFormHelpBody("");
+                              setTaskFormHelpIcon("");
+                              setTaskFormMetaJson("{}");
+                              setTaskFormChainKey("");
+                              setTaskFormChainOrder(1);
+                              setTaskFormProgressSource("");
+                              setTaskFormTargetValue(0);
+                              setTaskFormProgressLabel("");
+                            }
+                            await loadAdminTasks();
+                          } catch {
+                            setErr("Сеть недоступна");
+                          } finally {
+                            setLoading(false);
+                          }
+                        }}
+                      >
+                        Удалить
+                      </button>
                     </div>
                   </div>
                 </li>
@@ -2495,12 +2557,66 @@ export function App() {
                           {ev.images.length} изображений · {new Date(ev.createdAt).toLocaleString("ru-RU")}
                         </div>
                         {ev.note ? <p className="muted admin-m-0">{ev.note}</p> : null}
-                        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                          {ev.images.map((img, idx) => (
-                            <a key={idx} href={img} target="_blank" rel="noreferrer" className="secondary">
-                              image {idx + 1}
-                            </a>
-                          ))}
+                        <div className="admin-evidence-grid">
+                          {(Array.isArray(ev.images) ? ev.images : []).map((img, idx) => {
+                            if (typeof img !== "string" || !img.trim()) return null;
+                            const isData = /^data:image\//i.test(img);
+                            const isHttp = /^https?:\/\//i.test(img);
+                            const canInline = isData || isHttp;
+                            return (
+                              <div key={idx} className="admin-evidence-card">
+                                {canInline ? (
+                                  <>
+                                    <img
+                                      src={img}
+                                      alt={`Скриншот ${idx + 1} · ${ev.taskTitle}`}
+                                      className="admin-evidence-thumb"
+                                      loading="lazy"
+                                    />
+                                    <details className="admin-evidence-details">
+                                      <summary className="admin-evidence-details__summary">
+                                        Крупнее
+                                      </summary>
+                                      <div className="admin-evidence-full-wrap">
+                                        <img
+                                          src={img}
+                                          alt=""
+                                          className="admin-evidence-full"
+                                        />
+                                      </div>
+                                    </details>
+                                    {isHttp ? (
+                                      <a
+                                        href={img}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="secondary admin-evidence-link"
+                                      >
+                                        Открыть URL
+                                      </a>
+                                    ) : (
+                                      <a
+                                        href={img}
+                                        download={`${ev.taskId}-stage${ev.stage}-${idx + 1}.png`}
+                                        className="secondary admin-evidence-link"
+                                      >
+                                        Скачать файл
+                                      </a>
+                                    )}
+                                  </>
+                                ) : (
+                                  <a
+                                    href={img}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="secondary"
+                                  >
+                                    Вложение {idx + 1}
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                       <div className="admin-actions">

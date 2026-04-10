@@ -1,16 +1,97 @@
-import { Coins, Info, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Coins, ImagePlus, Info, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import WebApp from "@twa-dev/sdk";
 import type { Platform, TaskDto } from "shared";
 import { HelpSheetModal } from "./HelpSheetModal";
 import { TaskEvidenceExamples } from "./TaskEvidenceExamples";
 
+/** Справка не показываем для API-подписок Twitch/Kick — только мешает в шапке. */
+function showTaskHelpInUi(task: TaskDto): boolean {
+  if (!task.help) return false;
+  if (
+    task.validationType === "api" &&
+    (task.platform === "twitch" || task.platform === "kick")
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function defaultActionLabel(platform: Platform): string {
   if (platform === "kick") return "Подписаться на Kick";
   if (platform === "twitch") return "Подписаться на Twitch";
   if (platform === "telegram") return "Подписаться в Telegram";
   return "Перейти";
+}
+
+function TaskEvidenceControls({
+  inputId,
+  evidenceFiles,
+  onEvidenceFilesChange,
+  onSubmitEvidence,
+  evidenceUploading,
+  resubmit,
+}: {
+  inputId: string;
+  evidenceFiles: FileList | null;
+  onEvidenceFilesChange: (files: FileList | null) => void;
+  onSubmitEvidence: () => Promise<void>;
+  evidenceUploading: boolean;
+  resubmit: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const count = evidenceFiles?.length ?? 0;
+  const hasFiles = count > 0;
+
+  return (
+    <div className="task-evidence-controls task-detail-modal__block">
+      <input
+        ref={inputRef}
+        id={inputId}
+        type="file"
+        accept="image/*,.heic,.heif"
+        multiple
+        className="task-evidence-controls__input"
+        tabIndex={-1}
+        onChange={(e) => onEvidenceFilesChange(e.target.files)}
+      />
+      <button
+        type="button"
+        className="task-evidence-controls__pick"
+        aria-label="Выбрать скриншоты с устройства"
+        onClick={() => inputRef.current?.click()}
+      >
+        <ImagePlus size={22} strokeWidth={2} aria-hidden />
+        <span>
+          {resubmit ? "Выбрать другие скрины" : "Загрузить скрины"}
+        </span>
+      </button>
+      {hasFiles ? (
+        <p className="task-evidence-controls__meta muted m-0">
+          Выбрано: {count} из 4 · JPG, PNG, WebP до 2,5 МБ
+        </p>
+      ) : (
+        <p className="task-evidence-controls__hint muted m-0">
+          Нажми кнопку выше и выбери скрины в галерее или файлах.
+        </p>
+      )}
+      <button
+        type="button"
+        className="task-evidence-controls__submit btn primary"
+        disabled={evidenceUploading || !hasFiles}
+        onClick={() => void onSubmitEvidence()}
+      >
+        {evidenceUploading
+          ? "Отправка…"
+          : hasFiles
+            ? resubmit
+              ? "Отправить новые скрины на проверку"
+              : "Отправить скрины на проверку"
+            : "Сначала выберите файлы"}
+      </button>
+    </div>
+  );
 }
 
 function hardStageDisplay(t: TaskDto): { cur: number; total: number } | null {
@@ -116,7 +197,7 @@ export function TaskDetailModal({
               {task.title}
             </h2>
             <div className="task-detail-modal__head-actions">
-              {task.help ? (
+              {showTaskHelpInUi(task) ? (
                 <button
                   type="button"
                   className="task-detail-modal__help-btn"
@@ -247,57 +328,24 @@ export function TaskDetailModal({
                   <summary className="task-detail-replace-evidence__summary muted">
                     Заменить скрины (необязательно)
                   </summary>
-                  <div className="task-card__evidence task-detail-modal__block">
-                    <label
-                      className="task-card__file-label muted"
-                      htmlFor="task-detail-evidence-replace"
-                    >
-                      Скриншоты (до 4, до 2,5 МБ)
-                    </label>
-                    <input
-                      id="task-detail-evidence-replace"
-                      type="file"
-                      accept="image/*,.heic,.heif"
-                      multiple
-                      className="task-card__file"
-                      onChange={(e) => onEvidenceFilesChange(e.target.files)}
-                    />
-                    <button
-                      type="button"
-                      className="secondary task-card__btn-row task-detail-btn--secondary-inline"
-                      disabled={
-                        evidenceUploading || !evidenceFiles || evidenceFiles.length === 0
-                      }
-                      onClick={() => void onSubmitEvidence()}
-                    >
-                      {evidenceUploading ? "Загрузка…" : "Загрузить снова"}
-                    </button>
-                  </div>
+                  <TaskEvidenceControls
+                    inputId="task-detail-evidence-replace"
+                    evidenceFiles={evidenceFiles}
+                    onEvidenceFilesChange={onEvidenceFilesChange}
+                    onSubmitEvidence={onSubmitEvidence}
+                    evidenceUploading={evidenceUploading}
+                    resubmit
+                  />
                 </details>
               ) : (
-                <div className="task-card__evidence task-detail-modal__block">
-                  <label className="task-card__file-label muted" htmlFor="task-detail-evidence">
-                    Скриншоты (до 4, до 2,5 МБ)
-                  </label>
-                  <input
-                    id="task-detail-evidence"
-                    type="file"
-                    accept="image/*,.heic,.heif"
-                    multiple
-                    className="task-card__file"
-                    onChange={(e) => onEvidenceFilesChange(e.target.files)}
-                  />
-                  <button
-                    type="button"
-                    className="secondary task-card__btn-row task-detail-btn--secondary-inline"
-                    disabled={
-                      evidenceUploading || !evidenceFiles || evidenceFiles.length === 0
-                    }
-                    onClick={() => void onSubmitEvidence()}
-                  >
-                    {evidenceUploading ? "Загрузка…" : "Загрузить скрины"}
-                  </button>
-                </div>
+                <TaskEvidenceControls
+                  inputId="task-detail-evidence"
+                  evidenceFiles={evidenceFiles}
+                  onEvidenceFilesChange={onEvidenceFilesChange}
+                  onSubmitEvidence={onSubmitEvidence}
+                  evidenceUploading={evidenceUploading}
+                  resubmit={false}
+                />
               )
             ) : null}
 
@@ -333,12 +381,12 @@ export function TaskDetailModal({
         </div>
       </div>
 
-      {task.help ? (
+      {showTaskHelpInUi(task) ? (
         <HelpSheetModal
           open={helpOpen}
-          title={task.help.title}
-          body={task.help.body}
-          icon={task.help.icon}
+          title={task.help!.title}
+          body={task.help!.body}
+          icon={task.help!.icon}
           onClose={() => setHelpOpen(false)}
         />
       ) : null}

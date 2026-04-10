@@ -3,31 +3,6 @@ import { db } from "../db/index.js";
 import { appSettings, giveaways } from "../db/schema.js";
 import { getParticipantCountsForGiveawayIds } from "./giveaways.js";
 
-export type CashbackPublic = {
-  enabled: boolean;
-  title: string;
-  imageUrl: string | null;
-  body: string;
-};
-
-const defaultCashback: CashbackPublic = {
-  enabled: true,
-  title: "Кэшбек Mlaffon",
-  imageUrl: null,
-  body: "Копите монеты на Twitch и Kick и обменивайте в магазине.",
-};
-
-export async function getCashbackSetting(): Promise<CashbackPublic> {
-  const [row] = await db
-    .select()
-    .from(appSettings)
-    .where(eq(appSettings.key, "cashback"))
-    .limit(1);
-  if (!row?.value) return defaultCashback;
-  const v = row.value as Partial<CashbackPublic>;
-  return { ...defaultCashback, ...v };
-}
-
 export async function getFaqItems(): Promise<{ q: string; a: string }[]> {
   const [row] = await db
     .select()
@@ -51,14 +26,10 @@ export async function getFaqItems(): Promise<{ q: string; a: string }[]> {
 }
 
 export async function buildHomeContentResponse(): Promise<{
-  cashback: CashbackPublic;
   faq: { q: string; a: string }[];
 }> {
-  const [cashback, faq] = await Promise.all([
-    getCashbackSetting(),
-    getFaqItems(),
-  ]);
-  return { cashback, faq };
+  const faq = await getFaqItems();
+  return { faq };
 }
 
 export async function buildHomeGiveawaysResponse(): Promise<{
@@ -113,7 +84,6 @@ export async function buildHomePublicResponse(): Promise<{
     participantCount: number;
     drawnAt: string | null;
   }[];
-  cashback: CashbackPublic;
   faq: { q: string; a: string }[];
 }> {
   const [content, { giveaways }] = await Promise.all([

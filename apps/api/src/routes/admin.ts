@@ -34,6 +34,7 @@ import {
   createTaskAdmin,
   listTasksAdmin,
   setTaskActive,
+  deleteTaskAdmin,
   updateTaskAdmin,
 } from "../services/adminTasks.js";
 import { signAdminToken, verifyAdminToken } from "../lib/adminJwt.js";
@@ -586,34 +587,6 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     return { ok: true, winners: r.winners };
   });
 
-  const patchCashback = z.object({
-    enabled: z.boolean(),
-    title: z.string().min(1),
-    imageUrl: z.string().url().optional().nullable(),
-    body: z.string().min(1),
-  });
-
-  app.put("/api/admin/settings/cashback", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const parsed = patchCashback.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return reply.status(400).send({
-        error: { code: "bad_request", message: parsed.error.message },
-      });
-    }
-    await db
-      .insert(appSettings)
-      .values({
-        key: "cashback",
-        value: parsed.data,
-      })
-      .onConflictDoUpdate({
-        target: appSettings.key,
-        set: { value: parsed.data, updatedAt: sql`now()` },
-      });
-    return { ok: true };
-  });
-
   app.get("/api/admin/promos", async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     const rows = await db
@@ -926,7 +899,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   app.delete("/api/admin/tasks/:id", async (req, reply) => {
     if (!requireAdmin(req, reply)) return;
     const id = (req.params as { id: string }).id;
-    const ok = await setTaskActive(id, false);
+    const ok = await deleteTaskAdmin(id);
     if (!ok) {
       return reply.status(404).send({
         error: { code: "not_found", message: "Задание не найдено" },

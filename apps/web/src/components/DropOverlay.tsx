@@ -1,7 +1,8 @@
 import { Gift, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import WebApp from "@twa-dev/sdk";
-import { api } from "../api";
+import { api, formatApiError } from "../api";
+import { useToast } from "../context/ToastContext";
 import { useSyncedCountdownMs } from "../hooks/useSyncedCountdown";
 
 const DIGITS = 4;
@@ -96,6 +97,7 @@ export function DropOverlay({
   onAfterClaim: (reward: number) => void | Promise<void>;
   onRefreshSnapshot?: () => void | Promise<void>;
 }) {
+  const { showToast } = useToast();
   const [digits, setDigits] = useState<string[]>(() => Array(DIGITS).fill(""));
   const [err, setErr] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
@@ -140,7 +142,9 @@ export function DropOverlay({
   const submit = useCallback(async () => {
     const code = digits.join("");
     if (code.length < DIGITS) {
-      setErr("Введите 4 цифры");
+      const m = "Введите 4 цифры";
+      setErr(m);
+      showToast(m, "error");
       return;
     }
     setSubmitting(true);
@@ -161,10 +165,6 @@ export function DropOverlay({
       return;
     }
     setSubmitting(false);
-    const body = !r.ok
-      ? (r.err as { error?: string; message?: string })
-      : null;
-    const codeErr = body?.error;
     haptic("error");
     setShake(true);
     if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
@@ -173,18 +173,14 @@ export function DropOverlay({
       setShake(false);
     }, 500);
     setDigits(Array(DIGITS).fill(""));
-    if (codeErr === "wrong_code") {
-      setErr("Неверный код");
-    } else if (codeErr === "pool_full") {
-      setErr("Места закончились");
-    } else if (codeErr === "already_won") {
-      setErr("Уже получено");
-    } else {
-      setErr(body?.message ?? "Ошибка");
-    }
+    const msg = !r.ok
+      ? formatApiError(r)
+      : "Не удалось применить код. Попробуйте ещё раз.";
+    setErr(msg);
+    showToast(msg, "error");
     queueMicrotask(() => inputsRef.current[0]?.focus());
     await Promise.resolve(onRefreshSnapshot?.());
-  }, [digits, onAfterClaim, onRefreshSnapshot]);
+  }, [digits, onAfterClaim, onRefreshSnapshot, showToast]);
 
   submitRef.current = submit;
 

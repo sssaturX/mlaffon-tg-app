@@ -194,7 +194,9 @@ export default function App() {
             );
           }
         } else {
-          setError(formatApiError(r));
+          const m = formatApiError(r);
+          setError(m);
+          showToast(m, "error");
         }
         setReady(true);
         return;
@@ -216,16 +218,19 @@ export default function App() {
             }),
           ]);
         } else {
-          setError(formatApiError(r));
+          const m = formatApiError(r);
+          setError(m);
+          showToast(m, "error");
         }
         setReady(true);
         return;
       }
 
       if (looksLikeTelegramMiniApp()) {
-        setError(
-          "Не удалось получить данные Telegram. Откройте мини-приложение из бота."
-        );
+        const m =
+          "Не удалось получить данные Telegram. Откройте мини-приложение из бота.";
+        setError(m);
+        showToast(m, "error");
         setReady(true);
         return;
       }
@@ -235,7 +240,9 @@ export default function App() {
         return;
       }
 
-      setError("Откройте приложение внутри Telegram");
+      const m = "Откройте приложение внутри Telegram";
+      setError(m);
+      showToast(m, "error");
       setReady(true);
     })();
     return () => {

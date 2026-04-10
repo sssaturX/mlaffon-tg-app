@@ -5,7 +5,7 @@ import { fetchHomeContent, fetchHomeGiveaways } from "../../query/fetchers";
 const STALE_HOME_CONTENT = 1000 * 60 * 30;
 const STALE_HOME_GIVEAWAYS = 1000 * 60 * 2;
 
-/** STATIC / rarely changes: FAQ, cashback block. */
+/** STATIC / rarely changes: FAQ. */
 export function useHomeContent() {
   return useQuery({
     queryKey: queryKeys.home.content(),

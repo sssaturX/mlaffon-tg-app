@@ -1082,6 +1082,69 @@ label.admin-checkbox-row input[type="checkbox"] {
   animation: admin-fade-in 0.2s ease-out;
 }
 
+/* Скрины заданий: data URL не открываются из target=_blank — показываем img + разворот */
+.admin-evidence-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.admin-evidence-card {
+  flex: 0 0 auto;
+  max-width: min(100%, 280px);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius);
+  padding: 10px;
+  background: var(--admin-bg-elevated);
+}
+
+.admin-evidence-thumb {
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #000;
+}
+
+.admin-evidence-details {
+  margin-top: 8px;
+}
+
+.admin-evidence-details__summary {
+  cursor: pointer;
+  color: var(--admin-accent);
+  font-size: 13px;
+  user-select: none;
+}
+
+.admin-evidence-details__summary:hover {
+  text-decoration: underline;
+}
+
+.admin-evidence-full-wrap {
+  margin-top: 10px;
+  max-height: 70vh;
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid var(--admin-border-strong);
+  background: #000;
+}
+
+.admin-evidence-full {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}
+
+.admin-evidence-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
 .admin-skeleton-list {
   display: grid;
   gap: 8px;

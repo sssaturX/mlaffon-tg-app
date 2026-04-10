@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Coins, HelpCircle, Lightbulb } from "lucide-react";
 import type { Platform, TaskDto } from "shared";
 import { api, formatApiError } from "../api";
+import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { HelpSheetModal } from "../components/HelpSheetModal";
 import { TaskDetailModal } from "../components/TaskDetailModal";
@@ -92,10 +93,12 @@ function taskKindPill(t: TaskDto): { label: string; variant: "sub" | "project" |
 
 export default function Tasks() {
   const { activePlatform } = useActivePlatform();
+  const { showToast } = useToast();
   const refetchTasks = useRefetchTasks(activePlatform);
   const tasksQ = useTasks(activePlatform);
   const tasks = tasksQ.data ?? [];
   const [msg, setMsg] = useState<string | null>(null);
+  const loadErrorToastKey = useRef<string | null>(null);
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [evidenceByTask, setEvidenceByTask] = useState<Record<string, FileList | null>>({});
   const [evidenceUploadingId, setEvidenceUploadingId] = useState<string | null>(null);
@@ -107,11 +110,47 @@ export default function Tasks() {
   useEffect(() => {
     if (tasksQ.isError) {
       const e = tasksQ.error;
-      setMsg(
-        e instanceof ApiQueryError ? formatApiError(e.apiErr) : "Ошибка загрузки"
-      );
-    } else if (tasksQ.isSuccess) setMsg(null);
-  }, [tasksQ.isError, tasksQ.isSuccess, tasksQ.error]);
+      const text =
+        e instanceof ApiQueryError
+          ? formatApiError(e.apiErr)
+          : "Не удалось загрузить задания. Проверьте сеть и попробуйте снова.";
+      setMsg(text);
+      const key = `${activePlatform}:${text}`;
+      if (loadErrorToastKey.current !== key) {
+        loadErrorToastKey.current = key;
+        showToast(text, "error");
+      }
+    } else if (tasksQ.isSuccess) {
+      loadErrorToastKey.current = null;
+      setMsg(null);
+    }
+  }, [
+    activePlatform,
+    showToast,
+    tasksQ.isError,
+    tasksQ.isSuccess,
+    tasksQ.error,
+  ]);
+
+  /** Модалка держит снимок задания — синхронизируем с кэшем списка после claim / refetch. */
+  useEffect(() => {
+    setDetailTask((prev) => {
+      if (!prev) return prev;
+      const next = tasks.find((x) => x.id === prev.id);
+      if (!next) return prev;
+      if (
+        prev.userStatus === next.userStatus &&
+        prev.evidenceStageStatus === next.evidenceStageStatus &&
+        prev.lastError === next.lastError &&
+        prev.progressCurrent === next.progressCurrent &&
+        (prev.hardStageCurrent ?? null) === (next.hardStageCurrent ?? null) &&
+        (prev.hardStageTotal ?? null) === (next.hardStageTotal ?? null)
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [tasks]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, TaskDto[]>();
@@ -152,21 +191,35 @@ export default function Tasks() {
     setClaimingId(null);
     if (r.ok) {
       if (r.data.status === "pending") {
-        const m =
-          "Задание в очереди на проверку. Обновите через несколько секунд.";
-        setMsg(m);
+        setMsg(null);
+        showToast("Задание отправлено на проверку подписки.", "info");
+        setDetailTask((prev) =>
+          prev?.id === id ? { ...prev, userStatus: "pending", lastError: null } : prev
+        );
         void refetchTasks();
         return;
       }
-      const okMsg = `+${r.data.reward ?? 0} монет`;
-      setMsg(okMsg);
+      const reward = r.data.reward ?? 0;
+      setMsg(null);
+      showToast(
+        reward > 0
+          ? `Задание выполнено! +${reward.toLocaleString("ru-RU")} монет`
+          : "Задание выполнено!",
+        "success"
+      );
       if (Array.isArray(r.data.tasks)) {
         replaceTasksListFromClaim(activePlatform, r.data.tasks);
+        const fresh = r.data.tasks.find((t) => t.id === id);
+        if (fresh) {
+          setDetailTask((prev) => (prev?.id === id ? fresh : prev));
+        }
       } else {
         void refetchTasks();
       }
     } else {
-      setMsg(formatApiError(r));
+      const m = formatApiError(r);
+      setMsg(m);
+      showToast(m, "error");
     }
   }
 
@@ -180,9 +233,8 @@ export default function Tasks() {
       });
       setEvidenceUploadingId(null);
       if (r.ok) {
-        setMsg(
-          "Скрины отправлены — задание на рассмотрении. После одобрения админа можно забрать награду и перейти к следующему этапу."
-        );
+        setMsg(null);
+        showToast("Скрины отправлены на проверку администратору.", "success");
         setEvidenceByTask((prev) => ({ ...prev, [task.id]: null }));
         markTaskEvidenceSubmitted(activePlatform, task.id);
         setDetailTask((prev) =>
@@ -197,9 +249,11 @@ export default function Tasks() {
         void refetchTasks();
         return;
       }
-      setMsg(formatApiError(r));
+      const m = formatApiError(r);
+      setMsg(m);
+      showToast(m, "error");
     },
-    [activePlatform, refetchTasks]
+    [activePlatform, refetchTasks, showToast]
   );
 
   async function submitEvidence(task: TaskDto) {
@@ -234,11 +288,11 @@ export default function Tasks() {
       }
     }
     if (encoded.length === 0) {
-      setMsg(
-        skipped.length
-          ? `Не удалось прочитать изображения: ${skipped.join(", ")}. Нужны JPG/PNG/WebP до 2,5 МБ (HEIC — сохрани как JPEG в галерее).`
-          : "Выберите файлы изображений (JPG, PNG, WebP до 2,5 МБ)."
-      );
+      const m = skipped.length
+        ? `Не удалось прочитать изображения: ${skipped.join(", ")}. Нужны JPG/PNG/WebP до 2,5 МБ (HEIC — сохрани как JPEG в галерее).`
+        : "Выберите файлы изображений (JPG, PNG, WebP до 2,5 МБ).";
+      setMsg(m);
+      showToast(m, "error");
       return;
     }
     await uploadEvidence(task, encoded);
@@ -279,10 +333,23 @@ export default function Tasks() {
     return false;
   }
 
+  /** Справка на превью-карточке: для API-подписок Twitch/Kick не показываем (кнопка ломала сетку рядом с наградой). */
+  function showHelpOnTaskCard(t: TaskDto): boolean {
+    if (!t.help) return false;
+    if (
+      t.validationType === "api" &&
+      (t.platform === "twitch" || t.platform === "kick")
+    ) {
+      return false;
+    }
+    return true;
+  }
+
   function renderTaskCard(t: TaskDto, section: string) {
     const done = t.userStatus === "completed";
     const streamTheme = streamPreviewThemeClass(section, activePlatform);
     const kind = taskKindPill(t);
+    const cardHelp = showHelpOnTaskCard(t);
     const kindClass =
       kind.variant === "sub"
         ? "pill pill--task-sub"
@@ -297,7 +364,7 @@ export default function Tasks() {
       >
         <button
           type="button"
-          className={`task-card-preview__main ${t.help ? "task-card-preview__main--with-help" : ""}`}
+          className={`task-card-preview__main ${cardHelp ? "task-card-preview__main--with-help" : ""}`}
           onClick={() => setDetailTask(t)}
         >
           <div className="task-card-preview__row">
@@ -342,7 +409,7 @@ export default function Tasks() {
             <ChevronRight className="task-card-preview__arrow" size={20} strokeWidth={2} aria-hidden />
           </div>
         </button>
-        {t.help ? (
+        {cardHelp ? (
           <button
             type="button"
             className="task-card-preview__help"

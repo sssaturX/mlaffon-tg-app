@@ -436,23 +436,6 @@ async function seed() {
     });
   }
 
-  const [cash] = await db
-    .select()
-    .from(appSettings)
-    .where(eq(appSettings.key, "cashback"))
-    .limit(1);
-  if (!cash) {
-    await db.insert(appSettings).values({
-      key: "cashback",
-      value: {
-        enabled: true,
-        title: "Кэшбек Mlaffon",
-        imageUrl: null,
-        body: "Копите монеты на Twitch и Kick, обменивайте в магазине.",
-      },
-    });
-  }
-
   const [faqRow] = await db
     .select()
     .from(appSettings)

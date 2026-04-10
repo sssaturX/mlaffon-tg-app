@@ -6,10 +6,12 @@ import { useOAuthLink } from "../hooks/useOAuthLink";
 import { appEventBus } from "../events/appEventBus";
 import { looksLikeTelegramMiniApp } from "../utils/waitForTelegramInitData";
 import { UserPhotoAvatar } from "../components/UserPhotoAvatar";
+import { emailAvatarLetter } from "../utils/emailAvatarLetter";
 
 const creatorName =
-  import.meta.env.VITE_CREATOR_DISPLAY_NAME?.trim() || "Стример";
-const creatorAvatar = import.meta.env.VITE_CREATOR_AVATAR_URL?.trim() || "";
+  import.meta.env.VITE_CREATOR_DISPLAY_NAME?.trim() || "MlaffonXD";
+const creatorAvatar =
+  import.meta.env.VITE_CREATOR_AVATAR_URL?.trim() || "/streamer-kick.jpg";
 const creatorKickLabel =
   import.meta.env.VITE_CREATOR_KICK_LABEL?.trim() || "Kick";
 const creatorKickUrl = import.meta.env.VITE_CREATOR_KICK_PAGE_URL?.trim() || "";
@@ -75,7 +77,7 @@ export default function WelcomeGate({ me }: { me: MeResponse }) {
         <div className="card welcome-gate__creator">
           <div className="welcome-gate__creator-row">
             <UserPhotoAvatar
-              src={creatorAvatar || undefined}
+              src={creatorAvatar}
               className="welcome-gate__avatar welcome-gate__avatar--lg"
               placeholderClassName="welcome-gate__avatar--ph"
             />
@@ -107,6 +109,7 @@ export default function WelcomeGate({ me }: { me: MeResponse }) {
               src={me.photoUrl}
               className="welcome-gate__avatar"
               placeholderClassName="welcome-gate__avatar--ph"
+              fallbackLetter={emailAvatarLetter(me.photoUrl, me.email)}
             />
             <div className="welcome-gate__creator-meta">
               <div className="welcome-gate__user-name">{userLabel}</div>

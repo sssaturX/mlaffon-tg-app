@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import WebApp from "@twa-dev/sdk";
 import { Sparkles, Ban } from "lucide-react";
 import { api, formatApiError } from "../api";
+import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { AppLoadingSpinner } from "../components/AppLoadingSpinner";
 import {
@@ -58,6 +59,7 @@ function SpinResultCard({ result }: { result: SpinReveal }) {
 
 export default function Games() {
   const { activePlatform } = useActivePlatform();
+  const { showToast } = useToast();
   const fortuneConfigQ = useFortuneConfig();
   const fortuneStateQ = useFortuneState();
   const invalidateFortuneState = useInvalidateFortuneState();
@@ -85,12 +87,23 @@ export default function Games() {
   const [spinErr, setSpinErr] = useState<string | null>(null);
   const pendingRevealRef = useRef<SpinReveal | null>(null);
   const spinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadErrToastKey = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
       if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!loadErr) {
+      loadErrToastKey.current = null;
+      return;
+    }
+    if (loadErrToastKey.current === loadErr) return;
+    loadErrToastKey.current = loadErr;
+    showToast(loadErr, "error");
+  }, [loadErr, showToast]);
 
   async function spin(mode: "free" | "paid") {
     if (spinning || !status?.segments.length) return;
@@ -110,7 +123,9 @@ export default function Games() {
 
     if (!r.ok) {
       setSpinning(false);
-      setSpinErr(formatApiError(r));
+      const m = formatApiError(r);
+      setSpinErr(m);
+      showToast(m, "error");
       return;
     }
 

@@ -82,7 +82,7 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
           channel_not_subscribed:
             "Нужна подписка на канал: откройте ссылку в карточке розыгрыша и подпишитесь, затем снова нажмите «Участвовать»",
           channel_not_configured:
-            "Проверка подписки недоступна (канал или бот не настроены). Обратитесь к администратору.",
+            "Для этого розыгрыша проверяется только подписка в Telegram: в админке нужен ID канала и на сервере — TELEGRAM_BOT_TOKEN. Twitch/Kick тут не проверяются.",
           platform_not_connected:
             "Подключите Twitch или Kick в профиле",
           platform_not_allowed:

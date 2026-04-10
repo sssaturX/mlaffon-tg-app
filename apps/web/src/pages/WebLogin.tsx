@@ -1,14 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import {
-  Eye,
-  EyeOff,
-  Lock,
-  LogIn,
-  Mail,
-  Sparkles,
-  UserPlus,
-} from "lucide-react";
+import { Eye, EyeOff, Lock, LogIn, Mail, UserPlus } from "lucide-react";
 import {
   authLogin,
   authRegister,
@@ -19,6 +11,7 @@ import {
   evaluatePasswordStrength,
   passwordMeetsPolicy,
 } from "../utils/passwordStrength";
+import { useToast } from "../context/ToastContext";
 
 const REF_STORAGE_KEY = "mlaffon_pending_ref";
 
@@ -38,6 +31,7 @@ export function WebLogin({
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { showToast } = useToast();
 
   const strength = useMemo(
     () => evaluatePasswordStrength(password),
@@ -80,11 +74,15 @@ export function WebLogin({
 
     if (mode === "register") {
       if (password !== passwordConfirm) {
-        setErr("Пароли не совпадают");
+        const m = "Пароли не совпадают";
+        setErr(m);
+        showToast(m, "error");
         return;
       }
       if (!passwordMeetsPolicy(strength)) {
-        setErr("Пароль слишком простой — усильте по подсказкам ниже");
+        const m = "Пароль слишком простой — усильте по подсказкам ниже";
+        setErr(m);
+        showToast(m, "error");
         return;
       }
     }
@@ -96,7 +94,9 @@ export function WebLogin({
           ? await authRegister(email, password, pendingRef)
           : await authLogin(email, password);
       if (!r.ok) {
-        setErr(formatApiError(r));
+        const m = formatApiError(r);
+        setErr(m);
+        showToast(m, "error");
         return;
       }
       if (mode === "register") {
@@ -109,7 +109,9 @@ export function WebLogin({
       setToken(r.data.token);
       await onLoggedIn();
     } catch {
-      setErr("Ошибка сети");
+      const m = "Нет соединения с интернетом. Проверьте сеть и попробуйте снова.";
+      setErr(m);
+      showToast(m, "error");
     } finally {
       setBusy(false);
     }
@@ -127,7 +129,13 @@ export function WebLogin({
         <div className="auth-card card stack">
           <div className="auth-card__brand">
             <span className="auth-card__logo" aria-hidden>
-              <Sparkles size={22} strokeWidth={2.2} />
+              <img
+                className="auth-card__logo-img"
+                src="/streamer-kick.jpg"
+                alt=""
+                width={48}
+                height={48}
+              />
             </span>
             <div>
               <p className="auth-card__eyebrow">Mlaffon</p>

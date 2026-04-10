@@ -24,6 +24,7 @@ import { useToast } from "../context/ToastContext";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { UserPhotoAvatar } from "../components/UserPhotoAvatar";
+import { emailAvatarLetter } from "../utils/emailAvatarLetter";
 import { useOAuthLink } from "../hooks/useOAuthLink";
 import { PushNotificationsRow } from "../components/PushNotificationsRow";
 import {
@@ -206,7 +207,11 @@ export default function Profile({
 
       <div className="card card--flush">
         <div className="profile-hero">
-          <UserPhotoAvatar src={me.photoUrl} className="avatar avatar-ring" />
+          <UserPhotoAvatar
+            src={me.photoUrl}
+            className="avatar avatar-ring"
+            fallbackLetter={emailAvatarLetter(me.photoUrl, me.email)}
+          />
           <div className="profile-hero__text">
             <h2>{displayName}</h2>
             <p className="muted profile-hero__handle">{handle}</p>

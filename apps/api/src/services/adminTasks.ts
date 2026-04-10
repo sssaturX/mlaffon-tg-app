@@ -76,3 +76,13 @@ export async function setTaskActive(id: string, active: boolean) {
   if (u != null) invalidateActiveTasksCache();
   return u != null;
 }
+
+/** Полное удаление строки задания; user_tasks и task_evidence удаляются каскадом в БД. */
+export async function deleteTaskAdmin(id: string) {
+  const [d] = await db
+    .delete(tasks)
+    .where(eq(tasks.id, id))
+    .returning({ id: tasks.id });
+  if (d != null) invalidateActiveTasksCache();
+  return d != null;
+}

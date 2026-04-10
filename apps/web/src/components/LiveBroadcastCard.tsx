@@ -2,9 +2,7 @@ import WebApp from "@twa-dev/sdk";
 import { memo } from "react";
 
 const creatorName =
-  import.meta.env.VITE_CREATOR_DISPLAY_NAME?.trim() || "Стример";
-const creatorAvatar =
-  import.meta.env.VITE_CREATOR_AVATAR_URL?.trim() || "";
+  import.meta.env.VITE_CREATOR_DISPLAY_NAME?.trim() || "MlaffonXD";
 const creatorKickLabel =
   import.meta.env.VITE_CREATOR_KICK_LABEL?.trim() || "Kick";
 const creatorTwitchLabel =
@@ -55,20 +53,18 @@ export const LiveBroadcastCard = memo(function LiveBroadcastCard({
   const platformLabel =
     live.platform === "kick" ? creatorKickLabel : creatorTwitchLabel;
   const vpnText = live.vpnNote?.trim() || defaultVpnNote;
+  const streamLogo =
+    live.platform === "kick" ? "/streamer-kick.jpg" : "/streamer-twitch.png";
 
   return (
     <div className="live-broadcast-card card">
       <div className="live-broadcast-card__top">
         <div className="live-broadcast-card__avatar-wrap">
-          {creatorAvatar ? (
-            <img
-              className="live-broadcast-card__avatar"
-              src={creatorAvatar}
-              alt=""
-            />
-          ) : (
-            <div className="live-broadcast-card__avatar live-broadcast-card__avatar--placeholder" />
-          )}
+          <img
+            className="live-broadcast-card__avatar"
+            src={streamLogo}
+            alt=""
+          />
           <span className="live-broadcast-card__live-badge" aria-hidden>
             <span className="live-broadcast-card__live-dot" /> LIVE
           </span>

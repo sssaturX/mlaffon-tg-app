@@ -18,6 +18,7 @@ import { maybeQualifyReferral } from "./referrals.js";
 import { applyCredit, applyCreditSplit } from "./economy.js";
 import { reverseTaskRewardCredit } from "./taskRewardCompensation.js";
 import { getTaskVerifyQueue } from "../queue/bullmq.js";
+import { processVerifyTaskJob } from "../workers/verifyTaskProcessor.js";
 import type { TaskDto, UserTaskStatus } from "shared";
 import { extractEvidenceExamples, extractTaskUiFields } from "./taskUiMeta.js";
 import { verifyPlatformTask } from "./taskVerifyLogic.js";
@@ -639,22 +640,61 @@ export async function claimTask(
           backoff: { type: "exponential", delay: 5000 },
         }
       );
-    } catch {
-      await db
-        .update(userTasks)
-        .set({
-          status: "available",
-          lastError: "queue_unavailable",
-          updatedAt: sql`now()`,
-        })
+    } catch (queueErr: unknown) {
+      const msg =
+        queueErr instanceof Error ? queueErr.message : String(queueErr);
+      console.error(
+        "[claimTask] task-verify queue add failed, inline verify:",
+        msg
+      );
+      try {
+        await processVerifyTaskJob({ userId, taskId, periodKey: pk });
+      } catch (inlineErr: unknown) {
+        const im =
+          inlineErr instanceof Error ? inlineErr.message : String(inlineErr);
+        console.error("[claimTask] inline verify threw:", im);
+        await db
+          .update(userTasks)
+          .set({
+            status: "available",
+            lastError: "queue_unavailable",
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(userTasks.userId, userId),
+              eq(userTasks.taskId, taskId),
+              eq(userTasks.periodKey, pk)
+            )
+          );
+        return { ok: false, error: "queue_unavailable" };
+      }
+
+      const [after] = await db
+        .select()
+        .from(userTasks)
         .where(
           and(
             eq(userTasks.userId, userId),
             eq(userTasks.taskId, taskId),
             eq(userTasks.periodKey, pk)
           )
-        );
-      return { ok: false, error: "queue_unavailable" };
+        )
+        .limit(1);
+
+      if (after?.status === "completed") {
+        return {
+          ok: true,
+          mode: "sync",
+          reward: Math.max(0, Math.floor(Number(after.rewardGranted ?? 0))),
+        };
+      }
+
+      const reason = after?.lastError?.trim();
+      if (reason) {
+        return { ok: false, error: reason };
+      }
+      return { ok: false, error: "verify_failed" };
     }
 
     return { ok: true, mode: "async", jobId };

@@ -752,6 +752,19 @@ app.post("/api/v1/tasks/:id/claim", async (req, reply) => {
       evidence_pending: 409,
       multi_account_suspected: 403,
       queue_unavailable: 503,
+      not_following: 400,
+      not_subscribed: 400,
+      no_oauth: 403,
+      helix_user: 502,
+      no_broadcaster: 500,
+      kick_user: 502,
+      no_channel: 500,
+      unknown_platform: 500,
+      telegram_chat_not_configured: 500,
+      telegram_not_linked: 403,
+      telegram_not_subscribed: 400,
+      grant_failed: 500,
+      verify_failed: 400,
     };
     const claimMsg: Record<string, string> = {
       task_not_found: "Задание не найдено",
@@ -763,6 +776,22 @@ app.post("/api/v1/tasks/:id/claim", async (req, reply) => {
       multi_account_suspected: "Подозрение на мультиаккаунт. Обратитесь в поддержку.",
       queue_unavailable:
         "Проверка задания временно недоступна. Попробуйте позже.",
+      not_following: "Подписка на канал не найдена. Подпишитесь и попробуйте снова.",
+      not_subscribed: "Платная подписка на канал не найдена.",
+      no_oauth: "Подключите Twitch или Kick в профиле.",
+      helix_user:
+        "Не удалось проверить Twitch. Обновите привязку в профиле и попробуйте снова.",
+      no_broadcaster: "Задание настроено неверно (канал). Напишите в поддержку.",
+      kick_user:
+        "Не удалось проверить Kick. Обновите привязку в профиле и попробуйте снова.",
+      no_channel: "Задание настроено неверно (Kick). Напишите в поддержку.",
+      unknown_platform: "Тип задания не поддерживается.",
+      telegram_chat_not_configured:
+        "Задание настроено неверно (Telegram). Напишите в поддержку.",
+      telegram_not_linked: "Привяжите Telegram в профиле.",
+      telegram_not_subscribed: "Нужна подписка на канал из задания.",
+      grant_failed: "Не удалось начислить награду. Попробуйте позже.",
+      verify_failed: "Проверка не прошла. Попробуйте позже.",
     };
     return reply.status(map[res.error] ?? 400).send({
       error: {

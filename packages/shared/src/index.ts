@@ -129,12 +129,6 @@ export function mergeMeProfileAndEconomy(
 }
 
 export interface HomeContentResponse {
-  cashback: {
-    enabled: boolean;
-    title: string;
-    imageUrl: string | null;
-    body: string;
-  };
   faq: { q: string; a: string }[];
 }
 

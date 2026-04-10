@@ -5,6 +5,8 @@ type Props = {
   className: string;
   /** Доп. класс для плейсхолдера (нет url или ошибка загрузки), напр. `welcome-gate__avatar--ph`. */
   placeholderClassName?: string;
+  /** Если нет фото — показать букву (например первая буква email). */
+  fallbackLetter?: string | null;
   alt?: string;
   width?: number;
   height?: number;
@@ -17,6 +19,7 @@ export function UserPhotoAvatar({
   src,
   className,
   placeholderClassName,
+  fallbackLetter,
   alt = "",
   width,
   height,
@@ -24,7 +27,17 @@ export function UserPhotoAvatar({
   const [broken, setBroken] = useState(false);
   const onError = useCallback(() => setBroken(true), []);
 
+  const letter = fallbackLetter?.trim();
+
   if (!src?.trim() || broken) {
+    if (letter) {
+      const cn = [className, "user-photo-avatar--letter"].filter(Boolean).join(" ");
+      return (
+        <div className={cn} role="img" aria-label={alt || `Аватар: ${letter}`}>
+          {letter}
+        </div>
+      );
+    }
     const cn = [className, placeholderClassName].filter(Boolean).join(" ");
     return <div className={cn} aria-hidden />;
   }

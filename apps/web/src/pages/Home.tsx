@@ -12,6 +12,7 @@ import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { UserPhotoAvatar } from "../components/UserPhotoAvatar";
+import { emailAvatarLetter } from "../utils/emailAvatarLetter";
 import { LiveBroadcastCard, openExternal } from "../components/LiveBroadcastCard";
 import { OAUTH_TOAST_KEY } from "./OAuthReturn";
 import {
@@ -674,7 +675,11 @@ export default function Home({ me }: { me: MeResponse | null }) {
 
       <div className="home-hero">
         <div className="home-hero__row">
-          <UserPhotoAvatar src={me.photoUrl} className="avatar avatar-ring" />
+          <UserPhotoAvatar
+            src={me.photoUrl}
+            className="avatar avatar-ring"
+            fallbackLetter={emailAvatarLetter(me.photoUrl, me.email)}
+          />
           <div>
             <p className="home-hero__greet">Добро пожаловать,</p>
             <p className="home-hero__name">{tgDisplayName}</p>
