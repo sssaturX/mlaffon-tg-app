@@ -73,11 +73,56 @@ import { seedDefaultPointPlatforms } from "./services/platformBalances.js";
 import { trackSecurityFingerprint } from "./services/securitySignals.js";
 import { enqueueFraudReviewJob } from "./services/fraudReviewQueue.js";
 import { taskEvidence, tasks } from "./db/schema.js";
+import { resolveCorsOrigin } from "./lib/corsOrigins.js";
+import { sanitizeRequestUrlForLog } from "./lib/sanitizeLogUrl.js";
+import { issueWsTicket } from "./lib/wsTicket.js";
 
-const app = Fastify({ logger: true });
+const AUTH_RATE_LIMIT_MAX = Number.parseInt(
+  process.env.AUTH_RATE_LIMIT_MAX ?? "15",
+  10
+);
+const AUTH_RATE_LIMIT_WINDOW_MS = Number.parseInt(
+  process.env.AUTH_RATE_LIMIT_WINDOW_MS ?? String(15 * 60 * 1000),
+  10
+);
+
+const authRouteRateHeaders = {
+  "x-ratelimit-limit": true,
+  "x-ratelimit-remaining": true,
+  "x-ratelimit-reset": true,
+  "retry-after": true,
+} as const;
+
+const app = Fastify({
+  logger: {
+    level: process.env.LOG_LEVEL ?? "info",
+    serializers: {
+      req(request: {
+        id?: string;
+        method?: string;
+        url?: string;
+        headers?: Record<string, string | string[] | undefined>;
+        ip?: string;
+        socket?: { remoteAddress?: string; remotePort?: number };
+      }) {
+        const headers = { ...(request.headers ?? {}) };
+        if (headers.authorization) headers.authorization = "<redacted>";
+        if (headers.cookie) headers.cookie = "<redacted>";
+        return {
+          id: request.id,
+          method: request.method,
+          url: sanitizeRequestUrlForLog(String(request.url ?? "")),
+          headers,
+          remoteAddress: request.ip ?? request.socket?.remoteAddress,
+          remotePort: request.socket?.remotePort,
+        };
+      },
+    },
+  },
+});
 
 await app.register(cors, {
-  origin: true,
+  origin: resolveCorsOrigin(),
   credentials: true,
 });
 
@@ -118,10 +163,27 @@ await app.register(websocket);
 
 await registerAuth(app);
 
+app.post("/api/v1/ws-ticket", async (req, reply) => {
+  const userId = authUser(req, reply);
+  if (!userId) return;
+  try {
+    const ticket = await issueWsTicket(userId);
+    return { ticket };
+  } catch (e) {
+    req.log.error({ err: e }, "ws_ticket_issue_failed");
+    return reply.status(503).send({
+      error: {
+        code: "service_unavailable",
+        message: "Не удалось выдать билет. Попробуйте позже.",
+      },
+    });
+  }
+});
+
 app.get("/api/v1/ws", { websocket: true }, (socket, req) => {
-  /** `req.url` иногда без query за прокси; у Node `raw.url` — путь + `?token=`. */
+  /** `req.url` иногда без query за прокси; у Node `raw.url` — путь + query. */
   const pathAndQuery = req.raw.url ?? req.url;
-  void handleRealtimeWsConnection(socket, pathAndQuery);
+  void handleRealtimeWsConnection(socket, pathAndQuery, req.ip, req.log);
 });
 await registerOAuthRoutes(app);
 await registerAdminRoutes(app);
@@ -292,63 +354,121 @@ const webAuthBody = z.object({
   referralCode: z.string().max(32).optional(),
 });
 
-app.post("/api/v1/auth/register", async (req, reply) => {
-  const parsed = webAuthBody.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return reply.status(400).send({
-      error: {
-        code: "bad_request",
-        message:
-          "Укажите корректный email и пароль не короче 8 символов.",
+app.post(
+  "/api/v1/auth/register",
+  {
+    config: {
+      rateLimit: {
+        max: AUTH_RATE_LIMIT_MAX,
+        timeWindow: AUTH_RATE_LIMIT_WINDOW_MS,
+        hook: "preHandler",
+        keyGenerator: (req) => {
+          const body = req.body as { email?: string } | undefined;
+          const em =
+            typeof body?.email === "string"
+              ? body.email.toLowerCase().slice(0, 320)
+              : "";
+          return em
+            ? `auth_register:${req.ip}:${em}`
+            : `auth_register:${req.ip}`;
+        },
+        addHeaders: authRouteRateHeaders,
+        errorResponseBuilder: (_req, ctx) => ({
+          error: {
+            code: "too_many_requests",
+            message: "Слишком много попыток регистрации. Подождите и попробуйте снова.",
+            retryAfterSec: Math.max(1, Math.ceil(ctx.ttl / 1000)),
+          },
+        }),
       },
-    });
-  }
-  const refRaw = parsed.data.referralCode?.trim();
-  const r = await registerWithEmail(parsed.data.email, parsed.data.password, {
-    referralCode: refRaw && refRaw.length > 0 ? refRaw : undefined,
-    clientIp: req.ip,
-  });
-  if (!r.ok) {
-    if (r.code === "email_taken") {
-      return reply.status(409).send({
+    },
+  },
+  async (req, reply) => {
+    const parsed = webAuthBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
         error: {
-          code: r.code,
-          message: "Этот email уже зарегистрирован",
+          code: "bad_request",
+          message:
+            "Укажите корректный email и пароль не короче 8 символов.",
         },
       });
     }
-    return reply.status(400).send({
-      error: {
-        code: r.code,
-        message: "Пароль не менее 8 символов",
-      },
+    const refRaw = parsed.data.referralCode?.trim();
+    const r = await registerWithEmail(parsed.data.email, parsed.data.password, {
+      referralCode: refRaw && refRaw.length > 0 ? refRaw : undefined,
+      clientIp: req.ip,
     });
+    if (!r.ok) {
+      if (r.code === "email_taken") {
+        return reply.status(409).send({
+          error: {
+            code: r.code,
+            message: "Этот email уже зарегистрирован",
+          },
+        });
+      }
+      return reply.status(400).send({
+        error: {
+          code: r.code,
+          message: "Пароль не менее 8 символов",
+        },
+      });
+    }
+    return { token: r.token, userId: r.userId };
   }
-  return { token: r.token, userId: r.userId };
-});
+);
 
-app.post("/api/v1/auth/login", async (req, reply) => {
-  const parsed = webAuthBody.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return reply.status(400).send({
-      error: {
-        code: "bad_request",
-        message:
-          "Укажите корректный email и пароль не короче 8 символов.",
+app.post(
+  "/api/v1/auth/login",
+  {
+    config: {
+      rateLimit: {
+        max: AUTH_RATE_LIMIT_MAX,
+        timeWindow: AUTH_RATE_LIMIT_WINDOW_MS,
+        hook: "preHandler",
+        keyGenerator: (req) => {
+          const body = req.body as { email?: string } | undefined;
+          const em =
+            typeof body?.email === "string"
+              ? body.email.toLowerCase().slice(0, 320)
+              : "";
+          return em ? `auth_login:${req.ip}:${em}` : `auth_login:${req.ip}`;
+        },
+        addHeaders: authRouteRateHeaders,
+        errorResponseBuilder: (_req, ctx) => ({
+          error: {
+            code: "too_many_requests",
+            message: "Слишком много попыток входа. Подождите и попробуйте снова.",
+            retryAfterSec: Math.max(1, Math.ceil(ctx.ttl / 1000)),
+          },
+        }),
       },
-    });
+    },
+  },
+  async (req, reply) => {
+    const parsed = webAuthBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: "bad_request",
+          message:
+            "Укажите корректный email и пароль не короче 8 символов.",
+        },
+      });
+    }
+    const r = await loginWithEmail(parsed.data.email, parsed.data.password);
+    if (!r.ok) {
+      return reply.status(401).send({
+        error: {
+          code: r.code,
+          message: "Неверный email или пароль",
+        },
+      });
+    }
+    return { token: r.token, userId: r.userId };
   }
-  const r = await loginWithEmail(parsed.data.email, parsed.data.password);
-  if (!r.ok) {
-    return reply.status(401).send({
-      error: {
-        code: r.code,
-        message: "Неверный email или пароль",
-      },
-    });
-  }
-  return { token: r.token, userId: r.userId };
-});
+);
 
 app.post("/api/v1/auth/link/telegram", async (req, reply) => {
   const userId = authUser(req, reply);

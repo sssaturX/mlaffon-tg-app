@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { HomeGiveawaysResponse } from "shared";
-import { getToken } from "../api";
+import { api, getToken } from "../api";
 import type { DropSnapshot } from "../components/DropOverlay";
 import type { GiveawayListItemDto } from "../query/fetchers";
 
@@ -68,7 +68,7 @@ export type WsInitialStatePayload = {
 export type GiveawaysWsSnapshotPayload = WsInitialStatePayload["giveaways"];
 
 /**
- * WebSocket `/api/v1/ws?token=…`
+ * WebSocket `/api/v1/ws?ticket=…` (короткоживущий билет с `POST /api/v1/ws-ticket`).
  * События: `initial_state`, затем `me_update`, `drop_*`, `live_*`, `prediction_state`, `giveaways_updated`.
  * `balance_updated` — legacy, без действия (экономика приходит через `me_update`).
  */
@@ -111,7 +111,6 @@ export function useRealtimeWebSocket(
 
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
-    const url = `${proto}//${host}/api/v1/ws?token=${encodeURIComponent(token)}`;
 
     let ws: WebSocket | null = null;
     let cancelled = false;
@@ -122,6 +121,8 @@ export function useRealtimeWebSocket(
     let lastBroadcastSeq: number | null = null;
     let attempt = 0;
     const maxAttempts = 20;
+    /** После 401 на билете не долбим API. */
+    let authRejected = false;
 
     function clearInitialStateTimer() {
       if (initialStateTimer !== undefined) {
@@ -130,10 +131,11 @@ export function useRealtimeWebSocket(
       }
     }
 
-    function scheduleReconnect() {
-      if (cancelled) return;
+    function scheduleReconnect(delayMs?: number) {
+      if (cancelled || authRejected) return;
       attempt = Math.min(attempt + 1, maxAttempts);
-      const delay = Math.min(1000 * 2 ** Math.min(attempt, 8), 60_000);
+      const base = Math.min(1000 * 2 ** Math.min(attempt, 8), 60_000);
+      const delay = delayMs != null ? Math.max(delayMs, base) : base;
       reconnectTimer = setTimeout(() => {
         reconnectTimer = undefined;
         if (!cancelled) connect();
@@ -150,132 +152,177 @@ export function useRealtimeWebSocket(
       lastBroadcastSeq = s;
     }
 
-    function connect() {
-      if (cancelled) return;
-      clearInitialStateTimer();
-      initialStateReceived = false;
-      lastBroadcastSeq = null;
-      try {
-        if (ws) {
-          const old = ws;
-          ws = null;
-          old.close();
+    async function fetchWsTicket(): Promise<
+      | { ok: true; ticket: string }
+      | { ok: false; fatal: boolean; retryAfterMs?: number }
+    > {
+      const r = await api<{ ticket: string }>("/api/v1/ws-ticket", {
+        method: "POST",
+      });
+      if (r.ok) {
+        if (typeof r.data.ticket === "string" && r.data.ticket.length > 0) {
+          return { ok: true, ticket: r.data.ticket };
         }
-      } catch {
-        /* ignore */
+        return { ok: false, fatal: false };
       }
+      if (r.status === 401) {
+        return { ok: false, fatal: true };
+      }
+      const err = r.err as { error?: { retryAfterSec?: number } } | undefined;
+      const sec =
+        typeof err?.error?.retryAfterSec === "number"
+          ? err.error.retryAfterSec
+          : undefined;
+      return {
+        ok: false,
+        fatal: false,
+        retryAfterMs: sec != null ? sec * 1000 : undefined,
+      };
+    }
 
-      const socket = new WebSocket(url);
-      ws = socket;
-
-      socket.onopen = () => {
-        attempt = 0;
-        setConnected(true);
+    function connect() {
+      if (cancelled || authRejected) return;
+      void (async () => {
         clearInitialStateTimer();
         initialStateReceived = false;
-        initialStateTimer = setTimeout(() => {
-          initialStateTimer = undefined;
-          if (!cancelled && !initialStateReceived) {
-            ref.current.onInitialStateMissing?.();
-          }
-        }, 2800);
-        ref.current.onOpen();
-      };
-
-      socket.onclose = () => {
-        clearInitialStateTimer();
-        if (ws !== socket) return;
-        setConnected(false);
-        ws = null;
-        if (!cancelled) scheduleReconnect();
-      };
-
-      socket.onerror = () => {
-        setConnected(false);
-      };
-
-      socket.onmessage = (ev) => {
+        lastBroadcastSeq = null;
         try {
-          const d = JSON.parse(String(ev.data)) as {
-            type?: string;
-            data?: unknown;
-            v?: number;
-            seq?: number;
-            broadcastSeq?: number;
-          };
-          const h = ref.current;
-          if (d.type === "initial_state" && d.data && typeof d.data === "object") {
-            initialStateReceived = true;
-            clearInitialStateTimer();
-            lastBroadcastSeq =
-              typeof d.broadcastSeq === "number" && Number.isFinite(d.broadcastSeq)
-                ? d.broadcastSeq
-                : 0;
-            h.onInitialState?.(d.data as WsInitialStatePayload);
-            return;
-          }
-          if (d.type === "me_update" && d.data && typeof d.data === "object") {
-            h.onMePatch(d.data);
-            return;
-          }
-          if (d.type === "drop_started" && d.data && typeof d.data === "object") {
-            observeBroadcastSeq(d);
-            const p = d.data as DropStartedPayload;
-            if (p.dropId && p.endsAt) {
-              h.onDropStarted(p);
-            }
-            return;
-          }
-          if (d.type === "drop_finished" && d.data && typeof d.data === "object") {
-            observeBroadcastSeq(d);
-            const id = (d.data as { dropId?: string }).dropId;
-            if (id) h.onDropFinished(id);
-            return;
-          }
-          if (d.type === "drop_claimed" && d.data && typeof d.data === "object") {
-            const payload = d.data as { dropId?: string; reward?: number };
-            if (payload.dropId != null && typeof payload.reward === "number") {
-              h.onDropClaimed({
-                dropId: payload.dropId,
-                reward: payload.reward,
-              });
-            }
-            return;
-          }
-          if (d.type === "live_started" && d.data && typeof d.data === "object") {
-            observeBroadcastSeq(d);
-            const payload = d.data as LiveStartedPayload;
-            if (payload.id && payload.streamUrl) {
-              h.onLiveStarted(payload);
-            }
-            return;
-          }
-          if (d.type === "live_ended") {
-            observeBroadcastSeq(d);
-            h.onLiveEnded();
-            return;
-          }
-          if (d.type === "prediction_state" && d.data && typeof d.data === "object") {
-            observeBroadcastSeq(d);
-            h.onPredictionState(d.data as PredictionStatePayload);
-            return;
-          }
-          if (d.type === "giveaways_updated" && d.data && typeof d.data === "object") {
-            observeBroadcastSeq(d);
-            const payload = d.data as GiveawaysWsSnapshotPayload;
-            if (payload.home?.giveaways && Array.isArray(payload.list)) {
-              h.onGiveawaysUpdated?.(payload);
-            }
-            return;
-          }
-          if (d.type === "balance_updated") {
-            h.onLegacyBalancePing?.();
-            return;
+          if (ws) {
+            const old = ws;
+            ws = null;
+            old.close();
           }
         } catch {
           /* ignore */
         }
-      };
+
+        const ticketRes = await fetchWsTicket();
+        if (cancelled) return;
+
+        if (!ticketRes.ok) {
+          if (ticketRes.fatal) {
+            authRejected = true;
+            setConnected(false);
+            return;
+          }
+          scheduleReconnect(ticketRes.retryAfterMs);
+          return;
+        }
+
+        const url = `${proto}//${host}/api/v1/ws?ticket=${encodeURIComponent(ticketRes.ticket)}`;
+
+        const socket = new WebSocket(url);
+        ws = socket;
+
+        socket.onopen = () => {
+          attempt = 0;
+          setConnected(true);
+          clearInitialStateTimer();
+          initialStateReceived = false;
+          initialStateTimer = setTimeout(() => {
+            initialStateTimer = undefined;
+            if (!cancelled && !initialStateReceived) {
+              ref.current.onInitialStateMissing?.();
+            }
+          }, 2800);
+          ref.current.onOpen();
+        };
+
+        socket.onclose = () => {
+          clearInitialStateTimer();
+          if (ws !== socket) return;
+          setConnected(false);
+          ws = null;
+          if (!cancelled && !authRejected) scheduleReconnect();
+        };
+
+        socket.onerror = () => {
+          setConnected(false);
+        };
+
+        socket.onmessage = (ev) => {
+          try {
+            const d = JSON.parse(String(ev.data)) as {
+              type?: string;
+              data?: unknown;
+              v?: number;
+              seq?: number;
+              broadcastSeq?: number;
+            };
+            const h = ref.current;
+            if (d.type === "initial_state" && d.data && typeof d.data === "object") {
+              initialStateReceived = true;
+              clearInitialStateTimer();
+              lastBroadcastSeq =
+                typeof d.broadcastSeq === "number" && Number.isFinite(d.broadcastSeq)
+                  ? d.broadcastSeq
+                  : 0;
+              h.onInitialState?.(d.data as WsInitialStatePayload);
+              return;
+            }
+            if (d.type === "me_update" && d.data && typeof d.data === "object") {
+              h.onMePatch(d.data);
+              return;
+            }
+            if (d.type === "drop_started" && d.data && typeof d.data === "object") {
+              observeBroadcastSeq(d);
+              const p = d.data as DropStartedPayload;
+              if (p.dropId && p.endsAt) {
+                h.onDropStarted(p);
+              }
+              return;
+            }
+            if (d.type === "drop_finished" && d.data && typeof d.data === "object") {
+              observeBroadcastSeq(d);
+              const id = (d.data as { dropId?: string }).dropId;
+              if (id) h.onDropFinished(id);
+              return;
+            }
+            if (d.type === "drop_claimed" && d.data && typeof d.data === "object") {
+              const payload = d.data as { dropId?: string; reward?: number };
+              if (payload.dropId != null && typeof payload.reward === "number") {
+                h.onDropClaimed({
+                  dropId: payload.dropId,
+                  reward: payload.reward,
+                });
+              }
+              return;
+            }
+            if (d.type === "live_started" && d.data && typeof d.data === "object") {
+              observeBroadcastSeq(d);
+              const payload = d.data as LiveStartedPayload;
+              if (payload.id && payload.streamUrl) {
+                h.onLiveStarted(payload);
+              }
+              return;
+            }
+            if (d.type === "live_ended") {
+              observeBroadcastSeq(d);
+              h.onLiveEnded();
+              return;
+            }
+            if (d.type === "prediction_state" && d.data && typeof d.data === "object") {
+              observeBroadcastSeq(d);
+              h.onPredictionState(d.data as PredictionStatePayload);
+              return;
+            }
+            if (d.type === "giveaways_updated" && d.data && typeof d.data === "object") {
+              observeBroadcastSeq(d);
+              const payload = d.data as GiveawaysWsSnapshotPayload;
+              if (payload.home?.giveaways && Array.isArray(payload.list)) {
+                h.onGiveawaysUpdated?.(payload);
+              }
+              return;
+            }
+            if (d.type === "balance_updated") {
+              h.onLegacyBalancePing?.();
+              return;
+            }
+          } catch {
+            /* ignore */
+          }
+        };
+      })();
     }
 
     connect();

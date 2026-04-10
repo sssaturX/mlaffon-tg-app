@@ -27,8 +27,14 @@
 #   DEPLOY_TELEGRAM_WEBHOOK_SECRET=1 # сгенерировать TELEGRAM_WEBHOOK_SECRET в apps/api/.env, если пусто
 #   TELEGRAM_WEBHOOK_SECRET=...      # в deploy.env — записать в apps/api/.env (вебхук)
 #   DEPLOY_SKIP_TELEGRAM_CHECK=1     # не проверять TELEGRAM_BOT_TOKEN в apps/api/.env
+#   DEPLOY_SKIP_ENV_SECURITY=1       # не дописывать CORS/WS/auth defaults в apps/api/.env
+#   DEPLOY_CORS_AUTO_ADMIN=1         # (по умолчанию 1) если нет PUBLIC_ADMIN_URL — добавить https://admin.<хост>
+#   DEPLOY_AUTO_PRODUCTION_CORS=1    # (по умолчанию 1) при автогенерации CORS дописать NODE_ENV=production, если ещё нет
 #
 # Web Push: после npm ci скрипт дописывает VAPID_* в apps/api/.env.
+# CORS / security: при пустом CORS_ORIGINS берётся https-домен из PUBLIC_WEB_URL, MINI_APP_WEB_URL или
+# origin из TWITCH_REDIRECT_URI / KICK_REDIRECT_URI; пишется CORS_ORIGINS (+ admin поддомен);
+# при DEPLOY_AUTO_PRODUCTION_CORS=1 и отсутствии NODE_ENV дописывается production. Дефолты WS/auth — как раньше.
 #
 # Telegram:
 #   — В apps/api/.env обязателен непустой TELEGRAM_BOT_TOKEN (отключить проверку: DEPLOY_SKIP_TELEGRAM_CHECK=1).
@@ -92,10 +98,20 @@ assert_repo() {
   [[ -f "$REPO/apps/api/package.json" ]] || die "Нет $REPO/apps/api/package.json"
 }
 
-assert_required_env_vars() {
+assert_required_env_vars_core() {
   local envf="$REPO/apps/api/.env"
   grep -qE '^DATABASE_URL=' "$envf" || die "В $envf отсутствует DATABASE_URL"
   grep -qE '^REDIS_URL=' "$envf" || die "В $envf отсутствует REDIS_URL"
+}
+
+assert_required_env_vars_production() {
+  local envf="$REPO/apps/api/.env"
+  if ! grep -qE '^NODE_ENV=production' "$envf"; then
+    return 0
+  fi
+  local cors
+  cors="$(sed -n 's/^CORS_ORIGINS=//p' "$envf" | sed -n '1p' | tr -d '\r' | tr -d '[:space:]')"
+  [[ -n "$cors" ]] || die "production: в $envf пустой CORS_ORIGINS (проверьте PUBLIC_WEB_URL / MINI_APP_WEB_URL / OAuth redirect или задайте CORS_ORIGINS вручную)"
 }
 
 assert_api_scripts() {
@@ -260,6 +276,213 @@ configure_telegram_for_deploy() {
   fi
 }
 
+# Если в apps/api/.env ключа нет, а в окружении (deploy/deploy.env) он есть — дописать в .env (systemd читает только .env).
+sync_env_var_into_api_if_missing() {
+  local envf="$1" key="$2"
+  local val
+  val="$(printenv "$key" 2>/dev/null || true)"
+  val="${val//$'\r'/}"
+  [[ -n "${val// }" ]] || return 0
+  local cur
+  cur="$(sed -n "s/^${key}=//p" "$envf" 2>/dev/null | head -1 | tr -d '\r')"
+  [[ -z "${cur// }" ]] || return 0
+  local tmp
+  tmp="$(mktemp)"
+  sed "/^${key}=/d" "$envf" >"$tmp" || true
+  {
+    cat "$tmp"
+    echo "${key}=${val}"
+  } >"${envf}.new"
+  mv "${envf}.new" "$envf"
+  rm -f "$tmp"
+  log "из окружения деплоя записан ${key} в apps/api/.env"
+}
+
+read_kv_from_envfile() {
+  local envf="$1" key="$2"
+  [[ -f "$envf" ]] || { echo ""; return 0; }
+  sed -n "s/^${key}=//p" "$envf" 2>/dev/null | head -1 | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s#/\+$##'
+}
+
+origin_from_oauth_redirect_uri() {
+  local u="$1"
+  [[ -n "${u// }" ]] || { echo ""; return 0; }
+  if [[ "$u" =~ ^(https?://[^/:?#]+) ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    echo ""
+  fi
+}
+
+url_is_nonlocal_https() {
+  local u="$1"
+  [[ "$u" =~ ^https:// ]] || return 1
+  [[ "$u" == *localhost* ]] && return 1
+  [[ "$u" == *127.0.0.1* ]] && return 1
+  return 0
+}
+
+# Публичный https-домен для CORS: приоритет PUBLIC_WEB_URL → MINI_APP_WEB_URL → Twitch/Kick redirect.
+resolve_pub_for_cors() {
+  local envf="$1"
+  local a b c d x
+  a="$(read_kv_from_envfile "$envf" PUBLIC_WEB_URL)"
+  b="$(read_kv_from_envfile "$envf" MINI_APP_WEB_URL)"
+  c="$(origin_from_oauth_redirect_uri "$(read_kv_from_envfile "$envf" TWITCH_REDIRECT_URI)")"
+  d="$(origin_from_oauth_redirect_uri "$(read_kv_from_envfile "$envf" KICK_REDIRECT_URI)")"
+  for x in "$a" "$b" "$c" "$d"; do
+    [[ -z "$x" ]] && continue
+    if url_is_nonlocal_https "$x"; then
+      echo "$x"
+      return 0
+    fi
+  done
+  for x in "$a" "$b" "$c" "$d"; do
+    if [[ -n "$x" ]]; then
+      echo "$x"
+      return 0
+    fi
+  done
+  echo ""
+}
+
+# Дописывает в apps/api/.env недостающие ключи (WS ticket, auth RL) и при NODE_ENV=production — CORS_ORIGINS.
+append_env_if_missing_or_empty() {
+  local envf="$1" key="$2" default="$3"
+  if grep -qE "^${key}=" "$envf" 2>/dev/null; then
+    local cur
+    cur="$(sed -n "s/^${key}=//p" "$envf" | head -1 | tr -d '\r')"
+    if [[ -n "${cur// /}" ]]; then
+      return 0
+    fi
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  sed "/^${key}=/d" "$envf" >"$tmp" || true
+  {
+    cat "$tmp"
+    echo "${key}=${default}"
+  } >"${envf}.new"
+  mv "${envf}.new" "$envf"
+  rm -f "$tmp"
+  log "добавлен ${key} в apps/api/.env"
+}
+
+ensure_api_env_security_defaults() {
+  if [[ "${DEPLOY_SKIP_ENV_SECURITY:-0}" == "1" ]]; then
+    log "пропуск автоконфига CORS/security (DEPLOY_SKIP_ENV_SECURITY=1)"
+    return 0
+  fi
+
+  local envf="$REPO/apps/api/.env"
+
+  if [[ "${DEPLOY_MERGE_DEPLOY_ENV_INTO_API:-1}" == "1" ]]; then
+    sync_env_var_into_api_if_missing "$envf" NODE_ENV
+    sync_env_var_into_api_if_missing "$envf" PUBLIC_WEB_URL
+    sync_env_var_into_api_if_missing "$envf" PUBLIC_ADMIN_URL
+    sync_env_var_into_api_if_missing "$envf" MINI_APP_WEB_URL
+    sync_env_var_into_api_if_missing "$envf" CORS_ORIGINS
+  fi
+
+  if [[ "${DEPLOY_ASSUME_PRODUCTION_API:-0}" == "1" ]]; then
+    append_env_if_missing_or_empty "$envf" NODE_ENV production
+  fi
+
+  append_env_if_missing_or_empty "$envf" WS_TICKET_TTL_SEC 25
+  append_env_if_missing_or_empty "$envf" WS_CONNECT_ATTEMPTS_PER_MINUTE 30
+  append_env_if_missing_or_empty "$envf" WS_MAX_CONCURRENT_PER_IP 8
+  append_env_if_missing_or_empty "$envf" AUTH_RATE_LIMIT_MAX 15
+  append_env_if_missing_or_empty "$envf" AUTH_RATE_LIMIT_WINDOW_MS 900000
+
+  # --- CORS для production: подстановка CORS_ORIGINS в apps/api/.env ---
+  local cors_cur
+  cors_cur="$(sed -n 's/^CORS_ORIGINS=//p' "$envf" | head -1 | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  if [[ -n "$cors_cur" ]]; then
+    log "CORS_ORIGINS уже задан — не меняю"
+    return 0
+  fi
+
+  if grep -qE '^NODE_ENV=development' "$envf"; then
+    log "NODE_ENV=development — автогенерация CORS пропущена"
+    return 0
+  fi
+
+  local pub admin auto_admin host tmp origins
+  pub="$(resolve_pub_for_cors "$envf")"
+  if [[ -z "$pub" ]]; then
+    if grep -qE '^NODE_ENV=production' "$envf"; then
+      die "production: пустой CORS_ORIGINS и не найден URL в PUBLIC_WEB_URL, MINI_APP_WEB_URL, TWITCH_REDIRECT_URI, KICK_REDIRECT_URI — задайте PUBLIC_WEB_URL=https://ваш.домен в $envf"
+    fi
+    log "автогенерация CORS: не найден ни один из PUBLIC_WEB_URL / MINI_APP_WEB_URL / OAuth redirect — пропуск"
+    return 0
+  fi
+
+  if ! url_is_nonlocal_https "$pub"; then
+    if grep -qE '^NODE_ENV=production' "$envf"; then
+      die "production: для CORS нужен https:// домен (не localhost). Сейчас base=${pub} — поправьте PUBLIC_WEB_URL или OAuth redirect в $envf"
+    fi
+    log "автогенерация CORS: базовый URL не продакшен-https (${pub}) — пропуск"
+    return 0
+  fi
+
+  if [[ "${DEPLOY_AUTO_PRODUCTION_CORS:-1}" != "0" ]]; then
+    if ! grep -qE '^NODE_ENV=production' "$envf"; then
+      append_env_if_missing_or_empty "$envf" NODE_ENV production
+      log "дописан NODE_ENV=production (авто для CORS с ${pub})"
+    fi
+  elif ! grep -qE '^NODE_ENV=production' "$envf"; then
+    log "NODE_ENV не production и DEPLOY_AUTO_PRODUCTION_CORS=0 — CORS_ORIGINS не генерирую"
+    return 0
+  fi
+
+  admin="$(read_kv_from_envfile "$envf" PUBLIC_ADMIN_URL)"
+
+  auto_admin=""
+  if [[ -z "$admin" && "${DEPLOY_CORS_AUTO_ADMIN:-1}" == "1" ]]; then
+    if [[ "$pub" =~ ^https?://([^/:?#]+) ]]; then
+      host="${BASH_REMATCH[1]}"
+      if [[ "$host" == admin.* ]]; then
+        auto_admin=""
+      else
+        auto_admin="https://admin.${host}"
+      fi
+    fi
+  fi
+
+  origins="$pub"
+  if [[ -n "$admin" ]]; then
+    if [[ ",${origins}," != *",${admin},"* ]]; then
+      origins="${origins},${admin}"
+    fi
+  elif [[ -n "$auto_admin" ]]; then
+    if [[ ",${origins}," != *",${auto_admin},"* ]]; then
+      origins="${origins},${auto_admin}"
+    fi
+  fi
+
+  tmp="$(mktemp)"
+  sed '/^CORS_ORIGINS=/d' "$envf" >"$tmp" || true
+  {
+    cat "$tmp"
+    echo "CORS_ORIGINS=${origins}"
+  } >"${envf}.new"
+  mv "${envf}.new" "$envf"
+  rm -f "$tmp"
+  log "записан CORS_ORIGINS=${origins} (источник базы: resolve из .env)"
+
+  if [[ -z "$admin" && -n "$auto_admin" ]]; then
+    tmp="$(mktemp)"
+    sed '/^PUBLIC_ADMIN_URL=/d' "$envf" >"$tmp" || true
+    {
+      cat "$tmp"
+      echo "PUBLIC_ADMIN_URL=${auto_admin}"
+    } >"${envf}.new"
+    mv "${envf}.new" "$envf"
+    rm -f "$tmp"
+    log "добавлен PUBLIC_ADMIN_URL=${auto_admin} (поддомен admin.* от базы CORS)"
+  fi
+}
+
 reload_caddy_if_requested() {
   if [[ "${DEPLOY_CADDY:-0}" != "1" ]]; then
     return 0
@@ -363,7 +586,7 @@ main() {
     log "загружен $REPO/deploy/deploy.env"
   fi
 
-  assert_required_env_vars
+  assert_required_env_vars_core
   assert_api_scripts
   assert_telegram_bot_token_in_api_env
 
@@ -378,6 +601,8 @@ main() {
 
   ensure_vapid_in_api_env
   configure_telegram_for_deploy
+  ensure_api_env_security_defaults
+  assert_required_env_vars_production
 
   log "npm run build (api + web + admin)"
   npm run build

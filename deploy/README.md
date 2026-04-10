@@ -7,8 +7,8 @@
 | [mlaffon-api.service](mlaffon-api.service) | systemd: API |
 | [mlaffon-worker.service](mlaffon-worker.service) | systemd: основной BullMQ worker (outbox, domain-timers, task-verify, cron) |
 | [mlaffon-worker-fraud.service](mlaffon-worker-fraud.service) | systemd: только очередь `fraud-review` (опционально) |
-| [redeploy.sh](redeploy.sh) | **Деплой**: `git pull`, `docker compose`, `npm ci`, **`VAPID_*`**, Telegram как ниже, **`npm run build`**, `db:push` + `db:seed` (retry), `chmod`, **автоматически**: копирование `deploy/mlaffon-*.service` → `/etc/systemd/system/`, `daemon-reload`, **`systemctl enable` + `restart`** для api, worker и worker-fraud, smoke `/health` и `/api/v1/home/public` |
-| [deploy.env.example](deploy.env.example) | Пример `deploy/deploy.env` для `VITE_*` при сборке |
+| [redeploy.sh](redeploy.sh) | **Деплой**: `git pull`, `docker compose`, `npm ci`, **`VAPID_*`**, Telegram как ниже, **`CORS`/security env** (см. ниже), **`npm run build`**, `db:push` + `db:seed` (retry), `chmod`, **автоматически**: копирование `deploy/mlaffon-*.service` → `/etc/systemd/system/`, `daemon-reload`, **`systemctl enable` + `restart`** для api, worker и worker-fraud, smoke `/health` и `/api/v1/home/public` |
+| [deploy.env.example](deploy.env.example) | Пример `deploy/deploy.env`: `VITE_*`, домены (`PUBLIC_WEB_URL` / `CORS_*`), флаги деплоя |
 
 **Админка не логинится:** в `apps/api/.env` должны быть заданы `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PASSPHRASE` (без них API отвечает 503). После правки `.env`: `sudo systemctl restart mlaffon-api`. Сборка админки шлёт запросы на `/api` **того же хоста** `admin.…` (Caddy проксирует на API) — отдельный `VITE_API_ORIGIN` на проде для поддомена не обязателен.
 
@@ -71,3 +71,9 @@
 - `DEPLOY_TELEGRAM_WEBHOOK_SECRET=1` — сгенерировать/записать `TELEGRAM_WEBHOOK_SECRET` в `apps/api/.env`, если его ещё нет (вебхук)
 - `TELEGRAM_WEBHOOK_SECRET` в `deploy/deploy.env` — тот же эффект: значение попадёт в `apps/api/.env` при каждом деплое
 - `DEPLOY_SKIP_TELEGRAM_CHECK=1` — не требовать непустой `TELEGRAM_BOT_TOKEN` в `apps/api/.env`
+- **`DEPLOY_MERGE_DEPLOY_ENV_INTO_API=1`** (по умолчанию) — пустые `NODE_ENV`, `PUBLIC_WEB_URL`, `PUBLIC_ADMIN_URL`, `CORS_ORIGINS` в `apps/api/.env` дополняются из `export` в `deploy/deploy.env`
+- **`DEPLOY_SKIP_ENV_SECURITY=1`** — не дописывать дефолты WS/auth и не генерировать `CORS_ORIGINS` из `PUBLIC_WEB_URL`
+- **`DEPLOY_ASSUME_PRODUCTION_API=1`** — если в `apps/api/.env` нет `NODE_ENV`, дописать `production`
+- **`DEPLOY_CORS_AUTO_ADMIN=1`** (по умолчанию) — при автогенерации CORS добавить `https://admin.<хост>` от `PUBLIC_WEB_URL`, если нет `PUBLIC_ADMIN_URL`
+- **`DEPLOY_AUTO_PRODUCTION_CORS=1`** (по умолчанию) — если удалось вывести продакшен-`https://` домен для CORS, а `NODE_ENV` ещё не `production`, скрипт допишет `NODE_ENV=production`. Отключить: `DEPLOY_AUTO_PRODUCTION_CORS=0`
+- **Источник домена для CORS** (первый подходящий `https://` не localhost): `PUBLIC_WEB_URL` → `MINI_APP_WEB_URL` → origin из `TWITCH_REDIRECT_URI` → из `KICK_REDIRECT_URI`

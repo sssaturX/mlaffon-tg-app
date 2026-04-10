@@ -15,7 +15,7 @@ export async function registerAuth(app: FastifyInstance) {
   app.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
     const path = req.url.split("?")[0] ?? "";
     if (path === "/health") return;
-    /** WS: JWT в query `token`, не в Authorization. */
+    /** WS: одноразовый `ticket` в query; Bearer не используется на upgrade. */
     if (path === "/api/v1/ws") return;
     if (path === "/api/v1/auth/telegram") return;
     if (path === "/api/v1/auth/register") return;

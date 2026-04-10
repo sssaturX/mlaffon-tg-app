@@ -34,6 +34,15 @@ mlaffon.fun {
 	root * /opt/mlaffon/mlaffon-tg-app/apps/web/dist
 	encode gzip
 
+	# Security headers (CSP: Telegram Mini App — frame-ancestors, без X-Frame-Options DENY)
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		Content-Security-Policy "default-src 'self'; frame-ancestors 'self' https://web.telegram.org https://telegram.org; connect-src 'self' https://mlaffon.fun wss://mlaffon.fun; img-src 'self' data: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; base-uri 'self'; form-action 'self'"
+	}
+
 	handle /api/* {
 		reverse_proxy 127.0.0.1:3001 {
 			flush_interval -1
@@ -50,6 +59,15 @@ mlaffon.fun {
 admin.mlaffon.fun {
 	root * /opt/mlaffon/mlaffon-tg-app/apps/admin/dist
 	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; connect-src 'self' https://admin.mlaffon.fun https://mlaffon.fun wss://admin.mlaffon.fun wss://mlaffon.fun; img-src 'self' data: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; base-uri 'self'; form-action 'self'"
+	}
 
 	handle /api/* {
 		reverse_proxy 127.0.0.1:3001 {
