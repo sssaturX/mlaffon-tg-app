@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Coins, HelpCircle, Lightbulb } from "lucide-react";
+import { ChevronRight, Coins, HelpCircle, Lightbulb } from "lucide-react";
 import type { Platform, TaskDto } from "shared";
-import WebApp from "@twa-dev/sdk";
 import { api, formatApiError } from "../api";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { HelpSheetModal } from "../components/HelpSheetModal";
-import { TaskEvidenceExamples } from "../components/TaskEvidenceExamples";
+import { TaskDetailModal } from "../components/TaskDetailModal";
 import { useInvalidateTasks, useTasks } from "../hooks/queries/useTasks";
 import { ApiQueryError } from "../query/apiQueryError";
 import { appEventBus } from "../events/appEventBus";
@@ -48,28 +47,20 @@ function defaultActionLabel(platform: Platform): string {
   return "Перейти";
 }
 
-function openExternalUrl(url: string) {
-  try {
-    WebApp.openLink(url);
-  } catch {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-}
-
 /** В TWA часто пустой `type`; iPhone — HEIC. */
 function fileLooksLikeEvidenceImage(f: File): boolean {
   if (f.type && /^image\//i.test(f.type)) return true;
   return /\.(jpe?g|png|webp|gif|heic|heif|bmp)$/i.test(f.name);
 }
 
-function streamCardThemeClass(
+function streamPreviewThemeClass(
   section: string,
   activePlatform: Platform
 ): string {
   if (section !== "stream_tasks") return "";
   return activePlatform === "kick"
-    ? "task-card--kick-stream"
-    : "task-card--twitch-stream";
+    ? "task-card-preview--kick-stream"
+    : "task-card-preview--twitch-stream";
 }
 
 function sectionHeadingClass(section: string, activePlatform: Platform): string {
@@ -83,26 +74,19 @@ function TaskListSkeleton() {
   return (
     <div className="task-list-skeleton" aria-hidden>
       {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          className="task-card task-card--stream task-card--collapsible task-card--skeleton"
-        >
-          <div className="task-card__summary" style={{ cursor: "default" }}>
-            <div className="skeleton task-skeleton__line task-skeleton__line--short" />
-          </div>
+        <div key={i} className="task-card-preview task-card-preview--skeleton">
+          <div className="skeleton task-skeleton__line task-skeleton__line--short" />
+          <div className="skeleton task-skeleton__line task-skeleton__line--medium" />
         </div>
       ))}
     </div>
   );
 }
 
-function hardStageDisplay(t: TaskDto): { cur: number; total: number } | null {
-  if (!t.hard || typeof t.hardStageTotal !== "number" || t.hardStageTotal <= 0) {
-    return null;
-  }
-  const raw = t.hardStageCurrent ?? 0;
-  const cur = Math.min(t.hardStageTotal, Math.max(1, raw + 1));
-  return { cur, total: t.hardStageTotal };
+function taskKindPill(t: TaskDto): { label: string; variant: "sub" | "project" | "neutral" } {
+  if (t.requiresEvidence) return { label: "Проект", variant: "project" };
+  if (t.validationType === "api") return { label: "Подписка", variant: "sub" };
+  return { label: "Задание", variant: "neutral" };
 }
 
 export default function Tasks() {
@@ -117,6 +101,7 @@ export default function Tasks() {
   const [evidenceByTask, setEvidenceByTask] = useState<Record<string, FileList | null>>({});
   const [evidenceUploadingId, setEvidenceUploadingId] = useState<string | null>(null);
   const [helpTask, setHelpTask] = useState<TaskDto | null>(null);
+  const [detailTask, setDetailTask] = useState<TaskDto | null>(null);
 
   const loading = tasksQ.isPending;
 
@@ -294,206 +279,64 @@ export default function Tasks() {
 
   function renderTaskCard(t: TaskDto, section: string) {
     const done = t.userStatus === "completed";
-    const actionUrl = t.actionUrl?.trim() || null;
-    const actionLabel =
-      t.actionLabel?.trim() || defaultActionLabel(t.platform);
-    const hardDisp = hardStageDisplay(t);
-    const claiming = claimingId === t.id;
-    const evUp = evidenceUploadingId === t.id;
-    const streamTheme = streamCardThemeClass(section, activePlatform);
+    const streamTheme = streamPreviewThemeClass(section, activePlatform);
+    const kind = taskKindPill(t);
+    const kindClass =
+      kind.variant === "sub"
+        ? "pill pill--task-sub"
+        : kind.variant === "project"
+          ? "pill pill--task-project"
+          : "pill";
 
     return (
-      <details
+      <article
         key={t.id}
-        className={`task-card task-card--stream task-card--collapsible fade-in-soft ${streamTheme} ${t.validationType === "api" ? "task-card--border" : ""} ${done ? "task-card--done" : ""}`}
+        className={`task-card-preview fade-in-soft ${streamTheme} ${t.validationType === "api" ? "task-card-preview--accent" : ""} ${done ? "task-card-preview--done" : ""}`}
       >
-        <summary className="task-card__summary">
-          <div className="task-card__summary-grid">
-            <div className="task-card__summary-main">
-              <div className="task-card__tags task-card__tags--summary">
-                <span className={platformPillClass(t.platform)}>
-                  {platformLabel(t.platform)}
-                </span>
-                <span className="pill">
-                  {t.type === "daily" ? "Ежедневно" : "Разово"}
-                </span>
-                {t.validationType === "api" ? (
-                  <span className="pill pill--accent">С проверкой</span>
-                ) : null}
-                {done ? <span className="pill pill--accent">Выполнено</span> : null}
-                {t.help ? (
-                  <button
-                    type="button"
-                    className="task-card__help-icon"
-                    aria-label="Справка"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setHelpTask(t);
-                    }}
-                  >
-                    <HelpCircle size={16} strokeWidth={2.2} />
-                  </button>
-                ) : null}
-              </div>
-              <h3 className="task-card__title task-card__title--stream task-card__title--summary">
-                {t.title}
-              </h3>
+        <button
+          type="button"
+          className={`task-card-preview__main ${t.help ? "task-card-preview__main--with-help" : ""}`}
+          onClick={() => setDetailTask(t)}
+        >
+          <div className="task-card-preview__row">
+            <div className="task-card-preview__tags">
+              <span className={kindClass}>{kind.label}</span>
+              <span className={platformPillClass(t.platform)}>
+                {platformLabel(t.platform)}
+              </span>
+              <span className="pill pill--compact">
+                {t.type === "daily" ? "Ежедневно" : "Разово"}
+              </span>
+              {t.validationType === "api" ? (
+                <span className="pill pill--accent pill--compact">С проверкой</span>
+              ) : null}
+              {done ? (
+                <span className="pill pill--accent pill--compact">Готово</span>
+              ) : null}
             </div>
-            <div className="task-card__summary-aside">
-              <div className="task-card__reward task-card__reward--summary">
-                <Coins size={18} strokeWidth={2.2} aria-hidden />
-                <span>{t.reward.toLocaleString("ru-RU")}</span>
-              </div>
-              <ChevronDown
-                className="task-card__chevron"
-                size={22}
-                strokeWidth={2}
-                aria-hidden
-              />
+            <div className="task-card-preview__reward">
+              <Coins size={18} strokeWidth={2.2} aria-hidden />
+              <span>{t.reward.toLocaleString("ru-RU")}</span>
             </div>
           </div>
-        </summary>
-
-        <div className="task-card__expand-body">
-          <div className="task-card__desc task-card__desc--stream">
-            {t.description.split("\n").map((line, i) => (
-              <p key={i} className="task-card__desc-line">
-                {line}
-              </p>
-            ))}
+          <h3 className="task-card-preview__title">{t.title}</h3>
+          <p className="task-card-preview__snippet">{t.description}</p>
+          <div className="task-card-preview__footer">
+            <span className="task-card-preview__hint muted">Подробности и действия</span>
+            <ChevronRight className="task-card-preview__arrow" size={20} strokeWidth={2} aria-hidden />
           </div>
-
-          {hardDisp ? (
-            <div className="task-progress task-progress--stream">
-              <div className="task-progress__head">
-                <span className="muted">Этап</span>
-                <span className="muted">
-                  {hardDisp.cur}/{hardDisp.total}
-                </span>
-              </div>
-              <div className="task-progress__bar">
-                <div
-                  className="task-progress__fill"
-                  style={{
-                    width: `${Math.max(
-                      0,
-                      Math.min(
-                        100,
-                        (hardDisp.cur / Math.max(1, hardDisp.total)) * 100
-                      )
-                    )}%`,
-                  }}
-                />
-              </div>
-            </div>
-          ) : null}
-
-          {typeof t.progressCurrent === "number" &&
-          typeof t.progressTarget === "number" ? (
-            <div className="task-progress task-progress--stream">
-              <div className="task-progress__head">
-                <span className="muted">{t.progressLabel ?? "Прогресс"}</span>
-                <span className="muted">
-                  {t.progressCurrent}/{t.progressTarget}
-                </span>
-              </div>
-              <div className="task-progress__bar">
-                <div
-                  className="task-progress__fill"
-                  style={{
-                    width: `${Math.max(
-                      0,
-                      Math.min(
-                        100,
-                        (t.progressCurrent / Math.max(1, t.progressTarget)) * 100
-                      )
-                    )}%`,
-                  }}
-                />
-              </div>
-            </div>
-          ) : null}
-
-          {t.requiresEvidence && t.evidenceExamples?.length ? (
-            <TaskEvidenceExamples examples={t.evidenceExamples} />
-          ) : null}
-
-          {t.requiresEvidence && !done ? (
-            <p className="task-card__evidence-status muted">
-              {(t.evidenceStageStatus ?? "none") === "none"
-                ? "Загрузите скрины по примерам и дождитесь проверки админа."
-                : null}
-              {t.evidenceStageStatus === "submitted"
-                ? "Скрины на проверке. После одобрения нажми «Получить награду». Можно заменить загрузкой новых файлов."
-                : null}
-              {t.evidenceStageStatus === "approved"
-                ? "Скрины приняты — забери награду кнопкой ниже."
-                : null}
-              {t.evidenceStageStatus === "rejected"
-                ? t.evidenceAdminNote?.trim()
-                  ? `Отклонено: ${t.evidenceAdminNote.trim()} Загрузи новые скрины.`
-                  : "Скрины отклонены — загрузи другие скрины."
-                : null}
-            </p>
-          ) : null}
-
-          {t.requiresEvidence && !done && t.evidenceStageStatus !== "approved" ? (
-            <div className="task-card__evidence">
-              <label className="task-card__file-label muted" htmlFor={`ev-${t.id}`}>
-                Скриншоты (до 4, до 2,5 МБ)
-              </label>
-              <input
-                id={`ev-${t.id}`}
-                type="file"
-                accept="image/*,.heic,.heif"
-                multiple
-                className="task-card__file"
-                onChange={(e) =>
-                  setEvidenceByTask((prev) => ({
-                    ...prev,
-                    [t.id]: e.target.files,
-                  }))
-                }
-              />
-              <button
-                type="button"
-                className="secondary task-card__btn-row"
-                disabled={
-                  evUp ||
-                  !evidenceByTask[t.id] ||
-                  evidenceByTask[t.id]!.length === 0
-                }
-                onClick={() => void submitEvidence(t)}
-              >
-                {evUp ? "Загрузка…" : "Загрузить скрины"}
-              </button>
-            </div>
-          ) : null}
-
-          {t.lastError ? <p className="err task-card__err">{t.lastError}</p> : null}
-
-          <div className="task-card__actions-row">
-            {actionUrl && !done ? (
-              <button
-                type="button"
-                className="secondary task-card__btn-half"
-                onClick={() => openExternalUrl(actionUrl)}
-              >
-                {actionLabel}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className={`primary task-card__btn-half ${!actionUrl || done ? "task-card__btn-full" : ""}`}
-              disabled={claiming || actionDisabled(t)}
-              onClick={() => void claim(t.id)}
-            >
-              {claiming ? "…" : actionLabelForTask(t)}
-            </button>
-          </div>
-        </div>
-      </details>
+        </button>
+        {t.help ? (
+          <button
+            type="button"
+            className="task-card-preview__help"
+            aria-label="Справка по заданию"
+            onClick={() => setHelpTask(t)}
+          >
+            <HelpCircle size={18} strokeWidth={2.2} />
+          </button>
+        ) : null}
+      </article>
     );
   }
 
@@ -502,12 +345,14 @@ export default function Tasks() {
       <div className="task-hint task-hint--stream" role="note">
         <Lightbulb size={20} className="task-hint__icon" aria-hidden />
         <span>
-          Нажми на карточку — откроется описание, скрины и кнопки. В шапке Twitch
-          / Kick влияет на оформление блока стрим-заданий.
+          Больше заданий появляется, когда идёт стрим. Нажми карточку — снизу
+          откроется окно с полным текстом, наградой и кнопками.
         </span>
       </div>
 
-      {msg ? <p className="muted fade-in-soft task-page-msg">{msg}</p> : null}
+      {msg && !detailTask ? (
+        <p className="muted fade-in-soft task-page-msg">{msg}</p>
+      ) : null}
 
       {loading ? (
         <TaskListSkeleton />
@@ -546,6 +391,34 @@ export default function Tasks() {
           onClose={() => setHelpTask(null)}
         />
       ) : null}
+
+      <TaskDetailModal
+        task={detailTask}
+        open={detailTask != null}
+        onClose={() => setDetailTask(null)}
+        onClaim={() => {
+          if (detailTask) void claim(detailTask.id);
+        }}
+        claiming={detailTask != null && claimingId === detailTask.id}
+        primaryLabel={
+          detailTask
+            ? claimingId === detailTask.id
+              ? "…"
+              : actionLabelForTask(detailTask)
+            : ""
+        }
+        primaryDisabled={detailTask ? actionDisabled(detailTask) : true}
+        statusMessage={msg}
+        evidenceFiles={detailTask ? evidenceByTask[detailTask.id] ?? null : null}
+        onEvidenceFilesChange={(files) => {
+          if (!detailTask) return;
+          setEvidenceByTask((prev) => ({ ...prev, [detailTask.id]: files }));
+        }}
+        onSubmitEvidence={async () => {
+          if (detailTask) await submitEvidence(detailTask);
+        }}
+        evidenceUploading={detailTask != null && evidenceUploadingId === detailTask.id}
+      />
     </div>
   );
 }

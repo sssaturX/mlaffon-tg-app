@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import WebApp from "@twa-dev/sdk";
 import type { Platform, TaskDto } from "shared";
 import { HelpSheetModal } from "./HelpSheetModal";
+import { TaskEvidenceExamples } from "./TaskEvidenceExamples";
 
 function defaultActionLabel(platform: Platform): string {
   if (platform === "kick") return "Подписаться на Kick";
@@ -12,15 +13,13 @@ function defaultActionLabel(platform: Platform): string {
   return "Перейти";
 }
 
-function primaryCtaLabel(task: TaskDto, claiming: boolean): string {
-  if (claiming) return task.validationType === "api" ? "Проверка…" : "Зачисление…";
-  if (task.userStatus === "completed") return "Готово";
-  if (task.userStatus === "locked") return "Нужна привязка платформы";
-  if (task.userStatus === "pending") return "Проверяется…";
-  if (task.validationType === "api") {
-    return task.verifyLabel?.trim() || "Проверить подписку";
+function hardStageDisplay(t: TaskDto): { cur: number; total: number } | null {
+  if (!t.hard || typeof t.hardStageTotal !== "number" || t.hardStageTotal <= 0) {
+    return null;
   }
-  return "Забрать награду";
+  const raw = t.hardStageCurrent ?? 0;
+  const cur = Math.min(t.hardStageTotal, Math.max(1, raw + 1));
+  return { cur, total: t.hardStageTotal };
 }
 
 export function TaskDetailModal({
@@ -29,32 +28,59 @@ export function TaskDetailModal({
   onClose,
   onClaim,
   claiming,
+  primaryLabel,
+  primaryDisabled,
   statusMessage,
+  evidenceFiles,
+  onEvidenceFilesChange,
+  onSubmitEvidence,
   evidenceUploading,
-  onUploadEvidence,
 }: {
   task: TaskDto | null;
   open: boolean;
   onClose: () => void;
   onClaim: () => void;
   claiming: boolean;
+  primaryLabel: string;
+  primaryDisabled: boolean;
   statusMessage: string | null;
-  evidenceUploading?: boolean;
-  onUploadEvidence?: (images: string[]) => Promise<void>;
+  evidenceFiles: FileList | null;
+  onEvidenceFilesChange: (files: FileList | null) => void;
+  onSubmitEvidence: () => Promise<void>;
+  evidenceUploading: boolean;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [openedLink, setOpenedLink] = useState(false);
-  const [files, setFiles] = useState<FileList | null>(null);
 
   useEffect(() => {
     setOpenedLink(false);
     setHelpOpen(false);
   }, [task?.id, open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open || !task) return null;
 
   const actionUrl = task.actionUrl?.trim() || null;
   const actionLabel = task.actionLabel?.trim() || defaultActionLabel(task.platform);
+  const done = task.userStatus === "completed";
+  const hardDisp = hardStageDisplay(task);
 
   function openAction() {
     if (!actionUrl) return;
@@ -66,31 +92,11 @@ export function TaskDetailModal({
     setOpenedLink(true);
   }
 
-  const canClaim = task.userStatus === "available" && !claiming;
+  const canInteractPrimary = !claiming && !primaryDisabled;
   const showLinkHint =
-    Boolean(actionUrl) && canClaim && !openedLink && task.userStatus === "available";
-  const pulseVerify = Boolean(actionUrl) && openedLink && canClaim;
-
-  async function uploadEvidence() {
-    if (!onUploadEvidence || !files || files.length === 0) return;
-    const list = Array.from(files).slice(0, 4);
-    const encoded: string[] = [];
-    for (const f of list) {
-      if (!/^image\//i.test(f.type)) continue;
-      if (f.size > 2_500_000) continue;
-      const data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error("read_failed"));
-        reader.onload = () => resolve(String(reader.result ?? ""));
-        reader.readAsDataURL(f);
-      });
-      encoded.push(data);
-    }
-    if (encoded.length > 0) {
-      await onUploadEvidence(encoded);
-      setFiles(null);
-    }
-  }
+    Boolean(actionUrl) && task.userStatus === "available" && canInteractPrimary && !openedLink;
+  const pulseVerify =
+    Boolean(actionUrl) && openedLink && task.userStatus === "available" && canInteractPrimary;
 
   const content = (
     <div
@@ -102,98 +108,185 @@ export function TaskDetailModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div
-        className="task-detail-modal"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="task-detail-modal__head">
-          <h2 id="task-detail-title" className="task-detail-modal__title">
-            {task.title}
-          </h2>
-          <div className="task-detail-modal__head-actions">
-            {task.help ? (
+      <div className="task-detail-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="task-detail-sheet__handle" aria-hidden />
+        <div className="task-detail-modal task-detail-modal--sheet">
+          <div className="task-detail-modal__head">
+            <h2 id="task-detail-title" className="task-detail-modal__title">
+              {task.title}
+            </h2>
+            <div className="task-detail-modal__head-actions">
+              {task.help ? (
+                <button
+                  type="button"
+                  className="task-detail-modal__help-btn"
+                  aria-label="Справка"
+                  onClick={() => setHelpOpen(true)}
+                >
+                  <Info size={20} strokeWidth={2.2} />
+                </button>
+              ) : null}
               <button
                 type="button"
-                className="task-detail-modal__help-btn"
-                aria-label="Справка"
-                onClick={() => setHelpOpen(true)}
+                className="task-detail-modal__close"
+                aria-label="Закрыть"
+                onClick={onClose}
               >
-                <Info size={20} strokeWidth={2.2} />
+                <X size={20} strokeWidth={2.2} />
               </button>
+            </div>
+          </div>
+
+          <div className="task-detail-modal__body">
+            <div className="task-detail-modal__desc">
+              {task.description.split("\n").map((line, i) => (
+                <p key={i} className="task-detail-modal__desc-line">
+                  {line}
+                </p>
+              ))}
+            </div>
+
+            <div className="task-detail-reward">
+              <span className="task-detail-reward__label">Награда:</span>
+              <span className="task-detail-reward__value">
+                <Coins size={22} strokeWidth={2.2} className="task-detail-reward__coin" aria-hidden />
+                {task.reward.toLocaleString("ru-RU")}
+              </span>
+            </div>
+
+            {statusMessage ? (
+              <p className="task-detail-modal__msg muted">{statusMessage}</p>
             ) : null}
-            <button
-              type="button"
-              className="task-detail-modal__close"
-              aria-label="Закрыть"
-              onClick={onClose}
-            >
-              <X size={20} strokeWidth={2.2} />
-            </button>
+
+            {hardDisp ? (
+              <div className="task-progress task-progress--stream task-detail-modal__block">
+                <div className="task-progress__head">
+                  <span className="muted">Этап</span>
+                  <span className="muted">
+                    {hardDisp.cur}/{hardDisp.total}
+                  </span>
+                </div>
+                <div className="task-progress__bar">
+                  <div
+                    className="task-progress__fill"
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(100, (hardDisp.cur / Math.max(1, hardDisp.total)) * 100)
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {typeof task.progressCurrent === "number" &&
+            typeof task.progressTarget === "number" ? (
+              <div className="task-progress task-progress--stream task-detail-modal__block">
+                <div className="task-progress__head">
+                  <span className="muted">{task.progressLabel ?? "Прогресс"}</span>
+                  <span className="muted">
+                    {task.progressCurrent}/{task.progressTarget}
+                  </span>
+                </div>
+                <div className="task-progress__bar">
+                  <div
+                    className="task-progress__fill"
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(
+                          100,
+                          (task.progressCurrent / Math.max(1, task.progressTarget)) * 100
+                        )
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {task.requiresEvidence && task.evidenceExamples?.length ? (
+              <div className="task-detail-modal__block">
+                <TaskEvidenceExamples examples={task.evidenceExamples} />
+              </div>
+            ) : null}
+
+            {task.requiresEvidence && !done ? (
+              <p className="task-card__evidence-status muted task-detail-modal__block">
+                {(task.evidenceStageStatus ?? "none") === "none"
+                  ? "Загрузите скрины по примерам и дождитесь проверки админа."
+                  : null}
+                {task.evidenceStageStatus === "submitted"
+                  ? "Скрины на проверке. После одобрения нажми «Получить награду». Можно заменить загрузкой новых файлов."
+                  : null}
+                {task.evidenceStageStatus === "approved"
+                  ? "Скрины приняты — забери награду кнопкой ниже."
+                  : null}
+                {task.evidenceStageStatus === "rejected"
+                  ? task.evidenceAdminNote?.trim()
+                    ? `Отклонено: ${task.evidenceAdminNote.trim()} Загрузи новые скрины.`
+                    : "Скрины отклонены — загрузи другие скрины."
+                  : null}
+              </p>
+            ) : null}
+
+            {task.requiresEvidence && !done && task.evidenceStageStatus !== "approved" ? (
+              <div className="task-card__evidence task-detail-modal__block">
+                <label className="task-card__file-label muted" htmlFor="task-detail-evidence">
+                  Скриншоты (до 4, до 2,5 МБ)
+                </label>
+                <input
+                  id="task-detail-evidence"
+                  type="file"
+                  accept="image/*,.heic,.heif"
+                  multiple
+                  className="task-card__file"
+                  onChange={(e) => onEvidenceFilesChange(e.target.files)}
+                />
+                <button
+                  type="button"
+                  className="secondary task-card__btn-row"
+                  disabled={
+                    evidenceUploading || !evidenceFiles || evidenceFiles.length === 0
+                  }
+                  onClick={() => void onSubmitEvidence()}
+                >
+                  {evidenceUploading ? "Загрузка…" : "Загрузить скрины"}
+                </button>
+              </div>
+            ) : null}
+
+            {task.lastError ? <p className="err task-card__err">{task.lastError}</p> : null}
+
+            <div className="task-detail-modal__actions">
+              {actionUrl && !done ? (
+                <button
+                  type="button"
+                  className="task-detail-btn task-detail-btn--secondary"
+                  onClick={openAction}
+                >
+                  {actionLabel}
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                className={`task-detail-btn task-detail-btn--primary ${pulseVerify ? "task-detail-btn--primary--glow" : ""} ${showLinkHint ? "task-detail-btn--primary--soft" : ""}`}
+                disabled={claiming || primaryDisabled}
+                onClick={onClaim}
+              >
+                {primaryLabel}
+              </button>
+            </div>
+
+            {showLinkHint ? (
+              <p className="task-detail-link-hint muted">
+                Сначала открой ссылку выше, затем нажми кнопку проверки или получения награды.
+              </p>
+            ) : null}
           </div>
         </div>
-
-        <p className="task-detail-modal__desc">{task.description}</p>
-
-        <div className="task-detail-reward">
-          <span className="task-detail-reward__label">Награда:</span>
-          <span className="task-detail-reward__value">
-            <Coins size={22} strokeWidth={2.2} className="task-detail-reward__coin" aria-hidden />
-            {task.reward.toLocaleString("ru-RU")}
-          </span>
-        </div>
-
-        {statusMessage ? (
-          <p className="task-detail-modal__msg muted">{statusMessage}</p>
-        ) : null}
-
-        {task.hard ? (
-          <div className="stack">
-            <p className="muted m-0">
-              HARD {Math.max(0, task.hardStageCurrent ?? 0)}/{Math.max(0, task.hardStageTotal ?? 2)}
-            </p>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={(e) => setFiles(e.target.files)}
-            />
-            <button
-              type="button"
-              className="task-detail-btn task-detail-btn--secondary"
-              disabled={!onUploadEvidence || evidenceUploading || !files || files.length === 0}
-              onClick={() => void uploadEvidence()}
-            >
-              {evidenceUploading ? "Загрузка…" : "Загрузить скрины"}
-            </button>
-          </div>
-        ) : null}
-
-        <div className="task-detail-modal__actions">
-          {actionUrl ? (
-            <button
-              type="button"
-              className="task-detail-btn task-detail-btn--secondary"
-              onClick={openAction}
-            >
-              {actionLabel}
-            </button>
-          ) : null}
-
-          <button
-            type="button"
-            className={`task-detail-btn task-detail-btn--primary ${pulseVerify ? "task-detail-btn--primary--glow" : ""} ${showLinkHint ? "task-detail-btn--primary--soft" : ""}`}
-            disabled={!canClaim}
-            onClick={onClaim}
-          >
-            {primaryCtaLabel(task, claiming)}
-          </button>
-        </div>
-
-        {showLinkHint ? (
-          <p className="task-detail-link-hint muted">
-            Сначала открой ссылку выше, затем нажми «{primaryCtaLabel(task, false)}».
-          </p>
-        ) : null}
       </div>
 
       {task.help ? (
