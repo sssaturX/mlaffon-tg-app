@@ -7,11 +7,6 @@ import { getDomainVersion } from "../meDomain/domainVersion";
 
 /** Профиль без «тяжёлого» объединённого `GET /me` — экономика отдельно и по WS. */
 export async function meProfileQueryFn(): Promise<MeProfileResponse> {
-  const cached = queryClient.getQueryData<MeProfileResponse>(
-    queryKeys.me.profile()
-  );
-  if (cached) return cached;
-
   const profileV0 = getDomainVersion().profile;
   const economyV0 = getDomainVersion().economy;
   const profile = await fetchMeProfile();

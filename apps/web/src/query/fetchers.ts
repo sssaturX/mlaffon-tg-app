@@ -37,6 +37,15 @@ export async function fetchMeProfile(): Promise<MeProfileResponse> {
   return r.data;
 }
 
+/** Обход HTTP-кэша: для polling после OAuth, где нужен гарантированно свежий ответ. */
+export async function fetchMeProfileNoCache(): Promise<MeProfileResponse> {
+  const r = await api<MeProfileResponse>("/api/v1/me/profile", {
+    httpCache: "no-store",
+  });
+  throwIfApiErr(r);
+  return r.data;
+}
+
 /** Баланс / уровень / стрики; инкременты — по WS `me_update`, reconcile — этот GET. */
 export async function fetchMeEconomy(): Promise<MeEconomyResponse> {
   const r = await api<MeEconomyResponse>("/api/v1/me/economy");
