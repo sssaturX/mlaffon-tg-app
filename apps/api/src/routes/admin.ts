@@ -14,6 +14,7 @@ import {
   giveawayParticipants,
   taskEvidence,
   tasks,
+  shopItems,
   dropUserStates,
   userStreamStreaks,
 } from "../db/schema.js";
@@ -37,6 +38,12 @@ import {
   deleteTaskAdmin,
   updateTaskAdmin,
 } from "../services/adminTasks.js";
+import {
+  createShopItemAdmin,
+  deleteShopItemAdmin,
+  listShopItemsAdmin,
+  updateShopItemAdmin,
+} from "../services/adminShop.js";
 import { signAdminToken, verifyAdminToken } from "../lib/adminJwt.js";
 import {
   listBanAppealsAdmin,
@@ -920,6 +927,132 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       });
     }
     return { ok: true, active };
+  });
+
+  const shopCreateBody = z.object({
+    id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
+    title: z.string().min(1).max(200),
+    description: z.string().max(4000).nullable().optional(),
+    kind: z.enum(["extra_spin"]),
+    priceCoins: z.number().int().min(1),
+    spins: z.number().int().min(1).max(99).optional(),
+    active: z.boolean().optional(),
+    stockTotal: z.union([z.number().int().min(1), z.null()]).optional(),
+  });
+
+  const shopPatchBody = z.object({
+    title: z.string().min(1).max(200).optional(),
+    description: z.string().max(4000).nullable().optional(),
+    kind: z.enum(["extra_spin"]).optional(),
+    priceCoins: z.number().int().min(1).optional(),
+    spins: z.number().int().min(1).max(99).optional(),
+    active: z.boolean().optional(),
+    stockTotal: z.union([z.number().int().min(1), z.null()]).optional(),
+  });
+
+  app.get("/api/admin/shop/items", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const items = await listShopItemsAdmin();
+    return { items };
+  });
+
+  app.post("/api/admin/shop/items", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const parsed = shopCreateBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const d = parsed.data;
+    try {
+      await createShopItemAdmin({
+        id: d.id,
+        title: d.title,
+        description: d.description?.trim() ? d.description.trim() : null,
+        kind: d.kind,
+        priceCoins: d.priceCoins,
+        meta: { spins: d.spins ?? 1 },
+        active: d.active !== false,
+        stockTotal: d.stockTotal === undefined ? null : d.stockTotal,
+      });
+      return { ok: true };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/unique|duplicate/i.test(msg)) {
+        return reply.status(409).send({
+          error: { code: "shop_exists", message: "Товар с таким id уже есть" },
+        });
+      }
+      throw e;
+    }
+  });
+
+  app.put("/api/admin/shop/items/:id", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const parsed = shopPatchBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const d = parsed.data;
+    const patch: Parameters<typeof updateShopItemAdmin>[1] = {};
+    if (d.title !== undefined) patch.title = d.title;
+    if (d.description !== undefined)
+      patch.description = d.description?.trim() ? d.description.trim() : null;
+    if (d.kind !== undefined) patch.kind = d.kind;
+    if (d.priceCoins !== undefined) patch.priceCoins = d.priceCoins;
+    if (d.active !== undefined) patch.active = d.active;
+    if (d.stockTotal !== undefined) patch.stockTotal = d.stockTotal;
+
+    if (d.spins !== undefined) {
+      const [cur] = await db.select().from(shopItems).where(eq(shopItems.id, id)).limit(1);
+      if (!cur) {
+        return reply.status(404).send({
+          error: { code: "not_found", message: "Товар не найден" },
+        });
+      }
+      const prev = (cur.meta && typeof cur.meta === "object" ? cur.meta : {}) as Record<
+        string,
+        unknown
+      >;
+      patch.meta = { ...prev, spins: d.spins };
+    }
+
+    try {
+      const ok = await updateShopItemAdmin(id, patch);
+      if (!ok) {
+        return reply.status(404).send({
+          error: { code: "not_found", message: "Товар не найден" },
+        });
+      }
+      return { ok: true };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "stock_total_below_sold") {
+        return reply.status(400).send({
+          error: {
+            code: "bad_stock",
+            message: "Лимит не может быть меньше уже проданного количества",
+          },
+        });
+      }
+      throw e;
+    }
+  });
+
+  app.delete("/api/admin/shop/items/:id", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const id = (req.params as { id: string }).id;
+    const ok = await deleteShopItemAdmin(id);
+    if (!ok) {
+      return reply.status(404).send({
+        error: { code: "not_found", message: "Товар не найден" },
+      });
+    }
+    return { ok: true };
   });
 
   app.get("/api/admin/ban-appeals", async (req, reply) => {

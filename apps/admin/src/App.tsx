@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const ADMIN_NAV_ITEMS = [
   { id: "giveaways" as const, label: "Розыгрыши" },
   { id: "promos" as const, label: "Промокоды" },
+  { id: "shop" as const, label: "Магазин" },
   { id: "drops" as const, label: "Дропы" },
   { id: "live" as const, label: "Эфир" },
   { id: "users" as const, label: "Пользователи" },
@@ -209,6 +210,18 @@ type AdminTaskRow = {
   active: boolean;
 };
 
+type AdminShopItemRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  kind: string;
+  priceCoins: number;
+  meta: unknown;
+  active: boolean;
+  stockTotal: number | null;
+  stockSold: number;
+};
+
 type AdminTaskEvidenceRow = {
   id: string;
   userId: string;
@@ -411,6 +424,17 @@ export function App() {
   const [appealsLoading, setAppealsLoading] = useState(false);
   const [predictionPlatformsLoading, setPredictionPlatformsLoading] = useState(false);
   const [predictionsLoading, setPredictionsLoading] = useState(false);
+  const [adminShopItems, setAdminShopItems] = useState<AdminShopItemRow[] | null>(null);
+  const [shopLoading, setShopLoading] = useState(false);
+  const [shopEditingId, setShopEditingId] = useState<string | null>(null);
+  const [shopFormId, setShopFormId] = useState("");
+  const [shopFormTitle, setShopFormTitle] = useState("");
+  const [shopFormDescription, setShopFormDescription] = useState("");
+  const [shopFormPrice, setShopFormPrice] = useState(50);
+  const [shopFormSpins, setShopFormSpins] = useState(3);
+  const [shopFormStockUnlimited, setShopFormStockUnlimited] = useState(true);
+  const [shopFormStockTotal, setShopFormStockTotal] = useState(100);
+  const [shopFormActive, setShopFormActive] = useState(true);
   const autoRefreshRunningRef = useRef(false);
   const lastStatsAutoRefreshAtRef = useRef(0);
   const usersPrevSearchRef = useRef<string | undefined>(undefined);
@@ -419,7 +443,7 @@ export function App() {
     if (tab === "predictions" || tab === "live" || tab === "drops") {
       return ADMIN_AUTO_REFRESH_MS.fast;
     }
-    if (tab === "promos" || tab === "tasks") {
+    if (tab === "promos" || tab === "tasks" || tab === "shop") {
       return ADMIN_AUTO_REFRESH_MS.slow;
     }
     return ADMIN_AUTO_REFRESH_MS.normal;
@@ -670,6 +694,28 @@ export function App() {
     }
   }, [token, authHeaders]);
 
+  const loadAdminShop = useCallback(async (opts?: AdminFetchOpts) => {
+    if (!token) return;
+    const silent = opts?.silent === true;
+    if (!silent) setShopLoading(true);
+    if (!silent) setErr(null);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/shop/items`, { headers: authHeaders() });
+      const j = (await r.json()) as {
+        items?: AdminShopItemRow[];
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setAdminShopItems(j.items ?? []);
+    } finally {
+      if (!silent) setShopLoading(false);
+    }
+  }, [token, authHeaders]);
+
   const loadTaskEvidence = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
     const silent = opts?.silent === true;
@@ -793,6 +839,10 @@ export function App() {
   }, [token, tab, loadAdminTasks, loadTaskEvidence]);
 
   useEffect(() => {
+    if (token && tab === "shop") void loadAdminShop();
+  }, [token, tab, loadAdminShop]);
+
+  useEffect(() => {
     if (token && tab === "predictions") {
       void loadPredictionPlatforms();
       void loadPredictions();
@@ -868,6 +918,10 @@ export function App() {
           await Promise.all([loadAdminTasks(s), loadTaskEvidence(s)]);
           return;
         }
+        if (tab === "shop") {
+          await loadAdminShop(s);
+          return;
+        }
         if (tab === "appeals") {
           await loadBanAppeals(s);
           return;
@@ -902,6 +956,7 @@ export function App() {
     loadLiveBroadcast,
     loadAdminTasks,
     loadTaskEvidence,
+    loadAdminShop,
     loadBanAppeals,
     loadPredictionPlatforms,
     loadPredictions,
@@ -1925,6 +1980,308 @@ export function App() {
                 </li>
               ))}
               </ul>
+            </>
+          )}
+        </>
+      ) : null}
+
+      {tab === "shop" ? (
+        <>
+          <h2 className="admin-mt-0">Магазин</h2>
+          <p className="muted">
+            Товары для мини-приложения: цена в монетах, описание, лимит продаж (или без лимита). Сейчас
+            поддерживается тип «Доп. спины колеса» (<code>extra_spin</code>), в meta хранится{" "}
+            <code>spins</code>.
+          </p>
+          <form
+            className="card stack"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!token) return;
+              if (!shopFormStockUnlimited && shopFormStockTotal < 1) {
+                setErr("Укажите лимит ≥ 1 или включите «без лимита».");
+                return;
+              }
+              const stockTotal = shopFormStockUnlimited ? null : shopFormStockTotal;
+              setLoading(true);
+              setErr(null);
+              try {
+                if (shopEditingId) {
+                  const r = await fetch(
+                    `${apiBase()}/api/admin/shop/items/${encodeURIComponent(shopEditingId)}`,
+                    {
+                      method: "PUT",
+                      headers: authHeaders(true),
+                      body: JSON.stringify({
+                        title: shopFormTitle,
+                        description: shopFormDescription.trim() || null,
+                        kind: "extra_spin",
+                        priceCoins: shopFormPrice,
+                        spins: shopFormSpins,
+                        active: shopFormActive,
+                        stockTotal,
+                      }),
+                    }
+                  );
+                  const j = (await r.json()) as { error?: { message?: string } };
+                  if (!r.ok) {
+                    setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                    return;
+                  }
+                } else {
+                  const r = await fetch(`${apiBase()}/api/admin/shop/items`, {
+                    method: "POST",
+                    headers: authHeaders(true),
+                    body: JSON.stringify({
+                      id: shopFormId.trim(),
+                      title: shopFormTitle,
+                      description: shopFormDescription.trim() || null,
+                      kind: "extra_spin",
+                      priceCoins: shopFormPrice,
+                      spins: shopFormSpins,
+                      active: shopFormActive,
+                      stockTotal,
+                    }),
+                  });
+                  const j = (await r.json()) as { error?: { message?: string } };
+                  if (!r.ok) {
+                    setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                    return;
+                  }
+                }
+                setShopEditingId(null);
+                setShopFormId("");
+                setShopFormTitle("");
+                setShopFormDescription("");
+                setShopFormPrice(50);
+                setShopFormSpins(3);
+                setShopFormStockUnlimited(true);
+                setShopFormStockTotal(100);
+                setShopFormActive(true);
+                await loadAdminShop();
+              } catch {
+                setErr("Сеть недоступна");
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            <div>
+              <label htmlFor="shopid">ID товара (латиница, без пробелов)</label>
+              <input
+                id="shopid"
+                value={shopFormId}
+                onChange={(e) => setShopFormId(e.target.value)}
+                disabled={shopEditingId != null}
+                required={shopEditingId == null}
+                placeholder="extra_spin_pack_2"
+              />
+            </div>
+            <div>
+              <label htmlFor="shoptitle">Название</label>
+              <input
+                id="shoptitle"
+                value={shopFormTitle}
+                onChange={(e) => setShopFormTitle(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="shopdesc">Описание</label>
+              <textarea
+                id="shopdesc"
+                value={shopFormDescription}
+                onChange={(e) => setShopFormDescription(e.target.value)}
+                rows={3}
+                placeholder="Текст на карточке в приложении"
+              />
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="shopprice">Цена (монет)</label>
+                <input
+                  id="shopprice"
+                  type="number"
+                  min={1}
+                  value={shopFormPrice}
+                  onChange={(e) => setShopFormPrice(Number(e.target.value))}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="shopspins">Спинов в пакете</label>
+                <input
+                  id="shopspins"
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={shopFormSpins}
+                  onChange={(e) => setShopFormSpins(Number(e.target.value))}
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label className="admin-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={shopFormStockUnlimited}
+                  onChange={(e) => setShopFormStockUnlimited(e.target.checked)}
+                />
+                <span className="admin-checkbox-row__text">Без лимита в наличии</span>
+              </label>
+              {!shopFormStockUnlimited ? (
+                <div style={{ marginTop: 8 }}>
+                  <label htmlFor="shopstock">Всего в наличии (штук)</label>
+                  <input
+                    id="shopstock"
+                    type="number"
+                    min={1}
+                    value={shopFormStockTotal}
+                    onChange={(e) => setShopFormStockTotal(Number(e.target.value))}
+                  />
+                </div>
+              ) : null}
+            </div>
+            <div>
+              <label className="admin-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={shopFormActive}
+                  onChange={(e) => setShopFormActive(e.target.checked)}
+                />
+                <span className="admin-checkbox-row__text">Активен (виден в приложении)</span>
+              </label>
+            </div>
+            <div className="row">
+              <button type="submit" className="primary" disabled={loading}>
+                {shopEditingId ? "Сохранить" : "Добавить товар"}
+              </button>
+              {shopEditingId ? (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={loading}
+                  onClick={() => {
+                    setShopEditingId(null);
+                    setShopFormId("");
+                    setShopFormTitle("");
+                    setShopFormDescription("");
+                    setShopFormPrice(50);
+                    setShopFormSpins(3);
+                    setShopFormStockUnlimited(true);
+                    setShopFormStockTotal(100);
+                    setShopFormActive(true);
+                  }}
+                >
+                  Отменить правку
+                </button>
+              ) : null}
+            </div>
+          </form>
+
+          {adminShopItems === null ? (
+            <AdminSkeletonRows rows={3} />
+          ) : (
+            <>
+              {shopLoading ? <p className="muted admin-refreshing">Загружаем…</p> : null}
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Название</th>
+                      <th>Цена</th>
+                      <th>Продано / лимит</th>
+                      <th>Активен</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminShopItems.map((row) => (
+                      <tr key={row.id}>
+                        <td className="mono">{row.id}</td>
+                        <td>
+                          <strong>{row.title}</strong>
+                          {row.description ? (
+                            <p className="muted admin-m-0" style={{ fontSize: 12, marginTop: 4 }}>
+                              {row.description.length > 80
+                                ? `${row.description.slice(0, 80)}…`
+                                : row.description}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td>{row.priceCoins.toLocaleString("ru-RU")}</td>
+                        <td>
+                          {row.stockTotal == null
+                            ? `${row.stockSold} / ∞`
+                            : `${row.stockSold} / ${row.stockTotal}`}
+                        </td>
+                        <td>{row.active ? "да" : "нет"}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={loading}
+                            onClick={() => {
+                              setShopEditingId(row.id);
+                              setShopFormId(row.id);
+                              setShopFormTitle(row.title);
+                              setShopFormDescription(row.description ?? "");
+                              setShopFormPrice(row.priceCoins);
+                              const sp = (row.meta as { spins?: number } | null)?.spins ?? 1;
+                              setShopFormSpins(sp);
+                              setShopFormStockUnlimited(row.stockTotal == null);
+                              setShopFormStockTotal(row.stockTotal ?? 100);
+                              setShopFormActive(row.active);
+                            }}
+                          >
+                            Править
+                          </button>{" "}
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={loading}
+                            onClick={async () => {
+                              if (!token) return;
+                              if (!window.confirm(`Удалить товар «${row.title}» (${row.id})?`)) return;
+                              setLoading(true);
+                              setErr(null);
+                              try {
+                                const r = await fetch(
+                                  `${apiBase()}/api/admin/shop/items/${encodeURIComponent(row.id)}`,
+                                  { method: "DELETE", headers: authHeaders() }
+                                );
+                                const j = (await r.json()) as { error?: { message?: string } };
+                                if (!r.ok) {
+                                  setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                  return;
+                                }
+                                if (shopEditingId === row.id) {
+                                  setShopEditingId(null);
+                                  setShopFormId("");
+                                  setShopFormTitle("");
+                                  setShopFormDescription("");
+                                }
+                                await loadAdminShop();
+                              } catch {
+                                setErr("Сеть недоступна");
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                          >
+                            Удалить
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {adminShopItems.length === 0 ? (
+                <p className="muted">Пока нет товаров — добавьте первый формой выше.</p>
+              ) : null}
             </>
           )}
         </>

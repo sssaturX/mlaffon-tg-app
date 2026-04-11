@@ -2,6 +2,7 @@ import { and, eq, isNull, desc } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { appSettings, giveaways } from "../db/schema.js";
 import { getParticipantCountsForGiveawayIds } from "./giveaways.js";
+import { DEFAULT_FAQ_ITEMS } from "../content/faqDefault.js";
 
 export async function getFaqItems(): Promise<{ q: string; a: string }[]> {
   const [row] = await db
@@ -10,16 +11,7 @@ export async function getFaqItems(): Promise<{ q: string; a: string }[]> {
     .where(eq(appSettings.key, "faq"))
     .limit(1);
   if (!row?.value) {
-    return [
-      {
-        q: "Как заработать монеты?",
-        a: "Выполняйте задания, стрики на стримах и участвуйте в акциях.",
-      },
-      {
-        q: "Twitch и Kick — это разные балансы?",
-        a: "Да, в шапке можно переключить платформу. Реферальные проценты начисляются раз в неделю после подключения OAuth.",
-      },
-    ];
+    return DEFAULT_FAQ_ITEMS;
   }
   const arr = row.value as { items?: { q: string; a: string }[] };
   return Array.isArray(arr.items) ? arr.items : [];

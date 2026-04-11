@@ -49,7 +49,7 @@ import {
   getFortuneStatus,
   spinFortuneWheel,
 } from "./services/fortune.js";
-import { listShopItems, purchaseItem } from "./services/shop.js";
+import { listShopItemsForClient, purchaseItem } from "./services/shop.js";
 import { registerOAuthRoutes } from "./routes/oauth.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerGiveawayRoutes } from "./routes/giveaways.js";
@@ -1032,7 +1032,7 @@ app.post(
 app.get("/api/v1/shop/items", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
-  const items = await listShopItems();
+  const items = await listShopItemsForClient();
   return { items };
 });
 
@@ -1185,6 +1185,7 @@ app.post("/api/v1/shop/purchase", async (req, reply) => {
       item_not_found: "Товар недоступен",
       insufficient_coins: "Недостаточно монет на этом счёте",
       duplicate: "Покупка уже была выполнена",
+      out_of_stock: "Товар закончился",
     };
     return reply.status(400).send({
       error: {

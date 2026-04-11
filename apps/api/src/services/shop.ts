@@ -1,8 +1,33 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { shopItems, userInventory } from "../db/schema.js";
-import { applyDebit, type EconomyPlatform } from "./economy.js";
+import { applyCredit, applyDebit, type EconomyPlatform } from "./economy.js";
 import { nanoid } from "nanoid";
+
+export type ShopItemClientDto = {
+  id: string;
+  title: string;
+  description: string | null;
+  kind: string;
+  priceCoins: number;
+  meta: unknown;
+  /** null — без лимита; 0 — закончилось. */
+  stockRemaining: number | null;
+};
+
+export async function listShopItemsForClient(): Promise<ShopItemClientDto[]> {
+  const rows = await db.select().from(shopItems).where(eq(shopItems.active, true));
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    description: r.description ?? null,
+    kind: r.kind,
+    priceCoins: r.priceCoins,
+    meta: r.meta ?? null,
+    stockRemaining:
+      r.stockTotal == null ? null : Math.max(0, r.stockTotal - r.stockSold),
+  }));
+}
 
 export async function purchaseItem(
   userId: string,
@@ -18,6 +43,10 @@ export async function purchaseItem(
   if (item.kind !== "extra_spin")
     return { ok: false, error: "item_not_found" };
 
+  if (item.stockTotal != null && item.stockSold >= item.stockTotal) {
+    return { ok: false, error: "out_of_stock" };
+  }
+
   const idem = `shop:${userId}:${itemId}:${nanoid()}`;
   const debit = await applyDebit({
     userId,
@@ -32,6 +61,30 @@ export async function purchaseItem(
     if (debit.reason === "insufficient")
       return { ok: false, error: "insufficient_coins" };
     return { ok: false, error: "duplicate" };
+  }
+
+  const [stockRow] = await db
+    .update(shopItems)
+    .set({ stockSold: sql`${shopItems.stockSold} + 1` })
+    .where(
+      and(
+        eq(shopItems.id, itemId),
+        or(isNull(shopItems.stockTotal), lt(shopItems.stockSold, shopItems.stockTotal))
+      )
+    )
+    .returning({ id: shopItems.id });
+
+  if (!stockRow) {
+    await applyCredit({
+      userId,
+      amount: item.priceCoins,
+      idempotencyKey: `${idem}:refund_oos`,
+      kind: "admin",
+      platform,
+      referenceType: "shop_stock_race",
+      referenceId: itemId,
+    });
+    return { ok: false, error: "out_of_stock" };
   }
 
   const qty = (item.meta as { spins?: number } | null)?.spins ?? 1;
@@ -51,8 +104,4 @@ export async function purchaseItem(
     });
 
   return { ok: true };
-}
-
-export async function listShopItems() {
-  return db.select().from(shopItems).where(eq(shopItems.active, true));
 }

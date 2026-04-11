@@ -642,10 +642,16 @@ export const appSettings = pgTable("app_settings", {
 export const shopItems = pgTable("shop_items", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
+  /** Текст для карточки товара в приложении. */
+  description: text("description"),
   kind: text("kind").notNull(),
   priceCoins: integer("price_coins").notNull(),
   meta: jsonb("meta"),
   active: boolean("active").notNull().default(true),
+  /** Лимит продаж: null = без лимита. */
+  stockTotal: integer("stock_total"),
+  /** Сколько единиц уже продано (покупок). */
+  stockSold: integer("stock_sold").notNull().default(0),
 });
 
 export const userInventory = pgTable(

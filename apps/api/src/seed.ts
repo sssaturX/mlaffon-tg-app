@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "./db/index.js";
 import { appSettings, giveaways, promoCodes, shopItems, tasks } from "./db/schema.js";
 import { invalidateActiveTasksCache } from "./services/taskCatalogCache.js";
+import { DEFAULT_FAQ_ITEMS } from "./content/faqDefault.js";
 
 /** Официальный канал для API-заданий follow (Twitch login / Kick slug в URL). */
 const OFFICIAL_TWITCH_BROADCASTER_LOGIN = "mlaffonxd";
@@ -386,10 +387,13 @@ async function seed() {
     {
       id: "extra_spin_pack",
       title: "+3 спина колеса",
+      description: null as string | null,
       kind: "extra_spin" as const,
       priceCoins: 50,
       meta: { spins: 3 },
       active: true,
+      stockTotal: null as number | null,
+      stockSold: 0,
     },
   ];
 
@@ -404,20 +408,26 @@ async function seed() {
         .update(shopItems)
         .set({
           title: s.title,
+          description: s.description,
           kind: s.kind,
           priceCoins: s.priceCoins,
           meta: s.meta,
           active: s.active,
+          stockTotal: s.stockTotal,
+          stockSold: s.stockSold,
         })
         .where(eq(shopItems.id, s.id));
     } else {
       await db.insert(shopItems).values({
         id: s.id,
         title: s.title,
+        description: s.description,
         kind: s.kind,
         priceCoins: s.priceCoins,
         meta: s.meta,
         active: s.active,
+        stockTotal: s.stockTotal,
+        stockSold: s.stockSold,
       });
     }
   }
@@ -444,18 +454,7 @@ async function seed() {
   if (!faqRow) {
     await db.insert(appSettings).values({
       key: "faq",
-      value: {
-        items: [
-          {
-            q: "Как заработать монеты?",
-            a: "Задания, стрики на стримах, колесо фортуны и реферальная программа.",
-          },
-          {
-            q: "Когда начисляются реферальные проценты?",
-            a: "Раз в неделю (понедельник UTC), после того как приглашённый подключил Twitch или Kick.",
-          },
-        ],
-      },
+      value: { items: DEFAULT_FAQ_ITEMS },
     });
   }
 
