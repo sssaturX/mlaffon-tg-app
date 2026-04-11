@@ -49,7 +49,7 @@ import {
   invalidateInflightMeRefresh,
 } from "./services/meService";
 import { navPrefetchHandlers, prefetchOnBootstrap } from "./query/prefetch";
-import { meEconomyQueryFn, meProfileQueryFn } from "./query/meQueryFns";
+import { meEconomyQueryFn, meProfileQueryFn, meProfileQueryFnNoCache } from "./query/meQueryFns";
 import { appEventBus } from "./events/appEventBus";
 import { emitAppBootstrap } from "./meDomain/bootstrapOrchestrator";
 import { queryClient } from "./query/queryClient";
@@ -158,6 +158,7 @@ export default function App() {
       const startParam = initData ? getStartParamFromInitData(initData) : null;
       /** Иначе старый JWT из localStorage перехватывает запуск и startapp=link_* не доходит до API. */
       const isTelegramAccountLink = startParam?.startsWith("link_") === true;
+      const isOAuthReturn = startParam === "oauth_ok";
 
       const existing = getToken();
 
@@ -173,17 +174,17 @@ export default function App() {
           setToken(r.data.token);
           queryClient.removeQueries({ queryKey: queryKeys.me.profile() });
           queryClient.removeQueries({ queryKey: queryKeys.me.economy() });
+          const profileFn = isOAuthReturn ? meProfileQueryFnNoCache : meProfileQueryFn;
           void Promise.all([
             queryClient.prefetchQuery({
               queryKey: queryKeys.me.profile(),
-              queryFn: meProfileQueryFn,
+              queryFn: profileFn,
             }),
             queryClient.prefetchQuery({
               queryKey: queryKeys.me.economy(),
               queryFn: meEconomyQueryFn,
             }),
           ]);
-          prefetchOnBootstrap();
           if (r.data.accountsMerged === true) {
             showToast(
               "Аккаунты объединены. Оставлен профиль с большим прогрессом.",
@@ -211,7 +212,6 @@ export default function App() {
             queryFn: meEconomyQueryFn,
           }),
         ]);
-        prefetchOnBootstrap();
         if (cancelled) return;
         setReady(true);
         return;
@@ -232,7 +232,6 @@ export default function App() {
               queryFn: meEconomyQueryFn,
             }),
           ]);
-          prefetchOnBootstrap();
         } else {
           const m = formatApiError(r);
           setError(m);
@@ -290,7 +289,6 @@ export default function App() {
               queryFn: meEconomyQueryFn,
             }),
           ]);
-          prefetchOnBootstrap();
           setWebLogin(false);
           setReady(true);
         }}
@@ -306,10 +304,16 @@ export default function App() {
   const oauthHasResult =
     searchParams.get("connected") === "1" ||
     Boolean(searchParams.get("error")?.length);
-  const oauthExternalNoToken =
-    oauthPathOk && oauthHasResult && !getToken();
+  const oauthRcTma = searchParams.get("rc") === "tma";
+  /**
+   * Показываем OAuthBrowserDone если:
+   * - rc=tma (всегда — этот браузер не TMA WebView, любой JWT тут бесполезен)
+   * - или нет JWT и есть OAuth результат (веб-flow, но токен потерян)
+   */
+  const showOAuthDonePage =
+    oauthPathOk && oauthHasResult && (oauthRcTma || !getToken());
 
-  if (oauthExternalNoToken) {
+  if (showOAuthDonePage) {
     return (
       <Suspense fallback={<AppLoadingSpinner />}>
         <OAuthBrowserDone />
@@ -441,6 +445,13 @@ function AppShell({
       setActivePlatform(liveForPlatform.platform);
     }
   }, [liveForPlatform, setActivePlatform]);
+
+  const bootstrapDoneRef = useRef(false);
+  useEffect(() => {
+    if (needsPlatformLink || bootstrapDoneRef.current) return;
+    bootstrapDoneRef.current = true;
+    prefetchOnBootstrap();
+  }, [needsPlatformLink]);
 
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStep, setTourStep] = useState(0);
