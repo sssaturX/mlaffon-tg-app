@@ -4,12 +4,13 @@ import type { MeResponse } from "shared";
 import { AppLoadingSpinner } from "../components/AppLoadingSpinner";
 import { hasLinkedStreamingAccount } from "../utils/streamingAccount";
 import { hydrateMeThroughEventBus } from "../meDomain/meHydration";
+import { refreshProfileOnly } from "../meDomain/meHydration";
 
 export const OAUTH_TOAST_KEY = "mlaffon_oauth_toast";
 
 async function syncUntilLinked(): Promise<MeResponse | null> {
   for (let attempt = 0; attempt < 10; attempt++) {
-    const m = await hydrateMeThroughEventBus();
+    const m = await refreshProfileOnly();
     if (m && hasLinkedStreamingAccount(m)) return m;
     await new Promise((r) => setTimeout(r, 120 + attempt * 40));
   }

@@ -7,7 +7,7 @@ import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
 import type { MeResponse } from "shared";
 import { api, formatApiError, getToken } from "../api";
-import { hydrateMeThroughEventBus } from "../meDomain/meHydration";
+import { refreshProfileOnly } from "../meDomain/meHydration";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -139,7 +139,7 @@ export default function Home({ me }: { me: MeResponse | null }) {
     } catch {
       /* ignore */
     }
-    void hydrateMeThroughEventBus(showToast);
+    void refreshProfileOnly();
   }, [me, showToast]);
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const [watchingLive, setWatchingLive] = useState(false);
