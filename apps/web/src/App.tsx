@@ -275,6 +275,28 @@ export default function App() {
     if (ready && getToken()) emitAppBootstrap("token_ready");
   }, [ready]);
 
+  /**
+   * OAuth callback в внешнем браузере — проверяем ДО всего остального.
+   * Если rc=tma — пользователь пришёл из TMA, этот браузер не его приложение.
+   * Если нет JWT и есть результат OAuth — веб-flow, но токен потерян.
+   * В обоих случаях: показать страницу «Kick/Twitch подключён → вернитесь в Telegram/на сайт».
+   */
+  const oauthPathOk = /^\/oauth\/(twitch|kick)\/?$/.test(location.pathname);
+  const oauthHasResult =
+    searchParams.get("connected") === "1" ||
+    Boolean(searchParams.get("error")?.length);
+  const oauthRcTma = searchParams.get("rc") === "tma";
+  const showOAuthDonePage =
+    oauthPathOk && oauthHasResult && (oauthRcTma || !getToken());
+
+  if (showOAuthDonePage) {
+    return (
+      <Suspense fallback={<AppLoadingSpinner />}>
+        <OAuthBrowserDone />
+      </Suspense>
+    );
+  }
+
   if (webLogin) {
     return (
       <WebLogin
@@ -298,27 +320,6 @@ export default function App() {
 
   if (!ready) {
     return <AppLoadingSpinner />;
-  }
-
-  const oauthPathOk = /^\/oauth\/(twitch|kick)\/?$/.test(location.pathname);
-  const oauthHasResult =
-    searchParams.get("connected") === "1" ||
-    Boolean(searchParams.get("error")?.length);
-  const oauthRcTma = searchParams.get("rc") === "tma";
-  /**
-   * Показываем OAuthBrowserDone если:
-   * - rc=tma (всегда — этот браузер не TMA WebView, любой JWT тут бесполезен)
-   * - или нет JWT и есть OAuth результат (веб-flow, но токен потерян)
-   */
-  const showOAuthDonePage =
-    oauthPathOk && oauthHasResult && (oauthRcTma || !getToken());
-
-  if (showOAuthDonePage) {
-    return (
-      <Suspense fallback={<AppLoadingSpinner />}>
-        <OAuthBrowserDone />
-      </Suspense>
-    );
   }
 
   if (error || !getToken()) {
