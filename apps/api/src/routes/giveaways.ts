@@ -10,7 +10,11 @@ import {
 import { publishGiveawaysRealtimeSnapshot } from "../services/giveawaysRealtime.js";
 
 export async function registerGiveawayRoutes(app: FastifyInstance) {
-  app.get("/api/v1/giveaways", async () => {
+  app.get("/api/v1/giveaways", async (_req, reply) => {
+    void reply.header(
+      "Cache-Control",
+      "public, max-age=30, stale-while-revalidate=120"
+    );
     return { giveaways: await listGiveawaysPublic() };
   });
 
@@ -22,6 +26,10 @@ export async function registerGiveawayRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Розыгрыш не найден" },
       });
     }
+    void reply.header(
+      "Cache-Control",
+      "private, max-age=15, stale-while-revalidate=60"
+    );
     return detail;
   });
 

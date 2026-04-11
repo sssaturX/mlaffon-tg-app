@@ -48,7 +48,7 @@ import {
   handleMeUpdateFromWs,
   invalidateInflightMeRefresh,
 } from "./services/meService";
-import { navPrefetchHandlers } from "./query/prefetch";
+import { navPrefetchHandlers, prefetchOnBootstrap } from "./query/prefetch";
 import { meEconomyQueryFn, meProfileQueryFn } from "./query/meQueryFns";
 import { appEventBus } from "./events/appEventBus";
 import { emitAppBootstrap } from "./meDomain/bootstrapOrchestrator";
@@ -183,6 +183,7 @@ export default function App() {
               queryFn: meEconomyQueryFn,
             }),
           ]);
+          prefetchOnBootstrap();
           if (r.data.accountsMerged === true) {
             showToast(
               "Аккаунты объединены. Оставлен профиль с большим прогрессом.",
@@ -210,6 +211,7 @@ export default function App() {
             queryFn: meEconomyQueryFn,
           }),
         ]);
+        prefetchOnBootstrap();
         if (cancelled) return;
         setReady(true);
         return;
@@ -230,6 +232,7 @@ export default function App() {
               queryFn: meEconomyQueryFn,
             }),
           ]);
+          prefetchOnBootstrap();
         } else {
           const m = formatApiError(r);
           setError(m);
@@ -287,6 +290,7 @@ export default function App() {
               queryFn: meEconomyQueryFn,
             }),
           ]);
+          prefetchOnBootstrap();
           setWebLogin(false);
           setReady(true);
         }}
@@ -525,7 +529,7 @@ function AppShell({
     if (!docVisible) return;
     const id = window.setInterval(
       () => appEventBus.emit("me:reconcile:economy", { delayMs: 0 }),
-      60_000
+      90_000
     );
     return () => clearInterval(id);
   }, [me?.id, needsPlatformLink, realtimeConnected, docVisible]);
@@ -753,7 +757,7 @@ function AppShell({
         <DropOverlay
           open={dropOpen}
           onClose={() => setDropOpen(false)}
-          snapshot={dropSnap}
+          snapshot={dropSnap ?? null}
           clockOffsetMs={dropClockOffsetMs}
           onAfterClaim={(reward) => {
             const snap = queryClient.getQueryData<DropSnapshot>(
@@ -764,9 +768,9 @@ function AppShell({
             }
           }}
           onRefreshSnapshot={() => {
-            void queryClient.invalidateQueries({
-              queryKey: queryKeys.drops.active(),
-            });
+            queryClient.setQueryData(queryKeys.drops.active(), (prev: DropSnapshot | undefined) =>
+              prev ? { ...prev } : prev
+            );
           }}
         />
       ) : null}

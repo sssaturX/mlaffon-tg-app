@@ -1,7 +1,9 @@
-import type { MeResponse } from "shared";
+import type { MeEconomyResponse, MeProfileResponse, MeResponse } from "shared";
 import { formatApiError, getToken, setToken } from "../api";
 import { ApiQueryError } from "../query/apiQueryError";
 import { fetchMeEconomy, fetchMeProfile } from "../query/fetchers";
+import { queryClient } from "../query/queryClient";
+import { queryKeys } from "../query/queryKeys";
 import { getMeFromCache } from "../hooks/queries/useMergedMe";
 import { appEventBus } from "../events/appEventBus";
 import { getDomainVersion } from "./domainVersion";
@@ -12,9 +14,12 @@ type ShowToast = (
   third?: number | { durationMs?: number; streak?: boolean }
 ) => void;
 
+const HYDRATE_SKIP_IF_FRESH_MS = 5_000;
+
 /**
  * Bootstrap / retry / OAuth: параллельный HTTP → только через `me:update` snapshot.
  * Не пишет кэш напрямую.
+ * Пропускает HTTP, если оба кэша свежие (WS недавно обновил).
  */
 export async function hydrateMeThroughEventBus(
   showToast?: ShowToast
@@ -24,18 +29,35 @@ export async function hydrateMeThroughEventBus(
     return null;
   }
 
+  const cachedMe = getMeFromCache();
+  if (cachedMe) {
+    const profileState = queryClient.getQueryState(queryKeys.me.profile());
+    const economyState = queryClient.getQueryState(queryKeys.me.economy());
+    const now = Date.now();
+    const profileFresh =
+      profileState?.dataUpdatedAt &&
+      now - profileState.dataUpdatedAt < HYDRATE_SKIP_IF_FRESH_MS;
+    const economyFresh =
+      economyState?.dataUpdatedAt &&
+      now - economyState.dataUpdatedAt < HYDRATE_SKIP_IF_FRESH_MS;
+    if (profileFresh && economyFresh) return cachedMe;
+  }
+
   const profileV0 = getDomainVersion().profile;
   const economyV0 = getDomainVersion().economy;
 
   try {
+    const profileCached = queryClient.getQueryData<MeProfileResponse>(
+      queryKeys.me.profile()
+    );
     const [profile, economy] = await Promise.all([
-      fetchMeProfile(),
+      profileCached ? Promise.resolve(profileCached) : fetchMeProfile(),
       fetchMeEconomy(),
     ]);
     appEventBus.emit("me:update", {
       kind: "http_snapshot",
       source: "http",
-      profile,
+      profile: profileCached ? undefined : profile,
       economy,
       profileV0,
       economyV0,

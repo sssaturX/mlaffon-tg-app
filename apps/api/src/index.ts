@@ -706,7 +706,7 @@ app.get("/api/v1/tasks", async (req, reply) => {
   );
   void reply.header(
     "Cache-Control",
-    "private, max-age=8, stale-while-revalidate=24"
+    "private, max-age=30, stale-while-revalidate=120"
   );
   return { tasks: list };
 });
@@ -865,6 +865,10 @@ app.get("/api/v1/leaderboard", async (req, reply) => {
         }
       : null;
 
+  void reply.header(
+    "Cache-Control",
+    "private, max-age=30, stale-while-revalidate=120"
+  );
   return { sort, platform, top: entries, me: meEntry };
 });
 
@@ -905,6 +909,10 @@ app.get("/api/v1/referrals", async (req, reply) => {
 
   const qualifiedCount = invited.filter((i) => i.qualified).length;
 
+  void reply.header(
+    "Cache-Control",
+    "private, max-age=60, stale-while-revalidate=300"
+  );
   return {
     referralLink: me.referralLink,
     referralLinkMiniApp: me.referralLinkMiniApp,
