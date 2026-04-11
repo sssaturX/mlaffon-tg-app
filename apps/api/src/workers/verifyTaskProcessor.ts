@@ -3,6 +3,7 @@ import { db } from "../db/index.js";
 import { tasks, userTasks } from "../db/schema.js";
 import { verifyPlatformTask } from "../services/taskVerifyLogic.js";
 import { grantTaskReward } from "../services/taskRewards.js";
+import { invalidateUserTaskDtoCache } from "../services/taskUserListCache.js";
 
 export async function processVerifyTaskJob(data: {
   userId: string;
@@ -34,6 +35,7 @@ export async function processVerifyTaskJob(data: {
           eq(userTasks.periodKey, periodKey)
         )
       );
+    invalidateUserTaskDtoCache(userId);
     return;
   }
 
@@ -54,5 +56,6 @@ export async function processVerifyTaskJob(data: {
           eq(userTasks.periodKey, periodKey)
         )
       );
+    invalidateUserTaskDtoCache(userId);
   }
 }

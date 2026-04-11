@@ -76,6 +76,7 @@ import { seedDefaultPointPlatforms } from "./services/platformBalances.js";
 import { trackSecurityFingerprint } from "./services/securitySignals.js";
 import { enqueueFraudReviewJob } from "./services/fraudReviewQueue.js";
 import { taskEvidence, tasks } from "./db/schema.js";
+import { invalidateUserTaskDtoCache } from "./services/taskUserListCache.js";
 import { resolveCorsOrigin } from "./lib/corsOrigins.js";
 import { sanitizeRequestUrlForLog } from "./lib/sanitizeLogUrl.js";
 import { issueWsTicket } from "./lib/wsTicket.js";
@@ -703,6 +704,10 @@ app.get("/api/v1/tasks", async (req, reply) => {
     await listTasksForUser(userId),
     platform
   );
+  void reply.header(
+    "Cache-Control",
+    "private, max-age=8, stale-while-revalidate=24"
+  );
   return { tasks: list };
 });
 
@@ -1166,6 +1171,7 @@ app.post("/api/v1/tasks/:id/evidence", async (req, reply) => {
         updatedAt: sql`now()`,
       },
     });
+  invalidateUserTaskDtoCache(userId);
   return { ok: true };
 });
 

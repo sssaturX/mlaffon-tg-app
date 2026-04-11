@@ -23,6 +23,11 @@ import type { TaskDto, UserTaskStatus } from "shared";
 import { extractEvidenceExamples, extractTaskUiFields } from "./taskUiMeta.js";
 import { verifyPlatformTask } from "./taskVerifyLogic.js";
 import { getActiveTasksCached } from "./taskCatalogCache.js";
+import {
+  getCachedUserTaskDtoList,
+  invalidateUserTaskDtoCache,
+  setCachedUserTaskDtoList,
+} from "./taskUserListCache.js";
 
 function periodKeyForTask(task: { type: string }): string {
   if (task.type === "daily") return utcDateString();
@@ -248,6 +253,7 @@ async function enforceTaskRevocationIfNeeded(
   const verify = await verifyPlatformTask(userId, taskRow);
   if (verify.ok) return;
 
+  let revoked = false;
   await db.transaction(async (tx) => {
     const [fresh] = await tx
       .select()
@@ -310,17 +316,26 @@ async function enforceTaskRevocationIfNeeded(
         updatedAt: sql`now()`,
       })
       .where(eq(userTasks.id, fresh.id));
+    revoked = true;
   });
+  if (revoked) invalidateUserTaskDtoCache(userId);
 }
 
 export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
   const all = await getActiveTasksCached();
 
-  for (const t of all) {
-    if (toTaskMeta(t.meta).revokeOnUnsubscribe !== true) continue;
-    const pk = periodKeyForTask(t);
-    await enforceTaskRevocationIfNeeded(userId, t, pk);
-  }
+  await Promise.all(
+    all.map((t) => {
+      if (toTaskMeta(t.meta).revokeOnUnsubscribe !== true) {
+        return Promise.resolve();
+      }
+      const pk = periodKeyForTask(t);
+      return enforceTaskRevocationIfNeeded(userId, t, pk);
+    })
+  );
+
+  const cachedList = await getCachedUserTaskDtoList(userId);
+  if (cachedList) return cachedList;
 
   const todayPk = utcDateString();
   const allTaskIds = [...new Set(all.map((x) => x.id))];
@@ -389,22 +404,11 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     selectedTasks.push(chosen);
   }
 
-  const oneTimeIds = selectedTasks
-    .filter((t) => t.type === "one-time")
-    .map((t) => t.id);
+  const taskTypeById = new Map(all.map((x) => [x.id, x.type]));
   const completedOneTime = new Set<string>();
-  if (oneTimeIds.length > 0) {
-    const doneRows = await db
-      .select({ taskId: userTasks.taskId })
-      .from(userTasks)
-      .where(
-        and(
-          eq(userTasks.userId, userId),
-          inArray(userTasks.taskId, oneTimeIds),
-          eq(userTasks.status, "completed")
-        )
-      );
-    for (const d of doneRows) completedOneTime.add(d.taskId);
+  for (const r of userTaskRows) {
+    if (r.status !== "completed") continue;
+    if (taskTypeById.get(r.taskId) === "one-time") completedOneTime.add(r.taskId);
   }
 
   const platformGateMemo = new Map<string, Promise<boolean>>();
@@ -474,6 +478,15 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     hardChainConfirmed.set(ck, confirmed);
   }
 
+  /** Проверки платформы независимы — раньше шли подряд и суммировали латентность. */
+  const platformGateOk = new Map<string, boolean>();
+  await Promise.all(
+    selectedTasks.map(async (t) => {
+      if (t.platform === "global") return;
+      platformGateOk.set(t.id, await gateFor(t));
+    })
+  );
+
   const rows: TaskDto[] = [];
   for (const t of selectedTasks) {
     const pk = periodKeyForTask(t);
@@ -487,7 +500,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     }
 
     if (t.platform !== "global") {
-      const ok = await gateFor(t);
+      const ok = platformGateOk.get(t.id) ?? false;
       if (!ok && userStatus !== "completed" && userStatus !== "pending") {
         userStatus = "locked";
       }
@@ -570,6 +583,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     const ob = b.uiOrder ?? 999;
     return oa - ob;
   });
+  void setCachedUserTaskDtoList(userId, rows);
   return rows;
 }
 
@@ -653,6 +667,7 @@ export async function claimTask(
   if (t.validationType === "api") {
     const jobId = `v:${userId}:${taskId}:${pk}`;
     if (existing?.status === "pending") {
+      invalidateUserTaskDtoCache(userId);
       return { ok: true, mode: "async", jobId };
     }
 
@@ -673,6 +688,7 @@ export async function claimTask(
         periodKey: pk,
       });
     }
+    invalidateUserTaskDtoCache(userId);
 
     try {
       const q = getTaskVerifyQueue();
@@ -729,6 +745,7 @@ export async function claimTask(
         .limit(1);
 
       if (after?.status === "completed") {
+        invalidateUserTaskDtoCache(userId);
         return {
           ok: true,
           mode: "sync",
@@ -743,6 +760,7 @@ export async function claimTask(
       return { ok: false, error: "verify_failed" };
     }
 
+    invalidateUserTaskDtoCache(userId);
     return { ok: true, mode: "async", jobId };
   }
 
@@ -834,6 +852,7 @@ export async function claimTask(
 
   await maybeQualifyReferral(userId);
 
+  invalidateUserTaskDtoCache(userId);
   return {
     ok: true,
     mode: "sync",

@@ -6,6 +6,7 @@ import { reverseTaskRewardCredit } from "./taskRewardCompensation.js";
 import { computeLevel, computeRewardMultiplier } from "../config.js";
 import { maybeQualifyReferral } from "./referrals.js";
 import type { TaskRow } from "./taskVerifyLogic.js";
+import { invalidateUserTaskDtoCache } from "./taskUserListCache.js";
 
 export async function grantTaskReward(params: {
   userId: string;
@@ -121,5 +122,6 @@ export async function grantTaskReward(params: {
 
   await maybeQualifyReferral(userId);
 
+  invalidateUserTaskDtoCache(userId);
   return { ok: true, reward: credit.creditedAmount };
 }

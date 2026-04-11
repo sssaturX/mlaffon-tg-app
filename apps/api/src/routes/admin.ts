@@ -44,6 +44,7 @@ import {
   listShopItemsAdmin,
   updateShopItemAdmin,
 } from "../services/adminShop.js";
+import { invalidateUserTaskDtoCache } from "../services/taskUserListCache.js";
 import { signAdminToken, verifyAdminToken } from "../lib/adminJwt.js";
 import {
   listBanAppealsAdmin,
@@ -843,12 +844,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         updatedAt: sql`now()`,
       })
       .where(eq(taskEvidence.id, id))
-      .returning({ id: taskEvidence.id });
+      .returning({ id: taskEvidence.id, userId: taskEvidence.userId });
     if (!u) {
       return reply.status(404).send({
         error: { code: "not_found", message: "Evidence не найден" },
       });
     }
+    invalidateUserTaskDtoCache(u.userId);
     return { ok: true };
   });
 

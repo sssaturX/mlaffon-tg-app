@@ -2,9 +2,11 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { tasks } from "../db/schema.js";
 import { getRedis } from "../lib/redis.js";
+import { flushAllUserTaskDtoCaches } from "./taskUserListCache.js";
 
 const CACHE_KEY = "mlaffon:tasks:active:v1";
-const TTL_SEC = 60;
+/** Каталог заданий меняется редко; дольше TTL — меньше холодных промахов в Postgres. */
+const TTL_SEC = 300;
 
 export type CachedTaskRow = typeof tasks.$inferSelect;
 
@@ -39,4 +41,7 @@ export function invalidateActiveTasksCache(): void {
     .catch(() => {
       /* ignore */
     });
+  void flushAllUserTaskDtoCaches().catch(() => {
+    /* ignore */
+  });
 }
