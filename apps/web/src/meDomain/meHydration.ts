@@ -2,7 +2,7 @@ import type { MeEconomyResponse, MeProfileResponse, MeResponse } from "shared";
 import { mergeMeProfileAndEconomy } from "shared";
 import { formatApiError, getToken, setToken } from "../api";
 import { ApiQueryError } from "../query/apiQueryError";
-import { fetchMeEconomy, fetchMeProfile } from "../query/fetchers";
+import { fetchMeEconomy, fetchMeProfile, fetchMeProfileNoCache } from "../query/fetchers";
 import { queryClient } from "../query/queryClient";
 import { queryKeys } from "../query/queryKeys";
 import { getMeFromCache } from "../hooks/queries/useMergedMe";
@@ -98,6 +98,8 @@ export async function hydrateMeThroughEventBus(
  * Лёгкая гидратация: только `GET /me/profile`, economy из кэша.
  * Используется в циклах ожидания (OAuth link polling),
  * где economy не нужна — нужен только обновлённый список платформ.
+ * Принудительно обходит HTTP-кэш браузера (no-store),
+ * чтобы не получить устаревший ответ из max-age.
  */
 export async function refreshProfileOnly(): Promise<MeResponse | null> {
   if (!getToken()) return null;
@@ -106,7 +108,7 @@ export async function refreshProfileOnly(): Promise<MeResponse | null> {
   const economyV0 = getDomainVersion().economy;
 
   try {
-    const profile = await fetchMeProfile();
+    const profile = await fetchMeProfileNoCache();
     appEventBus.emit("me:update", {
       kind: "http_snapshot",
       source: "http",
