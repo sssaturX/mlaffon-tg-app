@@ -131,7 +131,9 @@ export type GiveawayDetailDto = {
 };
 
 export async function fetchGiveawayDetail(id: string): Promise<GiveawayDetailDto> {
-  const r = await api<GiveawayDetailDto>(`/api/v1/giveaways/${id}`);
+  const r = await api<GiveawayDetailDto>(`/api/v1/giveaways/${id}`, {
+    httpCache: "default",
+  });
   throwIfApiErr(r);
   return r.data;
 }
