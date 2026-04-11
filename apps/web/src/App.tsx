@@ -185,7 +185,6 @@ export default function App() {
               queryFn: meEconomyQueryFn,
             }),
           ]);
-          if (!isOAuthReturn) prefetchOnBootstrap();
           if (r.data.accountsMerged === true) {
             showToast(
               "Аккаунты объединены. Оставлен профиль с большим прогрессом.",
