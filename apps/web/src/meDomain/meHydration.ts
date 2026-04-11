@@ -1,4 +1,5 @@
 import type { MeEconomyResponse, MeProfileResponse, MeResponse } from "shared";
+import { mergeMeProfileAndEconomy } from "shared";
 import { formatApiError, getToken, setToken } from "../api";
 import { ApiQueryError } from "../query/apiQueryError";
 import { fetchMeEconomy, fetchMeProfile } from "../query/fetchers";
@@ -50,18 +51,32 @@ export async function hydrateMeThroughEventBus(
     const profileCached = queryClient.getQueryData<MeProfileResponse>(
       queryKeys.me.profile()
     );
+    const economyState = queryClient.getQueryState(queryKeys.me.economy());
+    const economyCached = queryClient.getQueryData<MeEconomyResponse>(
+      queryKeys.me.economy()
+    );
+    const economyFresh =
+      economyCached &&
+      economyState?.dataUpdatedAt &&
+      Date.now() - economyState.dataUpdatedAt < HYDRATE_SKIP_IF_FRESH_MS;
+
     const [profile, economy] = await Promise.all([
       profileCached ? Promise.resolve(profileCached) : fetchMeProfile(),
-      fetchMeEconomy(),
+      economyFresh ? Promise.resolve(economyCached) : fetchMeEconomy(),
     ]);
-    appEventBus.emit("me:update", {
-      kind: "http_snapshot",
-      source: "http",
-      profile: profileCached ? undefined : profile,
-      economy,
-      profileV0,
-      economyV0,
-    });
+
+    const skipProfile = !!profileCached;
+    const skipEconomy = !!economyFresh;
+    if (!skipProfile || !skipEconomy) {
+      appEventBus.emit("me:update", {
+        kind: "http_snapshot",
+        source: "http",
+        profile: skipProfile ? undefined : profile,
+        economy: skipEconomy ? undefined : economy,
+        profileV0,
+        economyV0,
+      });
+    }
     return getMeFromCache();
   } catch (e) {
     if (e instanceof ApiQueryError) {
@@ -76,5 +91,35 @@ export async function hydrateMeThroughEventBus(
       return null;
     }
     throw e;
+  }
+}
+
+/**
+ * Лёгкая гидратация: только `GET /me/profile`, economy из кэша.
+ * Используется в циклах ожидания (OAuth link polling),
+ * где economy не нужна — нужен только обновлённый список платформ.
+ */
+export async function refreshProfileOnly(): Promise<MeResponse | null> {
+  if (!getToken()) return null;
+
+  const profileV0 = getDomainVersion().profile;
+  const economyV0 = getDomainVersion().economy;
+
+  try {
+    const profile = await fetchMeProfile();
+    appEventBus.emit("me:update", {
+      kind: "http_snapshot",
+      source: "http",
+      profile,
+      profileV0,
+      economyV0,
+    });
+    const economy = queryClient.getQueryData<MeEconomyResponse>(
+      queryKeys.me.economy()
+    );
+    if (profile && economy) return mergeMeProfileAndEconomy(profile, economy);
+    return getMeFromCache();
+  } catch {
+    return getMeFromCache();
   }
 }

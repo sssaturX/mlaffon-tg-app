@@ -14,6 +14,9 @@ type Props = {
 /**
  * Анимация только области страницы (внутри layout с шапкой и табами).
  * GPU: opacity + translateY; при prefers-reduced-motion — без движения и почти без длительности.
+ *
+ * willChange убран: постоянный GPU-слой ломает subpixel-антиалиасинг и делает шрифты мыльными.
+ * framer-motion сам ставит `transform` на время анимации — этого достаточно для GPU-promotion.
  */
 export function RouteTransition({ routeKey, children }: Props) {
   const reduceMotion = useReducedMotion();
@@ -31,7 +34,6 @@ export function RouteTransition({ routeKey, children }: Props) {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: reduceMotion ? 0 : -8 }}
         transition={{ duration, ease: EASE }}
-        style={{ willChange: reduceMotion ? undefined : "opacity, transform" }}
       >
         {children}
       </motion.div>
