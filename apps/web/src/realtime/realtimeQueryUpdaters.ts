@@ -144,7 +144,34 @@ export function applyGiveawaysSnapshotToQueries(
   );
 }
 
-/** Снимок `initial_state` — единственная запись в кэш, без HTTP. */
+/** Apply giveaways from `initial_state` only when cache is empty (HTTP hasn't populated it yet). */
+export function applyGiveawaysIfMissing(
+  data: GiveawaysWsSnapshotPayload
+): void {
+  const homeCache = queryClient.getQueryData<HomeGiveawaysResponse>(
+    queryKeys.home.giveaways()
+  );
+  const listCache = queryClient.getQueryData<GiveawayListItemDto[]>(
+    queryKeys.giveaways.list()
+  );
+  if (!homeCache) {
+    queryClient.setQueryData<HomeGiveawaysResponse>(
+      queryKeys.home.giveaways(),
+      data.home
+    );
+  }
+  if (!listCache) {
+    queryClient.setQueryData<GiveawayListItemDto[]>(
+      queryKeys.giveaways.list(),
+      data.list
+    );
+  }
+}
+
+/**
+ * Снимок `initial_state` — заполняет WS-only ключи безусловно,
+ * а giveaways — только если HTTP ещё не заполнил кэш (дедупликация).
+ */
 export function applyWsInitialStateToQueries(
   data: WsInitialStatePayload
 ): void {
@@ -176,6 +203,6 @@ export function applyWsInitialStateToQueries(
   }
 
   if (data.giveaways?.home && Array.isArray(data.giveaways.list)) {
-    applyGiveawaysSnapshotToQueries(data.giveaways);
+    applyGiveawaysIfMissing(data.giveaways);
   }
 }
