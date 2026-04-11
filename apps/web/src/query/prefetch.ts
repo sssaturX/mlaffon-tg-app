@@ -42,7 +42,7 @@ export function prefetchOnBootstrap(): void {
   void queryClient.prefetchQuery({
     queryKey: queryKeys.home.giveaways(),
     queryFn: fetchHomeGiveaways,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 60 * 5,
   });
   void queryClient.prefetchQuery({
     queryKey: queryKeys.tasks.list(taskPlatform),
@@ -70,7 +70,7 @@ export function prefetchRouteData(pathname: string): void {
     void queryClient.prefetchQuery({
       queryKey: queryKeys.home.giveaways(),
       queryFn: fetchHomeGiveaways,
-      staleTime: 1000 * 60 * 2,
+      staleTime: 1000 * 60 * 5,
     });
     return;
   }
@@ -122,7 +122,7 @@ export function prefetchRouteData(pathname: string): void {
     void queryClient.prefetchQuery({
       queryKey: queryKeys.giveaways.list(),
       queryFn: fetchGiveawaysList,
-      staleTime: 1000 * 60 * 2,
+      staleTime: 1000 * 60 * 5,
     });
   }
 }
