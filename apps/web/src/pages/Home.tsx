@@ -725,21 +725,6 @@ export default function Home({ me }: { me: MeResponse | null }) {
           </div>
         </div>
 
-        <div className="stream-streak-grid stream-streak-grid--readonly">
-          <div className="stream-streak-row">
-            <div>
-              {streakPlatform === "twitch" ? (
-                <span className="pill pill--twitch">Twitch</span>
-              ) : (
-                <span className="pill pill--kick">Kick</span>
-              )}
-              <p className="stream-streak-row__val">
-                {streakForPlatform} подряд
-              </p>
-            </div>
-          </div>
-        </div>
-
         <div className="streak-card__bar streak-card__bar--spaced" aria-hidden>
           <div
             key={`${streakPlatform}-${streakForPlatform}`}

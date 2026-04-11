@@ -57,6 +57,13 @@ function evidenceStageFromMeta(meta: Record<string, unknown>): number {
   return stageRaw != null ? Math.max(1, Math.floor(stageRaw) + 1) : 1;
 }
 
+/** Номер этапа в `task_evidence.stage` для этого задания (1-based). */
+function evidenceStageForTask(meta: Record<string, unknown>): number {
+  const co = asNumber(meta.chainOrder);
+  if (co != null && co >= 1) return Math.floor(co);
+  return evidenceStageFromMeta(meta);
+}
+
 /** Ключи meta, уже поднятые в корень TaskDto — не дублируем в ответе GET /tasks. */
 const META_KEYS_HOISTED_TO_ROOT = new Set([
   "actionUrl",
@@ -64,6 +71,7 @@ const META_KEYS_HOISTED_TO_ROOT = new Set([
   "verifyLabel",
   "help",
   "chainKey",
+  "chainOrder",
   "hard",
   "hardStageCurrent",
   "hardStageTotal",
@@ -353,9 +361,9 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     arr.push(t);
     chainTasks.set(chainKey, arr);
   }
-  const selectedTasks: Array<(typeof all)[number]> = [...standaloneTasks];
-  for (const [, group] of chainTasks) {
-    const sorted = [...group].sort((a, b) => {
+
+  const sortChainGroup = (group: Array<(typeof all)[number]>) =>
+    [...group].sort((a, b) => {
       const ma = toTaskMeta(a.meta);
       const mb = toTaskMeta(b.meta);
       const oa = asNumber(ma.chainOrder) ?? 0;
@@ -365,6 +373,10 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       const tb = asNumber(mb.targetValue) ?? 0;
       return ta - tb;
     });
+
+  const selectedTasks: Array<(typeof all)[number]> = [...standaloneTasks];
+  for (const [, group] of chainTasks) {
+    const sorted = sortChainGroup(group);
     let chosen = sorted[sorted.length - 1]!;
     for (const stage of sorted) {
       const pk = periodKeyForTask(stage);
@@ -411,7 +423,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     return p;
   };
 
-  const evidenceTaskIds = selectedTasks
+  const evidenceTaskIds = all
     .filter((t) => toTaskMeta(t.meta).requiresEvidence === true)
     .map((t) => t.id);
   const evidenceByTaskStage = new Map<
@@ -441,6 +453,27 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     }
   }
 
+  /** Для цепочек с `hard: true`: сколько этапов уже подтверждено админом или закрыто наградой. */
+  const hardChainConfirmed = new Map<string, number>();
+  for (const [ck, group] of chainTasks) {
+    const sorted = sortChainGroup(group);
+    if (!sorted.some((s) => toTaskMeta(s.meta).hard === true)) continue;
+    let confirmed = 0;
+    for (const stage of sorted) {
+      const pk = periodKeyForTask(stage);
+      const ut = getUt(stage.id, pk);
+      const sm = toTaskMeta(stage.meta);
+      const evSt = evidenceStageForTask(sm);
+      const ev = evidenceByTaskStage.get(`${stage.id}:${evSt}`);
+      const claimed =
+        ut?.status === "completed" ||
+        (stage.type === "one-time" && completedOneTime.has(stage.id));
+      const adminOk = ev?.status === "approved";
+      if (claimed || adminOk) confirmed++;
+    }
+    hardChainConfirmed.set(ck, confirmed);
+  }
+
   const rows: TaskDto[] = [];
   for (const t of selectedTasks) {
     const pk = periodKeyForTask(t);
@@ -464,7 +497,8 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     const progress = readProgress(meta, progressSnapshot);
     const chainKey = asString(meta.chainKey);
     const hardStageTotal = asNumber(meta.hardStageTotal);
-    const hardStageCurrent = asNumber(meta.hardStageCurrent);
+    const hardStageCurrentMeta = asNumber(meta.hardStageCurrent);
+    const chainOrder = asNumber(meta.chainOrder);
     const ui = extractTaskUiFields(meta);
     const uiSection = asString(meta.uiSection);
     const uiOrder = asNumber(meta.uiOrder);
@@ -473,7 +507,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     let evidenceStageStatus: TaskDto["evidenceStageStatus"];
     let evidenceAdminNote: string | null | undefined;
     if (requiresEvidence) {
-      const st = evidenceStageFromMeta(meta);
+      const st = evidenceStageForTask(meta);
       const ev = evidenceByTaskStage.get(`${t.id}:${st}`);
       if (!ev) evidenceStageStatus = "none";
       else if (ev.status === "submitted") evidenceStageStatus = "submitted";
@@ -504,8 +538,20 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       progressTarget: progress?.target,
       progressLabel: progress?.label ?? null,
       chainKey,
+      ...(chainOrder != null ? { chainOrder: Math.floor(chainOrder) } : {}),
       hard: meta.hard === true,
-      hardStageCurrent: hardStageCurrent != null ? Math.floor(hardStageCurrent) : undefined,
+      hardStageCurrent:
+        chainKey &&
+        hardStageTotal != null &&
+        hardStageTotal > 0 &&
+        hardChainConfirmed.has(chainKey)
+          ? Math.min(
+              Math.floor(hardStageTotal),
+              hardChainConfirmed.get(chainKey)!
+            )
+          : hardStageCurrentMeta != null
+            ? Math.floor(hardStageCurrentMeta)
+            : undefined,
       hardStageTotal: hardStageTotal != null ? Math.floor(hardStageTotal) : undefined,
       uiSection: uiSection ?? null,
       uiOrder: uiOrder != null ? Math.floor(uiOrder) : undefined,
@@ -588,7 +634,7 @@ export async function claimTask(
 
   const meta = toTaskMeta(t.meta);
   if (meta.requiresEvidence === true) {
-    const stage = evidenceStageFromMeta(meta);
+    const stage = evidenceStageForTask(meta);
     const [ev] = await db
       .select()
       .from(taskEvidence)

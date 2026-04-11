@@ -94,7 +94,7 @@ function TaskEvidenceControls({
   );
 }
 
-/** Завершённые этапы из `hardStageCurrent` (0 = ни одного, после 1-го этапа = 1, …). */
+/** Прогресс HARD-цепочки: `hardStageCurrent` / `hardStageTotal` с API (подтверждения админа + награды). */
 function hardStageDisplay(t: TaskDto): { completed: number; total: number } | null {
   if (!t.hard || typeof t.hardStageTotal !== "number" || t.hardStageTotal <= 0) {
     return null;

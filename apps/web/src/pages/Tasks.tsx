@@ -144,7 +144,8 @@ export default function Tasks() {
         prev.lastError === next.lastError &&
         prev.progressCurrent === next.progressCurrent &&
         (prev.hardStageCurrent ?? null) === (next.hardStageCurrent ?? null) &&
-        (prev.hardStageTotal ?? null) === (next.hardStageTotal ?? null)
+        (prev.hardStageTotal ?? null) === (next.hardStageTotal ?? null) &&
+        (prev.chainOrder ?? null) === (next.chainOrder ?? null)
       ) {
         return prev;
       }
@@ -226,7 +227,10 @@ export default function Tasks() {
   const uploadEvidence = useCallback(
     async (task: TaskDto, images: string[]) => {
       setEvidenceUploadingId(task.id);
-      const stage = Math.max(1, (task.hardStageCurrent ?? 0) + 1);
+      const stage =
+        typeof task.chainOrder === "number" && task.chainOrder >= 1
+          ? task.chainOrder
+          : Math.max(1, (task.hardStageCurrent ?? 0) + 1);
       const r = await api<{ ok: boolean }>(`/api/v1/tasks/${task.id}/evidence`, {
         method: "POST",
         body: JSON.stringify({ stage, images }),

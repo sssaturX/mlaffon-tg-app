@@ -44,9 +44,11 @@ export interface TaskDto {
   progressLabel?: string | null;
   /** Логическая категория цепочки, чтобы UI не дёргался при замене этапа. */
   chainKey?: string | null;
+  /** Порядок этапа в цепочке (из meta.chainOrder); для evidence и цепочек с несколькими заданиями. */
+  chainOrder?: number | null;
   /** Для визуального выделения сложных задач (например BR). */
   hard?: boolean;
-  /** Сколько этапов цепочки уже пройдено (0 = ни одного, после 1-го = 1, …). UI: «0/2», «1/2». */
+  /** Для HARD-цепочек: сколько этапов подтверждено админом или уже получена награда (0…total). */
   hardStageCurrent?: number;
   hardStageTotal?: number;
   /** Группа на экране заданий (из meta.uiSection). */
@@ -56,7 +58,7 @@ export interface TaskDto {
   /** Нужны скрины + модерация перед получением награды. */
   requiresEvidence?: boolean;
   evidenceExamples?: TaskEvidenceExample[];
-  /** Статус скринов для этапа этого задания (stage = hardStageCurrent+1). */
+  /** Статус скринов для этапа этого задания (stage = chainOrder ?? hardStageCurrent+1 из meta задания). */
   evidenceStageStatus?: "none" | "submitted" | "approved" | "rejected";
   /** Комментарий админа при отклонении. */
   evidenceAdminNote?: string | null;
