@@ -1,12 +1,20 @@
 import { CheckCircle2, ExternalLink, Home, MessageCircle, XCircle } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { getBotUsername } from "../botUsername";
 import { formatOAuthRedirectError } from "../utils/userFacingMessages";
 
 /**
- * Показ во внешнем браузере после OAuth: токена нет (например открыли провайдера из WebView мини-аппа).
- * По `rc` в URL — вернуть в Telegram или на сайт; из TMA при успехе пробуем авто-редирект в мини-приложение.
+ * Показ во внешнем браузере после OAuth: токена нет.
+ *
+ * TMA-flow:  WebApp.openLink → OAuth → callback → эта страница.
+ *   НЕ делаем автоматический window.location.replace —
+ *   на мобильных браузерах после цепочки OAuth-редиректов это нестабильно
+ *   и часто блокируется (пользователь «застревает»).
+ *   Вместо этого — чёткая страница «Авторизация успешна» + кнопка «Открыть бота».
+ *
+ * Web-flow:  обычный браузер → OAuth → callback → эта страница (rc=web).
+ *   Показываем «вернитесь на вкладку с сайтом» + кнопку.
  */
 export default function OAuthBrowserDone() {
   const location = useLocation();
@@ -17,11 +25,14 @@ export default function OAuthBrowserDone() {
   const name = p === "kick" ? "Kick" : "Twitch";
   const connected = searchParams.get("connected") === "1";
   const errRaw = searchParams.get("error");
-  /** Явный контекст из API: `web` — поток с сайта, иначе (tma / нет параметра) — из Telegram. */
   const returnWeb = searchParams.get("rc") === "web";
 
   const bot = getBotUsername();
-  const miniAppOpenUrl = useMemo(
+  const botDeepLink = useMemo(
+    () => `https://t.me/${bot}?start=auth_success`,
+    [bot]
+  );
+  const miniAppLink = useMemo(
     () => `https://t.me/${bot}?startapp=oauth_ok`,
     [bot]
   );
@@ -37,14 +48,43 @@ export default function OAuthBrowserDone() {
     }
   }, [errRaw]);
 
-  useEffect(() => {
-    if (!connected || returnWeb || errRaw) return;
-    const t = window.setTimeout(() => {
-      window.location.replace(miniAppOpenUrl);
-    }, 500);
-    return () => clearTimeout(t);
-  }, [connected, returnWeb, errRaw, miniAppOpenUrl]);
+  /* ── TMA success ── */
+  if (connected && !returnWeb) {
+    return (
+      <div className="app-shell oauth-browser-done">
+        <main className="app-main oauth-browser-done__main">
+          <div className="oauth-browser-done__card card">
+            <div className="oauth-browser-done__icon-wrap">
+              <CheckCircle2 size={48} strokeWidth={1.75} className="oauth-browser-done__ok" />
+            </div>
+            <h1 className="oauth-browser-done__title">
+              {name} подключён
+            </h1>
+            <p className="oauth-browser-done__lead">
+              Авторизация через {name} прошла успешно.
+              Вернитесь в Telegram — приложение подхватит привязку автоматически.
+            </p>
+            <a href={miniAppLink} className="primary oauth-browser-done__cta">
+              <MessageCircle size={20} aria-hidden />
+              Открыть мини-приложение
+            </a>
+            <a
+              href={botDeepLink}
+              className="oauth-browser-done__link"
+            >
+              <ExternalLink size={16} aria-hidden />
+              Открыть бота (@{bot})
+            </a>
+            <p className="muted oauth-browser-done__hint">
+              Можете закрыть эту вкладку — всё сохранено.
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
+  /* ── Web success ── */
   if (connected && returnWeb) {
     return (
       <div className="app-shell oauth-browser-done">
@@ -68,40 +108,38 @@ export default function OAuthBrowserDone() {
     );
   }
 
-  if (connected) {
+  /* ── TMA error ── */
+  if (errText && !returnWeb) {
     return (
       <div className="app-shell oauth-browser-done">
         <main className="app-main oauth-browser-done__main">
           <div className="oauth-browser-done__card card">
-            <div className="oauth-browser-done__icon-wrap">
-              <CheckCircle2 size={48} strokeWidth={1.75} className="oauth-browser-done__ok" />
+            <div className="oauth-browser-done__icon-wrap oauth-browser-done__icon-wrap--err">
+              <XCircle size={48} strokeWidth={1.75} />
             </div>
-            <h1 className="oauth-browser-done__title">{name} подключён</h1>
-            <p className="oauth-browser-done__lead">
-              Сейчас откроется Telegram с мини-приложением. Если этого не произошло — нажмите кнопку ниже.
+            <h1 className="oauth-browser-done__title">Не удалось подключить {name}</h1>
+            <p className="err oauth-browser-done__err">{errText}</p>
+            <p className="muted oauth-browser-done__lead">
+              Вернитесь в Telegram и попробуйте ещё раз из мини-приложения.
             </p>
-            <a href={miniAppOpenUrl} className="primary oauth-browser-done__cta">
+            <a href={miniAppLink} className="primary oauth-browser-done__cta">
               <MessageCircle size={20} aria-hidden />
               Открыть мини-приложение
             </a>
             <a
-              href={miniAppOpenUrl}
+              href={botDeepLink}
               className="oauth-browser-done__link"
-              target="_blank"
-              rel="noopener noreferrer"
             >
               <ExternalLink size={16} aria-hidden />
-              t.me/{bot}
+              Открыть бота (@{bot})
             </a>
-            <p className="muted oauth-browser-done__hint">
-              Сессия мини-приложения остаётся в Telegram — после возврата профиль и баланс обновятся автоматически.
-            </p>
           </div>
         </main>
       </div>
     );
   }
 
+  /* ── Web error ── */
   if (errText && returnWeb) {
     return (
       <div className="app-shell oauth-browser-done">
@@ -118,29 +156,6 @@ export default function OAuthBrowserDone() {
             <a href={siteOrigin || "/"} className="primary oauth-browser-done__cta">
               <Home size={20} aria-hidden />
               На сайт
-            </a>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (errText) {
-    return (
-      <div className="app-shell oauth-browser-done">
-        <main className="app-main oauth-browser-done__main">
-          <div className="oauth-browser-done__card card">
-            <div className="oauth-browser-done__icon-wrap oauth-browser-done__icon-wrap--err">
-              <XCircle size={48} strokeWidth={1.75} />
-            </div>
-            <h1 className="oauth-browser-done__title">Не удалось подключить {name}</h1>
-            <p className="err oauth-browser-done__err">{errText}</p>
-            <p className="muted oauth-browser-done__lead">
-              Закройте эту вкладку и попробуйте снова из мини-приложения в Telegram.
-            </p>
-            <a href={miniAppOpenUrl} className="primary oauth-browser-done__cta">
-              <MessageCircle size={20} aria-hidden />
-              Открыть мини-приложение
             </a>
           </div>
         </main>
