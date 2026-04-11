@@ -48,9 +48,6 @@ export async function hydrateMeThroughEventBus(
   const economyV0 = getDomainVersion().economy;
 
   try {
-    const profileCached = queryClient.getQueryData<MeProfileResponse>(
-      queryKeys.me.profile()
-    );
     const economyState = queryClient.getQueryState(queryKeys.me.economy());
     const economyCached = queryClient.getQueryData<MeEconomyResponse>(
       queryKeys.me.economy()
@@ -61,22 +58,18 @@ export async function hydrateMeThroughEventBus(
       Date.now() - economyState.dataUpdatedAt < HYDRATE_SKIP_IF_FRESH_MS;
 
     const [profile, economy] = await Promise.all([
-      profileCached ? Promise.resolve(profileCached) : fetchMeProfile(),
+      fetchMeProfile(),
       economyFresh ? Promise.resolve(economyCached) : fetchMeEconomy(),
     ]);
 
-    const skipProfile = !!profileCached;
-    const skipEconomy = !!economyFresh;
-    if (!skipProfile || !skipEconomy) {
-      appEventBus.emit("me:update", {
-        kind: "http_snapshot",
-        source: "http",
-        profile: skipProfile ? undefined : profile,
-        economy: skipEconomy ? undefined : economy,
-        profileV0,
-        economyV0,
-      });
-    }
+    appEventBus.emit("me:update", {
+      kind: "http_snapshot",
+      source: "http",
+      profile,
+      economy: economyFresh ? undefined : economy,
+      profileV0,
+      economyV0,
+    });
     return getMeFromCache();
   } catch (e) {
     if (e instanceof ApiQueryError) {
