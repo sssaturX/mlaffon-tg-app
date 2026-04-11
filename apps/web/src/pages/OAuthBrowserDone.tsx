@@ -1,5 +1,5 @@
 import { CheckCircle2, ExternalLink, Home, MessageCircle, XCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { getBotUsername } from "../botUsername";
 import { formatOAuthRedirectError } from "../utils/userFacingMessages";
