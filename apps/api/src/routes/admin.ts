@@ -931,14 +931,30 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     return { ok: true, active };
   });
 
+  const shopImageField = z
+    .string()
+    .max(6_500_000)
+    .refine(
+      (value) =>
+        /^https?:\/\//i.test(value) ||
+        /^data:image\/(png|pjpeg|jpeg|jpg|jpe|webp|heic|heif|gif);base64,/i.test(
+          value
+        ),
+      "Разрешены только http(s) URL или data:image/* base64"
+    );
+
   const shopCreateBody = z.object({
     id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
     title: z.string().min(1).max(200),
     description: z.string().max(4000).nullable().optional(),
-    imageUrl: z.string().url().max(2000).nullable().optional(),
+    imageUrl: shopImageField.nullable().optional(),
     kind: z.enum(["extra_spin"]),
     priceCoins: z.number().int().min(1),
     spins: z.number().int().min(1).max(99).optional(),
+    subtitle: z.string().max(140).nullable().optional(),
+    badgeText: z.string().max(60).nullable().optional(),
+    buttonLabel: z.string().max(60).nullable().optional(),
+    sortOrder: z.number().int().min(-999).max(999).optional(),
     active: z.boolean().optional(),
     stockTotal: z.union([z.number().int().min(1), z.null()]).optional(),
   });
@@ -946,10 +962,14 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   const shopPatchBody = z.object({
     title: z.string().min(1).max(200).optional(),
     description: z.string().max(4000).nullable().optional(),
-    imageUrl: z.string().url().max(2000).nullable().optional(),
+    imageUrl: shopImageField.nullable().optional(),
     kind: z.enum(["extra_spin"]).optional(),
     priceCoins: z.number().int().min(1).optional(),
     spins: z.number().int().min(1).max(99).optional(),
+    subtitle: z.string().max(140).nullable().optional(),
+    badgeText: z.string().max(60).nullable().optional(),
+    buttonLabel: z.string().max(60).nullable().optional(),
+    sortOrder: z.number().int().min(-999).max(999).optional(),
     active: z.boolean().optional(),
     stockTotal: z.union([z.number().int().min(1), z.null()]).optional(),
   });
@@ -977,7 +997,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         imageUrl: d.imageUrl?.trim() ? d.imageUrl.trim() : null,
         kind: d.kind,
         priceCoins: d.priceCoins,
-        meta: { spins: d.spins ?? 1 },
+        meta: {
+          spins: d.spins ?? 1,
+          subtitle: d.subtitle?.trim() ? d.subtitle.trim() : null,
+          badgeText: d.badgeText?.trim() ? d.badgeText.trim() : null,
+          buttonLabel: d.buttonLabel?.trim() ? d.buttonLabel.trim() : null,
+          sortOrder: d.sortOrder ?? 0,
+        },
         active: d.active !== false,
         stockTotal: d.stockTotal === undefined ? null : d.stockTotal,
       });
@@ -1014,7 +1040,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (d.active !== undefined) patch.active = d.active;
     if (d.stockTotal !== undefined) patch.stockTotal = d.stockTotal;
 
-    if (d.spins !== undefined) {
+    if (
+      d.spins !== undefined ||
+      d.subtitle !== undefined ||
+      d.badgeText !== undefined ||
+      d.buttonLabel !== undefined ||
+      d.sortOrder !== undefined
+    ) {
       const [cur] = await db.select().from(shopItems).where(eq(shopItems.id, id)).limit(1);
       if (!cur) {
         return reply.status(404).send({
@@ -1025,7 +1057,20 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         string,
         unknown
       >;
-      patch.meta = { ...prev, spins: d.spins };
+      patch.meta = {
+        ...prev,
+        ...(d.spins !== undefined ? { spins: d.spins } : {}),
+        ...(d.subtitle !== undefined
+          ? { subtitle: d.subtitle?.trim() ? d.subtitle.trim() : null }
+          : {}),
+        ...(d.badgeText !== undefined
+          ? { badgeText: d.badgeText?.trim() ? d.badgeText.trim() : null }
+          : {}),
+        ...(d.buttonLabel !== undefined
+          ? { buttonLabel: d.buttonLabel?.trim() ? d.buttonLabel.trim() : null }
+          : {}),
+        ...(d.sortOrder !== undefined ? { sortOrder: d.sortOrder } : {}),
+      };
     }
 
     try {

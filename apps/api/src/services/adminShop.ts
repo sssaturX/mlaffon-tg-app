@@ -17,7 +17,7 @@ export type AdminShopItemRow = {
 
 export async function listShopItemsAdmin(): Promise<AdminShopItemRow[]> {
   const rows = await db.select().from(shopItems).orderBy(asc(shopItems.id));
-  return rows.map((r) => ({
+  const mapped = rows.map((r) => ({
     id: r.id,
     title: r.title,
     description: r.description ?? null,
@@ -29,6 +29,18 @@ export async function listShopItemsAdmin(): Promise<AdminShopItemRow[]> {
     stockTotal: r.stockTotal ?? null,
     stockSold: r.stockSold,
   }));
+  return mapped.sort((a, b) => {
+    const aOrder =
+      typeof (a.meta as { sortOrder?: unknown } | null)?.sortOrder === "number"
+        ? ((a.meta as { sortOrder?: number } | null)?.sortOrder ?? 0)
+        : 0;
+    const bOrder =
+      typeof (b.meta as { sortOrder?: unknown } | null)?.sortOrder === "number"
+        ? ((b.meta as { sortOrder?: number } | null)?.sortOrder ?? 0)
+        : 0;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.id.localeCompare(b.id);
+  });
 }
 
 export async function createShopItemAdmin(input: {

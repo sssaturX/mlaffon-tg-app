@@ -214,6 +214,7 @@ type AdminShopItemRow = {
   id: string;
   title: string;
   description: string | null;
+  imageUrl: string | null;
   kind: string;
   priceCoins: number;
   meta: unknown;
@@ -430,8 +431,13 @@ export function App() {
   const [shopFormId, setShopFormId] = useState("");
   const [shopFormTitle, setShopFormTitle] = useState("");
   const [shopFormDescription, setShopFormDescription] = useState("");
+  const [shopFormImageUrl, setShopFormImageUrl] = useState("");
   const [shopFormPrice, setShopFormPrice] = useState(50);
   const [shopFormSpins, setShopFormSpins] = useState(3);
+  const [shopFormSubtitle, setShopFormSubtitle] = useState("");
+  const [shopFormBadgeText, setShopFormBadgeText] = useState("");
+  const [shopFormButtonLabel, setShopFormButtonLabel] = useState("");
+  const [shopFormSortOrder, setShopFormSortOrder] = useState(0);
   const [shopFormStockUnlimited, setShopFormStockUnlimited] = useState(true);
   const [shopFormStockTotal, setShopFormStockTotal] = useState(100);
   const [shopFormActive, setShopFormActive] = useState(true);
@@ -459,6 +465,48 @@ export function App() {
     if (includeJsonContentType) h["Content-Type"] = "application/json";
     return h;
   }, [token]);
+
+  const resetShopForm = useCallback(() => {
+    setShopEditingId(null);
+    setShopFormId("");
+    setShopFormTitle("");
+    setShopFormDescription("");
+    setShopFormImageUrl("");
+    setShopFormPrice(50);
+    setShopFormSpins(3);
+    setShopFormSubtitle("");
+    setShopFormBadgeText("");
+    setShopFormButtonLabel("");
+    setShopFormSortOrder(0);
+    setShopFormStockUnlimited(true);
+    setShopFormStockTotal(100);
+    setShopFormActive(true);
+  }, []);
+
+  const applyShopImageFromFile = useCallback((file: File | null) => {
+    if (!file) return;
+    const maxBytes = 3 * 1024 * 1024;
+    if (!/^image\//i.test(file.type)) {
+      setErr("Выберите файл изображения (png/jpg/webp/gif).");
+      return;
+    }
+    if (file.size > maxBytes) {
+      setErr("Слишком большой файл. Максимум 3 МБ.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      if (!result.startsWith("data:image/")) {
+        setErr("Не удалось прочитать изображение.");
+        return;
+      }
+      setShopFormImageUrl(result);
+      setErr(null);
+    };
+    reader.onerror = () => setErr("Не удалось загрузить файл.");
+    reader.readAsDataURL(file);
+  }, []);
 
   const openUserManage = useCallback(
     async (u: AdminUserRow) => {
@@ -1989,9 +2037,9 @@ export function App() {
         <>
           <h2 className="admin-mt-0">Магазин</h2>
           <p className="muted">
-            Товары для мини-приложения: цена в монетах, описание, лимит продаж (или без лимита). Сейчас
-            поддерживается тип «Доп. спины колеса» (<code>extra_spin</code>), в meta хранится{" "}
-            <code>spins</code>.
+            Полное управление витриной магазина: картинка (URL или загрузка файла), тексты карточки,
+            порядок, цена и лимиты. Поддерживается тип <code>extra_spin</code>; дополнительные поля
+            отображения хранятся в <code>meta</code>.
           </p>
           <form
             className="card stack"
@@ -2015,9 +2063,14 @@ export function App() {
                       body: JSON.stringify({
                         title: shopFormTitle,
                         description: shopFormDescription.trim() || null,
+                        imageUrl: shopFormImageUrl.trim() || null,
                         kind: "extra_spin",
                         priceCoins: shopFormPrice,
                         spins: shopFormSpins,
+                        subtitle: shopFormSubtitle.trim() || null,
+                        badgeText: shopFormBadgeText.trim() || null,
+                        buttonLabel: shopFormButtonLabel.trim() || null,
+                        sortOrder: shopFormSortOrder,
                         active: shopFormActive,
                         stockTotal,
                       }),
@@ -2036,9 +2089,14 @@ export function App() {
                       id: shopFormId.trim(),
                       title: shopFormTitle,
                       description: shopFormDescription.trim() || null,
+                      imageUrl: shopFormImageUrl.trim() || null,
                       kind: "extra_spin",
                       priceCoins: shopFormPrice,
                       spins: shopFormSpins,
+                      subtitle: shopFormSubtitle.trim() || null,
+                      badgeText: shopFormBadgeText.trim() || null,
+                      buttonLabel: shopFormButtonLabel.trim() || null,
+                      sortOrder: shopFormSortOrder,
                       active: shopFormActive,
                       stockTotal,
                     }),
@@ -2049,15 +2107,7 @@ export function App() {
                     return;
                   }
                 }
-                setShopEditingId(null);
-                setShopFormId("");
-                setShopFormTitle("");
-                setShopFormDescription("");
-                setShopFormPrice(50);
-                setShopFormSpins(3);
-                setShopFormStockUnlimited(true);
-                setShopFormStockTotal(100);
-                setShopFormActive(true);
+                resetShopForm();
                 await loadAdminShop();
               } catch {
                 setErr("Сеть недоступна");
@@ -2096,6 +2146,32 @@ export function App() {
                 placeholder="Текст на карточке в приложении"
               />
             </div>
+            <div>
+              <label htmlFor="shopimg">Картинка (URL или data:image/*)</label>
+              <textarea
+                id="shopimg"
+                value={shopFormImageUrl}
+                onChange={(e) => setShopFormImageUrl(e.target.value)}
+                rows={3}
+                placeholder="https://... или data:image/png;base64,..."
+              />
+              <div className="row admin-mt-3">
+                <div>
+                  <label htmlFor="shopimgfile">Загрузить файл</label>
+                  <input
+                    id="shopimgfile"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => applyShopImageFromFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+              </div>
+              {shopFormImageUrl.trim() ? (
+                <div className="admin-shop-preview admin-shop-preview--img admin-mt-3">
+                  <img src={shopFormImageUrl.trim()} alt="Предпросмотр товара" />
+                </div>
+              ) : null}
+            </div>
             <div className="row">
               <div>
                 <label htmlFor="shopprice">Цена (монет)</label>
@@ -2118,6 +2194,46 @@ export function App() {
                   value={shopFormSpins}
                   onChange={(e) => setShopFormSpins(Number(e.target.value))}
                   required
+                />
+              </div>
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="shopsubtitle">Подзаголовок на карточке</label>
+                <input
+                  id="shopsubtitle"
+                  value={shopFormSubtitle}
+                  onChange={(e) => setShopFormSubtitle(e.target.value)}
+                  placeholder="Короткая подпись под названием"
+                />
+              </div>
+              <div>
+                <label htmlFor="shopbadge">Бейдж (верхний левый)</label>
+                <input
+                  id="shopbadge"
+                  value={shopFormBadgeText}
+                  onChange={(e) => setShopFormBadgeText(e.target.value)}
+                  placeholder="например: HOT"
+                />
+              </div>
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="shopbtnlabel">Текст кнопки/CTA</label>
+                <input
+                  id="shopbtnlabel"
+                  value={shopFormButtonLabel}
+                  onChange={(e) => setShopFormButtonLabel(e.target.value)}
+                  placeholder="например: Купить сейчас"
+                />
+              </div>
+              <div>
+                <label htmlFor="shopsort">Порядок (меньше = выше)</label>
+                <input
+                  id="shopsort"
+                  type="number"
+                  value={shopFormSortOrder}
+                  onChange={(e) => setShopFormSortOrder(Number(e.target.value))}
                 />
               </div>
             </div>
@@ -2163,15 +2279,7 @@ export function App() {
                   className="secondary"
                   disabled={loading}
                   onClick={() => {
-                    setShopEditingId(null);
-                    setShopFormId("");
-                    setShopFormTitle("");
-                    setShopFormDescription("");
-                    setShopFormPrice(50);
-                    setShopFormSpins(3);
-                    setShopFormStockUnlimited(true);
-                    setShopFormStockTotal(100);
-                    setShopFormActive(true);
+                    resetShopForm();
                   }}
                 >
                   Отменить правку
@@ -2189,9 +2297,11 @@ export function App() {
                 <table className="admin-table">
                   <thead>
                     <tr>
+                      <th>Изобр.</th>
                       <th>ID</th>
                       <th>Название</th>
                       <th>Цена</th>
+                      <th>Порядок</th>
                       <th>Продано / лимит</th>
                       <th>Активен</th>
                       <th />
@@ -2200,6 +2310,17 @@ export function App() {
                   <tbody>
                     {adminShopItems.map((row) => (
                       <tr key={row.id}>
+                        <td>
+                          {row.imageUrl ? (
+                            <img
+                              src={row.imageUrl}
+                              alt=""
+                              className="admin-shop-table__thumb"
+                            />
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
                         <td className="mono">{row.id}</td>
                         <td>
                           <strong>{row.title}</strong>
@@ -2210,8 +2331,18 @@ export function App() {
                                 : row.description}
                             </p>
                           ) : null}
+                          {((row.meta as { subtitle?: string | null } | null)?.subtitle ?? null) ? (
+                            <p className="muted admin-m-0" style={{ fontSize: 12, marginTop: 4 }}>
+                              {(row.meta as { subtitle?: string | null }).subtitle}
+                            </p>
+                          ) : null}
                         </td>
                         <td>{row.priceCoins.toLocaleString("ru-RU")}</td>
+                        <td>
+                          {typeof (row.meta as { sortOrder?: unknown } | null)?.sortOrder === "number"
+                            ? (row.meta as { sortOrder?: number }).sortOrder
+                            : 0}
+                        </td>
                         <td>
                           {row.stockTotal == null
                             ? `${row.stockSold} / ∞`
@@ -2224,13 +2355,28 @@ export function App() {
                             className="secondary"
                             disabled={loading}
                             onClick={() => {
+                              const meta =
+                                (row.meta && typeof row.meta === "object"
+                                  ? (row.meta as {
+                                      spins?: number;
+                                      subtitle?: string | null;
+                                      badgeText?: string | null;
+                                      buttonLabel?: string | null;
+                                      sortOrder?: number;
+                                    })
+                                  : null) ?? null;
                               setShopEditingId(row.id);
                               setShopFormId(row.id);
                               setShopFormTitle(row.title);
                               setShopFormDescription(row.description ?? "");
+                              setShopFormImageUrl(row.imageUrl ?? "");
                               setShopFormPrice(row.priceCoins);
-                              const sp = (row.meta as { spins?: number } | null)?.spins ?? 1;
+                              const sp = meta?.spins ?? 1;
                               setShopFormSpins(sp);
+                              setShopFormSubtitle(meta?.subtitle ?? "");
+                              setShopFormBadgeText(meta?.badgeText ?? "");
+                              setShopFormButtonLabel(meta?.buttonLabel ?? "");
+                              setShopFormSortOrder(meta?.sortOrder ?? 0);
                               setShopFormStockUnlimited(row.stockTotal == null);
                               setShopFormStockTotal(row.stockTotal ?? 100);
                               setShopFormActive(row.active);
@@ -2258,10 +2404,7 @@ export function App() {
                                   return;
                                 }
                                 if (shopEditingId === row.id) {
-                                  setShopEditingId(null);
-                                  setShopFormId("");
-                                  setShopFormTitle("");
-                                  setShopFormDescription("");
+                                  resetShopForm();
                                 }
                                 await loadAdminShop();
                               } catch {

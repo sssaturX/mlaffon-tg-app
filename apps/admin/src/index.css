@@ -1037,6 +1037,32 @@ label.admin-checkbox-row input[type="checkbox"] {
   margin-top: 12px;
 }
 
+.admin-shop-preview {
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: var(--admin-bg-elevated);
+  padding: 8px;
+}
+
+.admin-shop-preview--img img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #000;
+}
+
+.admin-shop-table__thumb {
+  display: block;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--admin-border);
+  background: var(--admin-bg-elevated);
+}
+
 .admin-table-nowrap {
   white-space: nowrap;
 }

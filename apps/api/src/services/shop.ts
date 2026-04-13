@@ -18,7 +18,7 @@ export type ShopItemClientDto = {
 
 export async function listShopItemsForClient(): Promise<ShopItemClientDto[]> {
   const rows = await db.select().from(shopItems).where(eq(shopItems.active, true));
-  return rows.map((r) => ({
+  const mapped = rows.map((r) => ({
     id: r.id,
     title: r.title,
     description: r.description ?? null,
@@ -29,6 +29,18 @@ export async function listShopItemsForClient(): Promise<ShopItemClientDto[]> {
     stockRemaining:
       r.stockTotal == null ? null : Math.max(0, r.stockTotal - r.stockSold),
   }));
+  return mapped.sort((a, b) => {
+    const aOrder =
+      typeof (a.meta as { sortOrder?: unknown } | null)?.sortOrder === "number"
+        ? ((a.meta as { sortOrder?: number } | null)?.sortOrder ?? 0)
+        : 0;
+    const bOrder =
+      typeof (b.meta as { sortOrder?: unknown } | null)?.sortOrder === "number"
+        ? ((b.meta as { sortOrder?: number } | null)?.sortOrder ?? 0)
+        : 0;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.id.localeCompare(b.id);
+  });
 }
 
 export async function purchaseItem(
