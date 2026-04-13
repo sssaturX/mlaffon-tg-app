@@ -79,7 +79,7 @@ export default function Shop() {
       {hasItems ? (
         <div className="shop-showcase fade-in-soft">
           {items.map((item) => {
-            const meta = (item.meta as ShopItem["meta"]) ?? null;
+            const meta = item.meta;
             const soldOut = item.stockRemaining === 0;
             return (
               <button
@@ -172,10 +172,8 @@ export default function Shop() {
               )}
               <div className="shop-popup__meta">
                 <p className="shop-popup__name">{selected.title}</p>
-                {(selected.meta as ShopItem["meta"] | null)?.subtitle ? (
-                  <p className="shop-popup__desc">
-                    {(selected.meta as ShopItem["meta"]).subtitle}
-                  </p>
+                {selected.meta?.subtitle ? (
+                  <p className="shop-popup__desc">{selected.meta.subtitle}</p>
                 ) : selected.description ? (
                   <p className="shop-popup__desc">{selected.description}</p>
                 ) : null}

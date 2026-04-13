@@ -21,10 +21,25 @@ export type ShopItem = {
 
 export const SHOP_STALE_TIME_MS = 1000 * 60 * 2;
 
+function normalizeMeta(raw: unknown): ShopItemMeta | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  return {
+    spins: typeof row.spins === "number" ? row.spins : undefined,
+    subtitle: typeof row.subtitle === "string" ? row.subtitle : null,
+    badgeText: typeof row.badgeText === "string" ? row.badgeText : null,
+    buttonLabel: typeof row.buttonLabel === "string" ? row.buttonLabel : null,
+    sortOrder: typeof row.sortOrder === "number" ? row.sortOrder : undefined,
+  };
+}
+
 export async function fetchShopItems(): Promise<ShopItem[]> {
   const r = await api<{ items: ShopItem[] }>("/api/v1/shop/items", {
     httpCache: "default",
   });
   if (!r.ok) throw new Error("shop_load");
-  return r.data.items;
+  return (r.data.items ?? []).map((item) => ({
+    ...item,
+    meta: normalizeMeta(item.meta),
+  }));
 }
