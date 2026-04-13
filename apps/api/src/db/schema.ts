@@ -644,6 +644,8 @@ export const shopItems = pgTable("shop_items", {
   title: text("title").notNull(),
   /** Текст для карточки товара в приложении. */
   description: text("description"),
+  /** URL картинки для карточки товара. */
+  imageUrl: text("image_url"),
   kind: text("kind").notNull(),
   priceCoins: integer("price_coins").notNull(),
   meta: jsonb("meta"),

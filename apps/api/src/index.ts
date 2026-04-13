@@ -1045,6 +1045,10 @@ app.post(
 app.get("/api/v1/shop/items", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
+  void reply.header(
+    "Cache-Control",
+    "private, max-age=30, stale-while-revalidate=120"
+  );
   const items = await listShopItemsForClient();
   return { items };
 });

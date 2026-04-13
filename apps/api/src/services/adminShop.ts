@@ -6,6 +6,7 @@ export type AdminShopItemRow = {
   id: string;
   title: string;
   description: string | null;
+  imageUrl: string | null;
   kind: string;
   priceCoins: number;
   meta: unknown;
@@ -20,6 +21,7 @@ export async function listShopItemsAdmin(): Promise<AdminShopItemRow[]> {
     id: r.id,
     title: r.title,
     description: r.description ?? null,
+    imageUrl: r.imageUrl ?? null,
     kind: r.kind,
     priceCoins: r.priceCoins,
     meta: r.meta ?? null,
@@ -33,6 +35,7 @@ export async function createShopItemAdmin(input: {
   id: string;
   title: string;
   description: string | null;
+  imageUrl: string | null;
   kind: string;
   priceCoins: number;
   meta: unknown;
@@ -43,6 +46,7 @@ export async function createShopItemAdmin(input: {
     id: input.id,
     title: input.title,
     description: input.description,
+    imageUrl: input.imageUrl,
     kind: input.kind,
     priceCoins: input.priceCoins,
     meta: input.meta as object | null,
@@ -78,6 +82,8 @@ export async function updateShopItemAdmin(
   const set: Record<string, unknown> = {};
   if (patch.title !== undefined) set.title = patch.title;
   if (patch.description !== undefined) set.description = patch.description;
+  if ((patch as { imageUrl?: string | null }).imageUrl !== undefined)
+    set.imageUrl = (patch as { imageUrl?: string | null }).imageUrl;
   if (patch.kind !== undefined) set.kind = patch.kind;
   if (patch.priceCoins !== undefined) set.priceCoins = patch.priceCoins;
   if (patch.meta !== undefined) set.meta = patch.meta;

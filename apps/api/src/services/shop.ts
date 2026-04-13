@@ -8,6 +8,7 @@ export type ShopItemClientDto = {
   id: string;
   title: string;
   description: string | null;
+  imageUrl: string | null;
   kind: string;
   priceCoins: number;
   meta: unknown;
@@ -21,6 +22,7 @@ export async function listShopItemsForClient(): Promise<ShopItemClientDto[]> {
     id: r.id,
     title: r.title,
     description: r.description ?? null,
+    imageUrl: r.imageUrl ?? null,
     kind: r.kind,
     priceCoins: r.priceCoins,
     meta: r.meta ?? null,
