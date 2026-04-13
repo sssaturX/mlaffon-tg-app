@@ -935,6 +935,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
     title: z.string().min(1).max(200),
     description: z.string().max(4000).nullable().optional(),
+    imageUrl: z.string().url().max(2000).nullable().optional(),
     kind: z.enum(["extra_spin"]),
     priceCoins: z.number().int().min(1),
     spins: z.number().int().min(1).max(99).optional(),
@@ -945,6 +946,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   const shopPatchBody = z.object({
     title: z.string().min(1).max(200).optional(),
     description: z.string().max(4000).nullable().optional(),
+    imageUrl: z.string().url().max(2000).nullable().optional(),
     kind: z.enum(["extra_spin"]).optional(),
     priceCoins: z.number().int().min(1).optional(),
     spins: z.number().int().min(1).max(99).optional(),
@@ -972,6 +974,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         id: d.id,
         title: d.title,
         description: d.description?.trim() ? d.description.trim() : null,
+        imageUrl: d.imageUrl?.trim() ? d.imageUrl.trim() : null,
         kind: d.kind,
         priceCoins: d.priceCoins,
         meta: { spins: d.spins ?? 1 },
@@ -1004,6 +1007,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (d.title !== undefined) patch.title = d.title;
     if (d.description !== undefined)
       patch.description = d.description?.trim() ? d.description.trim() : null;
+    if (d.imageUrl !== undefined)
+      (patch as Record<string, unknown>).imageUrl = d.imageUrl?.trim() ? d.imageUrl.trim() : null;
     if (d.kind !== undefined) patch.kind = d.kind;
     if (d.priceCoins !== undefined) patch.priceCoins = d.priceCoins;
     if (d.active !== undefined) patch.active = d.active;

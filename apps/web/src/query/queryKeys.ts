@@ -50,4 +50,8 @@ export const queryKeys = {
     entry: (sort: string, platform: string) =>
       [...queryKeys.leaderboard.all, sort, platform] as const,
   },
+  shop: {
+    all: ["shop"] as const,
+    items: () => [...queryKeys.shop.all, "items"] as const,
+  },
 } as const;
