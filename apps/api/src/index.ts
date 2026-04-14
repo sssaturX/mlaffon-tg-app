@@ -1042,14 +1042,24 @@ app.post(
   }
 );
 
+const shopItemsQuery = z.object({
+  platform: z.enum(["twitch", "kick"]).optional(),
+});
+
 app.get("/api/v1/shop/items", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
+  const parsed = shopItemsQuery.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return reply.status(400).send({
+      error: { code: "bad_request", message: "Неверная платформа магазина." },
+    });
+  }
   void reply.header(
     "Cache-Control",
     "private, max-age=30, stale-while-revalidate=120"
   );
-  const items = await listShopItemsForClient();
+  const items = await listShopItemsForClient(parsed.data.platform);
   return { items };
 });
 
@@ -1204,6 +1214,7 @@ app.post("/api/v1/shop/purchase", async (req, reply) => {
       insufficient_coins: "Недостаточно монет на этом счёте",
       duplicate: "Покупка уже была выполнена",
       out_of_stock: "Товар закончился",
+      platform_mismatch: "Этот товар доступен только для другой платформы",
     };
     return reply.status(400).send({
       error: {

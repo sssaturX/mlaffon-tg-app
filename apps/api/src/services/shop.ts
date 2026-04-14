@@ -16,19 +16,35 @@ export type ShopItemClientDto = {
   stockRemaining: number | null;
 };
 
-export async function listShopItemsForClient(): Promise<ShopItemClientDto[]> {
+export type ShopItemPlatform = EconomyPlatform | "both";
+
+function resolveShopItemPlatform(meta: unknown): ShopItemPlatform {
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return "both";
+  const raw = (meta as { platform?: unknown }).platform;
+  return raw === "twitch" || raw === "kick" || raw === "both" ? raw : "both";
+}
+
+export async function listShopItemsForClient(
+  platform?: EconomyPlatform
+): Promise<ShopItemClientDto[]> {
   const rows = await db.select().from(shopItems).where(eq(shopItems.active, true));
-  const mapped = rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    description: r.description ?? null,
-    imageUrl: r.imageUrl ?? null,
-    kind: r.kind,
-    priceCoins: r.priceCoins,
-    meta: r.meta ?? null,
-    stockRemaining:
-      r.stockTotal == null ? null : Math.max(0, r.stockTotal - r.stockSold),
-  }));
+  const mapped = rows
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description ?? null,
+      imageUrl: r.imageUrl ?? null,
+      kind: r.kind,
+      priceCoins: r.priceCoins,
+      meta: r.meta ?? null,
+      stockRemaining:
+        r.stockTotal == null ? null : Math.max(0, r.stockTotal - r.stockSold),
+    }))
+    .filter((item) => {
+      if (!platform) return true;
+      const itemPlatform = resolveShopItemPlatform(item.meta);
+      return itemPlatform === "both" || itemPlatform === platform;
+    });
   return mapped.sort((a, b) => {
     const aOrder =
       typeof (a.meta as { sortOrder?: unknown } | null)?.sortOrder === "number"
@@ -56,6 +72,10 @@ export async function purchaseItem(
   if (!item || !item.active) return { ok: false, error: "item_not_found" };
   if (item.kind !== "extra_spin")
     return { ok: false, error: "item_not_found" };
+  const itemPlatform = resolveShopItemPlatform(item.meta);
+  if (itemPlatform !== "both" && itemPlatform !== platform) {
+    return { ok: false, error: "platform_mismatch" };
+  }
 
   if (item.stockTotal != null && item.stockSold >= item.stockTotal) {
     return { ok: false, error: "out_of_stock" };

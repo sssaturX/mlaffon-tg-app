@@ -223,6 +223,8 @@ type AdminShopItemRow = {
   stockSold: number;
 };
 
+type ShopPlatform = "twitch" | "kick" | "both";
+
 type AdminTaskEvidenceRow = {
   id: string;
   userId: string;
@@ -438,6 +440,7 @@ export function App() {
   const [shopFormBadgeText, setShopFormBadgeText] = useState("");
   const [shopFormButtonLabel, setShopFormButtonLabel] = useState("");
   const [shopFormSortOrder, setShopFormSortOrder] = useState(0);
+  const [shopFormPlatform, setShopFormPlatform] = useState<ShopPlatform>("both");
   const [shopFormStockUnlimited, setShopFormStockUnlimited] = useState(true);
   const [shopFormStockTotal, setShopFormStockTotal] = useState(100);
   const [shopFormActive, setShopFormActive] = useState(true);
@@ -478,6 +481,7 @@ export function App() {
     setShopFormBadgeText("");
     setShopFormButtonLabel("");
     setShopFormSortOrder(0);
+    setShopFormPlatform("both");
     setShopFormStockUnlimited(true);
     setShopFormStockTotal(100);
     setShopFormActive(true);
@@ -2066,6 +2070,7 @@ export function App() {
                         imageUrl: shopFormImageUrl.trim() || null,
                         kind: "extra_spin",
                         priceCoins: shopFormPrice,
+                        platform: shopFormPlatform,
                         spins: shopFormSpins,
                         subtitle: shopFormSubtitle.trim() || null,
                         badgeText: shopFormBadgeText.trim() || null,
@@ -2092,6 +2097,7 @@ export function App() {
                       imageUrl: shopFormImageUrl.trim() || null,
                       kind: "extra_spin",
                       priceCoins: shopFormPrice,
+                      platform: shopFormPlatform,
                       spins: shopFormSpins,
                       subtitle: shopFormSubtitle.trim() || null,
                       badgeText: shopFormBadgeText.trim() || null,
@@ -2195,6 +2201,18 @@ export function App() {
                   onChange={(e) => setShopFormSpins(Number(e.target.value))}
                   required
                 />
+              </div>
+              <div>
+                <label htmlFor="shopplatform">Платформа товара</label>
+                <select
+                  id="shopplatform"
+                  value={shopFormPlatform}
+                  onChange={(e) => setShopFormPlatform(e.target.value as ShopPlatform)}
+                >
+                  <option value="both">Обе платформы</option>
+                  <option value="twitch">Только Twitch</option>
+                  <option value="kick">Только Kick</option>
+                </select>
               </div>
             </div>
             <div className="row">
@@ -2300,6 +2318,7 @@ export function App() {
                       <th>Изобр.</th>
                       <th>ID</th>
                       <th>Название</th>
+                      <th>Платформа</th>
                       <th>Цена</th>
                       <th>Порядок</th>
                       <th>Продано / лимит</th>
@@ -2337,6 +2356,14 @@ export function App() {
                             </p>
                           ) : null}
                         </td>
+                        <td>
+                          {(() => {
+                            const p = (row.meta as { platform?: unknown } | null)?.platform;
+                            if (p === "twitch") return "Twitch";
+                            if (p === "kick") return "Kick";
+                            return "Обе";
+                          })()}
+                        </td>
                         <td>{row.priceCoins.toLocaleString("ru-RU")}</td>
                         <td>
                           {typeof (row.meta as { sortOrder?: unknown } | null)?.sortOrder === "number"
@@ -2358,6 +2385,7 @@ export function App() {
                               const meta =
                                 (row.meta && typeof row.meta === "object"
                                   ? (row.meta as {
+                                      platform?: ShopPlatform;
                                       spins?: number;
                                       subtitle?: string | null;
                                       badgeText?: string | null;
@@ -2371,6 +2399,7 @@ export function App() {
                               setShopFormDescription(row.description ?? "");
                               setShopFormImageUrl(row.imageUrl ?? "");
                               setShopFormPrice(row.priceCoins);
+                              setShopFormPlatform(meta?.platform ?? "both");
                               const sp = meta?.spins ?? 1;
                               setShopFormSpins(sp);
                               setShopFormSubtitle(meta?.subtitle ?? "");

@@ -18,8 +18,8 @@ export default function Shop() {
   const { showToast } = useToast();
   const { patchEconomy } = useMeEconomySync();
   const { data: items, isPending, isError, refetch } = useQuery({
-    queryKey: queryKeys.shop.items(),
-    queryFn: fetchShopItems,
+    queryKey: queryKeys.shop.items(activePlatform),
+    queryFn: () => fetchShopItems(activePlatform),
     enabled: Boolean(getToken()),
     staleTime: SHOP_STALE_TIME_MS,
   });

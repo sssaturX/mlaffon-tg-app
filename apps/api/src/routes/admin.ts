@@ -950,6 +950,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     imageUrl: shopImageField.nullable().optional(),
     kind: z.enum(["extra_spin"]),
     priceCoins: z.number().int().min(1),
+    platform: z.enum(["twitch", "kick", "both"]).optional(),
     spins: z.number().int().min(1).max(99).optional(),
     subtitle: z.string().max(140).nullable().optional(),
     badgeText: z.string().max(60).nullable().optional(),
@@ -965,6 +966,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     imageUrl: shopImageField.nullable().optional(),
     kind: z.enum(["extra_spin"]).optional(),
     priceCoins: z.number().int().min(1).optional(),
+    platform: z.enum(["twitch", "kick", "both"]).optional(),
     spins: z.number().int().min(1).max(99).optional(),
     subtitle: z.string().max(140).nullable().optional(),
     badgeText: z.string().max(60).nullable().optional(),
@@ -998,6 +1000,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         kind: d.kind,
         priceCoins: d.priceCoins,
         meta: {
+          platform: d.platform ?? "both",
           spins: d.spins ?? 1,
           subtitle: d.subtitle?.trim() ? d.subtitle.trim() : null,
           badgeText: d.badgeText?.trim() ? d.badgeText.trim() : null,
@@ -1041,6 +1044,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (d.stockTotal !== undefined) patch.stockTotal = d.stockTotal;
 
     if (
+      d.platform !== undefined ||
       d.spins !== undefined ||
       d.subtitle !== undefined ||
       d.badgeText !== undefined ||
@@ -1059,6 +1063,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       >;
       patch.meta = {
         ...prev,
+        ...(d.platform !== undefined ? { platform: d.platform } : {}),
         ...(d.spins !== undefined ? { spins: d.spins } : {}),
         ...(d.subtitle !== undefined
           ? { subtitle: d.subtitle?.trim() ? d.subtitle.trim() : null }
