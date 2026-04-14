@@ -26,6 +26,11 @@ export default function Shop() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [buying, setBuying] = useState(false);
   const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
+  const selected = useMemo(
+    () => items?.find((row) => row.id === selectedId) ?? null,
+    [items, selectedId]
+  );
+  const hasItems = items != null && items.length > 0;
 
   if (isPending) return <PageSkeleton />;
 
@@ -41,12 +46,6 @@ export default function Shop() {
       </div>
     );
   }
-
-  const hasItems = items && items.length > 0;
-  const selected = useMemo(
-    () => items?.find((row) => row.id === selectedId) ?? null,
-    [items, selectedId]
-  );
 
   async function purchase() {
     if (!selected || buying || selected.stockRemaining === 0) return;
