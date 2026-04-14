@@ -52,6 +52,6 @@ export const queryKeys = {
   },
   shop: {
     all: ["shop"] as const,
-    items: () => [...queryKeys.shop.all, "items"] as const,
+    items: (platform: string) => [...queryKeys.shop.all, "items", platform] as const,
   },
 } as const;
