@@ -2042,8 +2042,9 @@ export function App() {
           <h2 className="admin-mt-0">Магазин</h2>
           <p className="muted">
             Полное управление витриной магазина: картинка (URL или загрузка файла), тексты карточки,
-            порядок, цена и лимиты. Поддерживается тип <code>extra_spin</code>; дополнительные поля
-            отображения хранятся в <code>meta</code>.
+            порядок, цена и лимиты. Можно быстро скрывать/показывать товар, редактировать или удалять.
+            Поддерживается тип <code>extra_spin</code>; дополнительные поля отображения хранятся в{" "}
+            <code>meta</code>.
           </p>
           <form
             className="card stack"
@@ -2412,6 +2413,38 @@ export function App() {
                             }}
                           >
                             Править
+                          </button>{" "}
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={loading}
+                            onClick={async () => {
+                              if (!token) return;
+                              setLoading(true);
+                              setErr(null);
+                              try {
+                                const r = await fetch(
+                                  `${apiBase()}/api/admin/shop/items/${encodeURIComponent(row.id)}`,
+                                  {
+                                    method: "PUT",
+                                    headers: authHeaders(true),
+                                    body: JSON.stringify({ active: !row.active }),
+                                  }
+                                );
+                                const j = (await r.json()) as { error?: { message?: string } };
+                                if (!r.ok) {
+                                  setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                  return;
+                                }
+                                await loadAdminShop();
+                              } catch {
+                                setErr("Сеть недоступна");
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                          >
+                            {row.active ? "Скрыть" : "Показать"}
                           </button>{" "}
                           <button
                             type="button"
