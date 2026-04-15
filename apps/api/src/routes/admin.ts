@@ -946,7 +946,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   const shopCreateBody = z.object({
     id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
     title: z.string().min(1).max(200),
-    description: z.string().max(4000).nullable().optional(),
+    description: z.string().max(12000).nullable().optional(),
     imageUrl: shopImageField.nullable().optional(),
     kind: z.enum(["extra_spin"]),
     priceCoins: z.number().int().min(1),
@@ -962,7 +962,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
 
   const shopPatchBody = z.object({
     title: z.string().min(1).max(200).optional(),
-    description: z.string().max(4000).nullable().optional(),
+    description: z.string().max(12000).nullable().optional(),
     imageUrl: shopImageField.nullable().optional(),
     kind: z.enum(["extra_spin"]).optional(),
     priceCoins: z.number().int().min(1).optional(),
