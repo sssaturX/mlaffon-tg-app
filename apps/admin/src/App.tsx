@@ -430,7 +430,6 @@ export function App() {
   const [adminShopItems, setAdminShopItems] = useState<AdminShopItemRow[] | null>(null);
   const [shopLoading, setShopLoading] = useState(false);
   const [shopEditingId, setShopEditingId] = useState<string | null>(null);
-  const [shopFormId, setShopFormId] = useState("");
   const [shopFormTitle, setShopFormTitle] = useState("");
   const [shopFormDescription, setShopFormDescription] = useState("");
   const [shopFormImageUrl, setShopFormImageUrl] = useState("");
@@ -471,7 +470,6 @@ export function App() {
 
   const resetShopForm = useCallback(() => {
     setShopEditingId(null);
-    setShopFormId("");
     setShopFormTitle("");
     setShopFormDescription("");
     setShopFormImageUrl("");
@@ -2092,7 +2090,6 @@ export function App() {
                     method: "POST",
                     headers: authHeaders(true),
                     body: JSON.stringify({
-                      id: shopFormId.trim(),
                       title: shopFormTitle,
                       description: shopFormDescription.trim() || null,
                       imageUrl: shopFormImageUrl.trim() || null,
@@ -2123,17 +2120,11 @@ export function App() {
               }
             }}
           >
-            <div>
-              <label htmlFor="shopid">ID товара (латиница, без пробелов)</label>
-              <input
-                id="shopid"
-                value={shopFormId}
-                onChange={(e) => setShopFormId(e.target.value)}
-                disabled={shopEditingId != null}
-                required={shopEditingId == null}
-                placeholder="extra_spin_pack_2"
-              />
-            </div>
+            {!shopEditingId ? (
+              <p className="muted admin-m-0">
+                ID товара создается автоматически после добавления.
+              </p>
+            ) : null}
             <div>
               <label htmlFor="shoptitle">Название</label>
               <input
@@ -2395,7 +2386,6 @@ export function App() {
                                     })
                                   : null) ?? null;
                               setShopEditingId(row.id);
-                              setShopFormId(row.id);
                               setShopFormTitle(row.title);
                               setShopFormDescription(row.description ?? "");
                               setShopFormImageUrl(row.imageUrl ?? "");

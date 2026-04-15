@@ -2,12 +2,9 @@
 export function AppLoadingSpinner() {
   return (
     <div className="app-loading" aria-busy="true" aria-label="Загрузка">
-      <div className="app-loading__skeleton">
-        <div className="skeleton app-loading__line app-loading__line--title" />
-        <div className="skeleton app-loading__line" />
-        <div className="skeleton app-loading__line app-loading__line--short" />
-        <div className="skeleton app-loading__card" />
-        <div className="skeleton app-loading__card" />
+      <div className="app-loading__spinner-wrap">
+        <span className="app-loading__spinner" aria-hidden />
+        <span className="app-loading__label">Загрузка...</span>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { db } from "../db/index.js";
 import {
   giveaways,
@@ -92,6 +93,23 @@ function requireAdmin(req: FastifyRequest, reply: FastifyReply): string | null {
     reply.status(401).send({ error: { code: "unauthorized", message: "Invalid token" } });
     return null;
   }
+}
+
+const SHOP_ID_REGEX = /^[a-z0-9_-]+$/i;
+
+function slugifyShopTitle(input: string): string {
+  const latin = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return latin.slice(0, 48);
+}
+
+function generateShopItemId(title: string): string {
+  const base = slugifyShopTitle(title) || "shop_item";
+  return `${base}_${nanoid(8)}`;
 }
 
 export async function registerAdminRoutes(app: FastifyInstance) {
@@ -944,7 +962,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     );
 
   const shopCreateBody = z.object({
-    id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
+    id: z.string().min(1).max(80).regex(SHOP_ID_REGEX).optional(),
     title: z.string().min(1).max(200),
     description: z.string().max(12000).nullable().optional(),
     imageUrl: shopImageField.nullable().optional(),
@@ -991,9 +1009,14 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       });
     }
     const d = parsed.data;
+    const requestedId = d.id?.trim();
+    const id =
+      requestedId && SHOP_ID_REGEX.test(requestedId)
+        ? requestedId
+        : generateShopItemId(d.title);
     try {
       await createShopItemAdmin({
-        id: d.id,
+        id,
         title: d.title,
         description: d.description?.trim() ? d.description.trim() : null,
         imageUrl: d.imageUrl?.trim() ? d.imageUrl.trim() : null,
@@ -1010,7 +1033,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         active: d.active !== false,
         stockTotal: d.stockTotal === undefined ? null : d.stockTotal,
       });
-      return { ok: true };
+      return { ok: true, id };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/unique|duplicate/i.test(msg)) {
