@@ -682,6 +682,9 @@ select:focus-visible {
 /* Магазин */
 .shop-page {
   min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .shop-showcase {
@@ -709,6 +712,28 @@ select:focus-visible {
 
 .shop-empty__icon {
   opacity: 0.4;
+}
+
+.shop-task-detail__media {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.shop-task-detail__img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: linear-gradient(145deg, #1e293b, #0f172a);
+}
+
+.shop-task-detail__img--ph {
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
 }
 
 /* ── Shop card grid ── */

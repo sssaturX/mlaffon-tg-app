@@ -2144,13 +2144,13 @@ export function App() {
               />
             </div>
             <div>
-              <label htmlFor="shopdesc">Описание</label>
+              <label htmlFor="shopdesc">Полное описание (как в заданиях)</label>
               <textarea
                 id="shopdesc"
                 value={shopFormDescription}
                 onChange={(e) => setShopFormDescription(e.target.value)}
-                rows={3}
-                placeholder="Текст на карточке в приложении"
+                rows={6}
+                placeholder="Полный текст товара для модального окна. Можно использовать переносы строк."
               />
             </div>
             <div>
