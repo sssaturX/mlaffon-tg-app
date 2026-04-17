@@ -56,7 +56,7 @@ export async function fetchMeEconomy(): Promise<MeEconomyResponse> {
 export async function fetchTasks(platform: string): Promise<TaskDto[]> {
   const r = await api<{ tasks: TaskDto[] }>(
     `/api/v1/tasks?platform=${encodeURIComponent(platform)}`,
-    { httpCache: "default" }
+    { httpCache: "no-store" }
   );
   throwIfApiErr(r);
   return r.data.tasks;

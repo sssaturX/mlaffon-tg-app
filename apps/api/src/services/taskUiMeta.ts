@@ -48,6 +48,8 @@ export function extractCoverImageUrl(
   if (!t) return null;
   if (/^https?:\/\//i.test(t)) return t;
   if (/^data:image\//i.test(t)) return t;
+  /** Пути от корня сайта (как в seed: /tasks/br/…) — валидны для фона в мини-приложении. */
+  if (t.startsWith("/") && !t.startsWith("//") && t.length <= 2000) return t;
   return null;
 }
 

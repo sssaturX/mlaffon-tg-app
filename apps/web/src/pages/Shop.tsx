@@ -5,11 +5,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { TextWithTelegramMentions } from "../components/TextWithTelegramMentions";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "../query/queryKeys";
-import {
-  fetchShopPage,
-  SHOP_STALE_TIME_MS,
-  type ShopItem,
-} from "../query/shopQueryFns";
+import { fetchShopPage, SHOP_STALE_TIME_MS } from "../query/shopQueryFns";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
@@ -25,11 +21,26 @@ export default function Shop() {
     enabled: Boolean(getToken()),
     staleTime: SHOP_STALE_TIME_MS,
   });
-  const items = shopData?.items;
+  const items = shopData?.items ?? [];
   const globalCopy = shopData?.globalCopy;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [buying, setBuying] = useState(false);
   const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
+
+  const selected = useMemo(
+    () => items.find((row) => row.id === selectedId) ?? null,
+    [items, selectedId]
+  );
+
+  const me = getMeFromCache();
+  const platformCoins =
+    activePlatform === "twitch" ? (me?.coinsTwitch ?? 0) : (me?.coinsKick ?? 0);
+  const coinsKnown = me != null;
+  const coinsShort =
+    coinsKnown && selected && selected.stockRemaining !== 0
+      ? Math.max(0, selected.priceCoins - platformCoins)
+      : 0;
+  const cantAfford = coinsShort > 0;
 
   if (isPending) return <PageSkeleton />;
 
@@ -46,21 +57,7 @@ export default function Shop() {
     );
   }
 
-  const hasItems = items && items.length > 0;
-  const selected = useMemo(
-    () => items?.find((row) => row.id === selectedId) ?? null,
-    [items, selectedId]
-  );
-
-  const me = getMeFromCache();
-  const platformCoins =
-    activePlatform === "twitch" ? (me?.coinsTwitch ?? 0) : (me?.coinsKick ?? 0);
-  const coinsKnown = me != null;
-  const coinsShort =
-    coinsKnown && selected && selected.stockRemaining !== 0
-      ? Math.max(0, selected.priceCoins - platformCoins)
-      : 0;
-  const cantAfford = coinsShort > 0;
+  const hasItems = items.length > 0;
 
   async function purchase() {
     if (!selected || buying || selected.stockRemaining === 0 || cantAfford) return;

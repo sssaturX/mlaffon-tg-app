@@ -132,23 +132,21 @@ export default function Tasks() {
     tasksQ.error,
   ]);
 
-  /** Модалка держит снимок задания — синхронизируем с кэшем списка после claim / refetch. */
+  /** Модалка: всегда подмешиваем актуальное задание из списка (тексты, обложка, награда после админки). */
   useEffect(() => {
     setDetailTask((prev) => {
       if (!prev) return prev;
       const next = tasks.find((x) => x.id === prev.id);
-      if (!next) return prev;
-      if (
-        prev.userStatus === next.userStatus &&
-        prev.evidenceStageStatus === next.evidenceStageStatus &&
-        prev.lastError === next.lastError &&
-        prev.progressCurrent === next.progressCurrent &&
-        (prev.hardStageCurrent ?? null) === (next.hardStageCurrent ?? null) &&
-        (prev.hardStageTotal ?? null) === (next.hardStageTotal ?? null) &&
-        (prev.chainOrder ?? null) === (next.chainOrder ?? null)
-      ) {
-        return prev;
-      }
+      return next ?? prev;
+    });
+  }, [tasks]);
+
+  /** Справка в sheet — то же, что и для деталки (админ мог поменять help). */
+  useEffect(() => {
+    setHelpTask((prev) => {
+      if (!prev) return prev;
+      const next = tasks.find((x) => x.id === prev.id);
+      if (!next?.help) return null;
       return next;
     });
   }, [tasks]);

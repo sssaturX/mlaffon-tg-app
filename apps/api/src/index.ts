@@ -704,10 +704,8 @@ app.get("/api/v1/tasks", async (req, reply) => {
     await listTasksForUser(userId),
     platform
   );
-  void reply.header(
-    "Cache-Control",
-    "private, max-age=30, stale-while-revalidate=120"
-  );
+  /** Не кэшировать агрессивно: каталог и meta (обложки, тексты) меняются из админки. */
+  void reply.header("Cache-Control", "private, no-cache, must-revalidate");
   return { tasks: list };
 });
 

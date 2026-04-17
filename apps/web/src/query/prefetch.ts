@@ -11,7 +11,10 @@ import {
   fetchReferrals,
   fetchTasks,
 } from "./fetchers";
-import { platformQueryParamTasks } from "../hooks/queries/useTasks";
+import {
+  platformQueryParamTasks,
+  TASKS_QUERY_STALE_MS,
+} from "../hooks/queries/useTasks";
 import { meEconomyQueryFn, meProfileQueryFn } from "./meQueryFns";
 
 /** Hover / touch-down на табах — дедупликация в TanStack Query. */
@@ -47,7 +50,7 @@ export function prefetchOnBootstrap(): void {
   void queryClient.prefetchQuery({
     queryKey: queryKeys.tasks.list(taskPlatform),
     queryFn: () => fetchTasks(taskPlatform),
-    staleTime: 1000 * 60 * 5,
+    staleTime: TASKS_QUERY_STALE_MS,
   });
   void queryClient.prefetchQuery({
     queryKey: queryKeys.fortune.config(),
@@ -80,7 +83,7 @@ export function prefetchRouteData(pathname: string): void {
     void queryClient.prefetchQuery({
       queryKey: queryKeys.tasks.list(taskPlatform),
       queryFn: () => fetchTasks(taskPlatform),
-      staleTime: 1000 * 60 * 5,
+      staleTime: TASKS_QUERY_STALE_MS,
     });
     return;
   }

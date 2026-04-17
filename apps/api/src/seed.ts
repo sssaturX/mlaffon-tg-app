@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { db } from "./db/index.js";
-import { appSettings, giveaways, promoCodes, shopItems, tasks } from "./db/schema.js";
+import { appSettings, promoCodes, shopItems, tasks } from "./db/schema.js";
 import { invalidateActiveTasksCache } from "./services/taskCatalogCache.js";
 import { DEFAULT_FAQ_ITEMS } from "./content/faqDefault.js";
 
@@ -218,15 +218,15 @@ async function seed() {
       id: "tg_channel_sub",
       title: "Подписаться на Telegram",
       description:
-        "Подпишись на канал Mlaffonxd (при отписке монеты будут списаны).",
+        "Подпишись на канал mlaffon (при отписке монеты будут списаны).",
       reward: 500,
       platform: "telegram",
       type: "one-time",
       validationType: "api",
       meta: {
-        telegram: { kind: "channel_member", chat_id: "@Mlaffonxd" },
+        telegram: { kind: "channel_member", chat_id: "@mlaffon" },
         revokeOnUnsubscribe: true,
-        actionUrl: "https://t.me/Mlaffonxd",
+        actionUrl: "https://t.me/mlaffon",
         actionLabel: "Открыть канал Telegram",
         verifyLabel: "Проверить подписку",
         uiSection: "stream_tasks",
@@ -430,20 +430,6 @@ async function seed() {
         stockSold: s.stockSold,
       });
     }
-  }
-
-  const [gw0] = await db.select().from(giveaways).limit(1);
-  if (!gw0) {
-    const ends = new Date();
-    ends.setUTCDate(ends.getUTCDate() + 14);
-    await db.insert(giveaways).values({
-      title: "Розыгрыш",
-      prizeText: "200 000 ₽ на технику",
-      imageUrl: null,
-      endsAt: ends,
-      active: true,
-      sortOrder: 0,
-    });
   }
 
   const [faqRow] = await db

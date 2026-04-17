@@ -3,7 +3,8 @@ import type { Platform, TaskDto } from "shared";
 import { queryKeys } from "../../query/queryKeys";
 import { fetchTasks } from "../../query/fetchers";
 
-const STALE_TASKS = 1000 * 60 * 5;
+/** После правок в админке пользователи увидят обновления после истечения этого интервала или при фокусе вкладки. */
+export const TASKS_QUERY_STALE_MS = 1000 * 30;
 const GC_TASKS = 1000 * 60 * 30;
 
 /** Polling только при ожидании модерации / API — вкладка на переднем плане. */
@@ -29,11 +30,11 @@ export function useTasks(activePlatform: Platform) {
   return useQuery({
     queryKey: queryKeys.tasks.list(platform),
     queryFn: () => fetchTasks(platform),
-    staleTime: STALE_TASKS,
+    staleTime: TASKS_QUERY_STALE_MS,
     gcTime: GC_TASKS,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     refetchInterval: (q) => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") {
         return false;
@@ -53,6 +54,6 @@ export function useRefetchTasks(platform: Platform) {
     void qc.fetchQuery({
       queryKey: queryKeys.tasks.list(key),
       queryFn: () => fetchTasks(key),
-      staleTime: STALE_TASKS,
+      staleTime: TASKS_QUERY_STALE_MS,
     });
 }

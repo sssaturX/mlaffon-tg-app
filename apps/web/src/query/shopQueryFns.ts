@@ -43,6 +43,38 @@ function normalizeMeta(raw: unknown): ShopItemMeta | null {
   };
 }
 
+function normalizeShopItemRow(raw: unknown): ShopItem | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const id = typeof row.id === "string" ? row.id : null;
+  if (!id) return null;
+  const title = typeof row.title === "string" ? row.title : "Товар";
+  const description =
+    typeof row.description === "string" ? row.description : null;
+  const imageUrl = typeof row.imageUrl === "string" ? row.imageUrl : null;
+  const kind = typeof row.kind === "string" ? row.kind : "";
+  let priceCoins = 0;
+  if (typeof row.priceCoins === "number" && Number.isFinite(row.priceCoins)) {
+    priceCoins = Math.max(0, Math.floor(row.priceCoins));
+  }
+  let stockRemaining: number | null = null;
+  if (row.stockRemaining == null) {
+    stockRemaining = null;
+  } else if (typeof row.stockRemaining === "number" && Number.isFinite(row.stockRemaining)) {
+    stockRemaining = Math.max(0, Math.floor(row.stockRemaining));
+  }
+  return {
+    id,
+    title,
+    description,
+    imageUrl,
+    kind,
+    priceCoins,
+    meta: normalizeMeta(row.meta),
+    stockRemaining,
+  };
+}
+
 function normalizeGlobalCopy(raw: unknown): ShopGlobalCopy {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return {
@@ -62,10 +94,10 @@ export async function fetchShopPage(): Promise<ShopPagePayload> {
     httpCache: "default",
   });
   if (!r.ok) throw new Error("shop_load");
-  const items = (r.data.items ?? []).map((item) => ({
-    ...item,
-    meta: normalizeMeta(item.meta),
-  }));
+  const rawItems = Array.isArray(r.data.items) ? r.data.items : [];
+  const items = rawItems
+    .map((item) => normalizeShopItemRow(item))
+    .filter((row): row is ShopItem => row != null);
   return {
     items,
     globalCopy: normalizeGlobalCopy(r.data.globalCopy),
