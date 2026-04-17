@@ -364,8 +364,15 @@ export default function Tasks() {
     return (
       <article
         key={t.id}
-        className={`task-card-preview fade-in-soft ${streamTheme} ${t.validationType === "api" ? "task-card-preview--accent" : ""} ${done ? "task-card-preview--done" : ""}`}
+        className={`task-card-preview fade-in-soft ${streamTheme} ${t.validationType === "api" ? "task-card-preview--accent" : ""} ${done ? "task-card-preview--done" : ""}${t.coverImageUrl ? " task-card-preview--has-cover" : ""}`}
       >
+        {t.coverImageUrl ? (
+          <div
+            className="task-card-preview__cover"
+            style={{ backgroundImage: `url(${JSON.stringify(t.coverImageUrl)})` }}
+            aria-hidden
+          />
+        ) : null}
         <button
           type="button"
           className={`task-card-preview__main ${cardHelp ? "task-card-preview__main--with-help" : ""}`}

@@ -223,7 +223,20 @@ type AdminShopItemRow = {
   stockSold: number;
 };
 
-type ShopPlatform = "twitch" | "kick" | "both";
+type AdminShopPurchaseRow = {
+  id: string;
+  createdAt: string;
+  shopItemId: string;
+  itemTitle: string;
+  priceCoins: number;
+  platform: string;
+  userId: string;
+  telegramId: string | null;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  telegramChatLink: string | null;
+};
 
 type AdminTaskEvidenceRow = {
   id: string;
@@ -402,6 +415,7 @@ export function App() {
   const [taskFormProgressSource, setTaskFormProgressSource] = useState("");
   const [taskFormTargetValue, setTaskFormTargetValue] = useState(0);
   const [taskFormProgressLabel, setTaskFormProgressLabel] = useState("");
+  const [taskFormCoverImageUrl, setTaskFormCoverImageUrl] = useState("");
   const [predictionPlatforms, setPredictionPlatforms] = useState<PredictionPlatformRow[] | null>(null);
   const [predictions, setPredictions] = useState<PredictionRow[] | null>(null);
   const [predictionTitle, setPredictionTitle] = useState("");
@@ -430,6 +444,7 @@ export function App() {
   const [adminShopItems, setAdminShopItems] = useState<AdminShopItemRow[] | null>(null);
   const [shopLoading, setShopLoading] = useState(false);
   const [shopEditingId, setShopEditingId] = useState<string | null>(null);
+  const [shopFormId, setShopFormId] = useState("");
   const [shopFormTitle, setShopFormTitle] = useState("");
   const [shopFormDescription, setShopFormDescription] = useState("");
   const [shopFormImageUrl, setShopFormImageUrl] = useState("");
@@ -439,10 +454,20 @@ export function App() {
   const [shopFormBadgeText, setShopFormBadgeText] = useState("");
   const [shopFormButtonLabel, setShopFormButtonLabel] = useState("");
   const [shopFormSortOrder, setShopFormSortOrder] = useState(0);
-  const [shopFormPlatform, setShopFormPlatform] = useState<ShopPlatform>("both");
   const [shopFormStockUnlimited, setShopFormStockUnlimited] = useState(true);
   const [shopFormStockTotal, setShopFormStockTotal] = useState(100);
   const [shopFormActive, setShopFormActive] = useState(true);
+  const [shopFormKind, setShopFormKind] = useState<"extra_spin" | "manual_fulfillment">(
+    "extra_spin"
+  );
+  const [adminShopPurchases, setAdminShopPurchases] = useState<AdminShopPurchaseRow[] | null>(
+    null
+  );
+  const [shopPurchasesLoading, setShopPurchasesLoading] = useState(false);
+  const [shopPurchaseFilterItemId, setShopPurchaseFilterItemId] = useState("");
+  const [shopGlobalNotice, setShopGlobalNotice] = useState("");
+  const [shopGlobalWarning, setShopGlobalWarning] = useState("");
+  const [shopGlobalCopyLoading, setShopGlobalCopyLoading] = useState(false);
   const autoRefreshRunningRef = useRef(false);
   const lastStatsAutoRefreshAtRef = useRef(0);
   const usersPrevSearchRef = useRef<string | undefined>(undefined);
@@ -470,6 +495,7 @@ export function App() {
 
   const resetShopForm = useCallback(() => {
     setShopEditingId(null);
+    setShopFormId("");
     setShopFormTitle("");
     setShopFormDescription("");
     setShopFormImageUrl("");
@@ -479,10 +505,10 @@ export function App() {
     setShopFormBadgeText("");
     setShopFormButtonLabel("");
     setShopFormSortOrder(0);
-    setShopFormPlatform("both");
     setShopFormStockUnlimited(true);
     setShopFormStockTotal(100);
     setShopFormActive(true);
+    setShopFormKind("extra_spin");
   }, []);
 
   const applyShopImageFromFile = useCallback((file: File | null) => {
@@ -507,6 +533,31 @@ export function App() {
       setErr(null);
     };
     reader.onerror = () => setErr("Не удалось загрузить файл.");
+    reader.readAsDataURL(file);
+  }, []);
+
+  const applyTaskCoverFromFile = useCallback((file: File | null) => {
+    if (!file) return;
+    const maxBytes = 3 * 1024 * 1024;
+    if (!/^image\//i.test(file.type)) {
+      setErr("Обложка: выберите файл изображения (png/jpg/webp/gif).");
+      return;
+    }
+    if (file.size > maxBytes) {
+      setErr("Обложка: слишком большой файл. Максимум 3 МБ.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      if (!result.startsWith("data:image/")) {
+        setErr("Обложка: не удалось прочитать изображение.");
+        return;
+      }
+      setTaskFormCoverImageUrl(result);
+      setErr(null);
+    };
+    reader.onerror = () => setErr("Обложка: не удалось загрузить файл.");
     reader.readAsDataURL(file);
   }, []);
 
@@ -766,6 +817,58 @@ export function App() {
     }
   }, [token, authHeaders]);
 
+  const loadAdminShopPurchases = useCallback(
+    async (opts?: AdminFetchOpts) => {
+      if (!token) return;
+      const silent = opts?.silent === true;
+      if (!silent) setShopPurchasesLoading(true);
+      try {
+        const q = shopPurchaseFilterItemId.trim();
+        const url = `${apiBase()}/api/admin/shop/purchases?limit=300${
+          q ? `&itemId=${encodeURIComponent(q)}` : ""
+        }`;
+        const r = await fetch(url, { headers: authHeaders() });
+        const j = (await r.json()) as {
+          purchases?: AdminShopPurchaseRow[];
+          error?: { message?: string };
+        };
+        if (!r.ok) {
+          setErr(j.error?.message ?? `Ошибка ${r.status}`);
+          if (r.status === 401) setToken(null);
+          return;
+        }
+        setAdminShopPurchases(j.purchases ?? []);
+      } finally {
+        if (!silent) setShopPurchasesLoading(false);
+      }
+    },
+    [token, authHeaders, shopPurchaseFilterItemId]
+  );
+
+  const loadShopGlobalCopy = useCallback(async () => {
+    if (!token) return;
+    setShopGlobalCopyLoading(true);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/shop/global-copy`, {
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as {
+        notice?: string;
+        warning?: string;
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setShopGlobalNotice(typeof j.notice === "string" ? j.notice : "");
+      setShopGlobalWarning(typeof j.warning === "string" ? j.warning : "");
+    } finally {
+      setShopGlobalCopyLoading(false);
+    }
+  }, [token, authHeaders]);
+
   const loadTaskEvidence = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
     const silent = opts?.silent === true;
@@ -889,8 +992,11 @@ export function App() {
   }, [token, tab, loadAdminTasks, loadTaskEvidence]);
 
   useEffect(() => {
-    if (token && tab === "shop") void loadAdminShop();
-  }, [token, tab, loadAdminShop]);
+    if (!token || tab !== "shop") return;
+    void loadAdminShop();
+    void loadShopGlobalCopy();
+    void loadAdminShopPurchases();
+  }, [token, tab, loadAdminShop, loadShopGlobalCopy, loadAdminShopPurchases]);
 
   useEffect(() => {
     if (token && tab === "predictions") {
@@ -969,7 +1075,7 @@ export function App() {
           return;
         }
         if (tab === "shop") {
-          await loadAdminShop(s);
+          await Promise.all([loadAdminShop(s), loadAdminShopPurchases(s)]);
           return;
         }
         if (tab === "appeals") {
@@ -1007,6 +1113,7 @@ export function App() {
     loadAdminTasks,
     loadTaskEvidence,
     loadAdminShop,
+    loadAdminShopPurchases,
     loadBanAppeals,
     loadPredictionPlatforms,
     loadPredictions,
@@ -2039,11 +2146,159 @@ export function App() {
         <>
           <h2 className="admin-mt-0">Магазин</h2>
           <p className="muted">
-            Полное управление витриной магазина: картинка (URL или загрузка файла), тексты карточки,
-            порядок, цена и лимиты. Можно быстро скрывать/показывать товар, редактировать или удалять.
-            Поддерживается тип <code>extra_spin</code>; дополнительные поля отображения хранятся в{" "}
-            <code>meta</code>.
+            Витрина, покупки и тексты в попапе (серый абзац и красное предупреждение). Тип{" "}
+            <code>manual_fulfillment</code> — только списание монет и запись покупки (выдача вручную в
+            Telegram). <code>extra_spin</code> — начисляет спины в инвентарь.
           </p>
+
+          <div className="card stack admin-mt-3">
+            <h3 className="admin-mt-0">Тексты в попапе покупки</h3>
+            <p className="muted admin-m-0">
+              Упоминания вида <code>@Username</code> в приложении станут ссылками на Telegram.
+            </p>
+            {shopGlobalCopyLoading ? (
+              <p className="muted">Загружаем…</p>
+            ) : (
+              <>
+                <div>
+                  <label htmlFor="shopglobnotice">Текст под товаром (серый)</label>
+                  <textarea
+                    id="shopglobnotice"
+                    value={shopGlobalNotice}
+                    onChange={(e) => setShopGlobalNotice(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="shopglobwarn">Предупреждение (красный блок)</label>
+                  <textarea
+                    id="shopglobwarn"
+                    value={shopGlobalWarning}
+                    onChange={(e) => setShopGlobalWarning(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={loading || !shopGlobalNotice.trim() || !shopGlobalWarning.trim()}
+                  onClick={async () => {
+                    if (!token) return;
+                    setLoading(true);
+                    setErr(null);
+                    try {
+                      const r = await fetch(`${apiBase()}/api/admin/shop/global-copy`, {
+                        method: "PUT",
+                        headers: authHeaders(true),
+                        body: JSON.stringify({
+                          notice: shopGlobalNotice.trim(),
+                          warning: shopGlobalWarning.trim(),
+                        }),
+                      });
+                      const j = (await r.json()) as { error?: { message?: string } };
+                      if (!r.ok) {
+                        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                        return;
+                      }
+                      await loadShopGlobalCopy();
+                    } catch {
+                      setErr("Сеть недоступна");
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  Сохранить тексты попапа
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="card stack admin-mt-3">
+            <h3 className="admin-mt-0">Покупки</h3>
+            <div className="row">
+              <div>
+                <label htmlFor="shoppurchfilter">Товар</label>
+                <select
+                  id="shoppurchfilter"
+                  value={shopPurchaseFilterItemId}
+                  onChange={(e) => setShopPurchaseFilterItemId(e.target.value)}
+                >
+                  <option value="">Все</option>
+                  {(adminShopItems ?? []).map((it) => (
+                    <option key={it.id} value={it.id}>
+                      {it.title} ({it.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {shopPurchasesLoading ? (
+              <p className="muted">Загружаем покупки…</p>
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Дата (UTC)</th>
+                      <th>Товар</th>
+                      <th>Пользователь</th>
+                      <th>Цена</th>
+                      <th>Счёт</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(adminShopPurchases ?? []).map((p) => (
+                      <tr key={p.id}>
+                        <td className="mono" style={{ fontSize: 12 }}>
+                          {p.createdAt.slice(0, 19).replace("T", " ")}
+                        </td>
+                        <td>
+                          <strong>{p.itemTitle}</strong>
+                          <div className="muted mono" style={{ fontSize: 11 }}>
+                            {p.shopItemId}
+                          </div>
+                        </td>
+                        <td>
+                          {[p.firstName, p.lastName].filter(Boolean).join(" ") || "—"}
+                          {p.username ? (
+                            <div className="mono" style={{ fontSize: 12 }}>
+                              @{p.username.replace(/^@+/, "")}
+                            </div>
+                          ) : p.telegramId ? (
+                            <div className="mono muted" style={{ fontSize: 12 }}>
+                              id {p.telegramId}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td>{p.priceCoins.toLocaleString("ru-RU")}</td>
+                        <td>{p.platform}</td>
+                        <td>
+                          {p.telegramChatLink ? (
+                            <a
+                              href={p.telegramChatLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="admin-link"
+                            >
+                              Написать
+                            </a>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {(adminShopPurchases ?? []).length === 0 && !shopPurchasesLoading ? (
+              <p className="muted">Покупок пока нет.</p>
+            ) : null}
+          </div>
+
           <form
             className="card stack"
             onSubmit={async (e) => {
@@ -2057,27 +2312,31 @@ export function App() {
               setLoading(true);
               setErr(null);
               try {
+                const shopBodyBase = {
+                  title: shopFormTitle,
+                  description: shopFormDescription.trim() || null,
+                  imageUrl: shopFormImageUrl.trim() || null,
+                  kind: shopFormKind,
+                  priceCoins: shopFormPrice,
+                  subtitle: shopFormSubtitle.trim() || null,
+                  badgeText: shopFormBadgeText.trim() || null,
+                  buttonLabel: shopFormButtonLabel.trim() || null,
+                  sortOrder: shopFormSortOrder,
+                  active: shopFormActive,
+                  stockTotal,
+                };
+                const shopBody =
+                  shopFormKind === "extra_spin"
+                    ? { ...shopBodyBase, spins: shopFormSpins }
+                    : shopBodyBase;
+
                 if (shopEditingId) {
                   const r = await fetch(
                     `${apiBase()}/api/admin/shop/items/${encodeURIComponent(shopEditingId)}`,
                     {
                       method: "PUT",
                       headers: authHeaders(true),
-                      body: JSON.stringify({
-                        title: shopFormTitle,
-                        description: shopFormDescription.trim() || null,
-                        imageUrl: shopFormImageUrl.trim() || null,
-                        kind: "extra_spin",
-                        priceCoins: shopFormPrice,
-                        platform: shopFormPlatform,
-                        spins: shopFormSpins,
-                        subtitle: shopFormSubtitle.trim() || null,
-                        badgeText: shopFormBadgeText.trim() || null,
-                        buttonLabel: shopFormButtonLabel.trim() || null,
-                        sortOrder: shopFormSortOrder,
-                        active: shopFormActive,
-                        stockTotal,
-                      }),
+                      body: JSON.stringify(shopBody),
                     }
                   );
                   const j = (await r.json()) as { error?: { message?: string } };
@@ -2090,19 +2349,8 @@ export function App() {
                     method: "POST",
                     headers: authHeaders(true),
                     body: JSON.stringify({
-                      title: shopFormTitle,
-                      description: shopFormDescription.trim() || null,
-                      imageUrl: shopFormImageUrl.trim() || null,
-                      kind: "extra_spin",
-                      priceCoins: shopFormPrice,
-                      platform: shopFormPlatform,
-                      spins: shopFormSpins,
-                      subtitle: shopFormSubtitle.trim() || null,
-                      badgeText: shopFormBadgeText.trim() || null,
-                      buttonLabel: shopFormButtonLabel.trim() || null,
-                      sortOrder: shopFormSortOrder,
-                      active: shopFormActive,
-                      stockTotal,
+                      id: shopFormId.trim(),
+                      ...shopBody,
                     }),
                   });
                   const j = (await r.json()) as { error?: { message?: string } };
@@ -2113,6 +2361,7 @@ export function App() {
                 }
                 resetShopForm();
                 await loadAdminShop();
+                await loadAdminShopPurchases();
               } catch {
                 setErr("Сеть недоступна");
               } finally {
@@ -2120,11 +2369,17 @@ export function App() {
               }
             }}
           >
-            {!shopEditingId ? (
-              <p className="muted admin-m-0">
-                ID товара создается автоматически после добавления.
-              </p>
-            ) : null}
+            <div>
+              <label htmlFor="shopid">ID товара (латиница, без пробелов)</label>
+              <input
+                id="shopid"
+                value={shopFormId}
+                onChange={(e) => setShopFormId(e.target.value)}
+                disabled={shopEditingId != null}
+                required={shopEditingId == null}
+                placeholder="extra_spin_pack_2"
+              />
+            </div>
             <div>
               <label htmlFor="shoptitle">Название</label>
               <input
@@ -2135,13 +2390,13 @@ export function App() {
               />
             </div>
             <div>
-              <label htmlFor="shopdesc">Полное описание (как в заданиях)</label>
+              <label htmlFor="shopdesc">Описание</label>
               <textarea
                 id="shopdesc"
                 value={shopFormDescription}
                 onChange={(e) => setShopFormDescription(e.target.value)}
-                rows={6}
-                placeholder="Полный текст товара для модального окна. Можно использовать переносы строк."
+                rows={3}
+                placeholder="Текст на карточке в приложении"
               />
             </div>
             <div>
@@ -2170,6 +2425,21 @@ export function App() {
                 </div>
               ) : null}
             </div>
+            <div>
+              <label htmlFor="shopkind">Тип товара</label>
+              <select
+                id="shopkind"
+                value={shopFormKind}
+                onChange={(e) =>
+                  setShopFormKind(e.target.value as "extra_spin" | "manual_fulfillment")
+                }
+              >
+                <option value="extra_spin">Доп. спины (extra_spin)</option>
+                <option value="manual_fulfillment">
+                  Ручная выдача / подарок (manual_fulfillment)
+                </option>
+              </select>
+            </div>
             <div className="row">
               <div>
                 <label htmlFor="shopprice">Цена (монет)</label>
@@ -2182,30 +2452,20 @@ export function App() {
                   required
                 />
               </div>
-              <div>
-                <label htmlFor="shopspins">Спинов в пакете</label>
-                <input
-                  id="shopspins"
-                  type="number"
-                  min={1}
-                  max={99}
-                  value={shopFormSpins}
-                  onChange={(e) => setShopFormSpins(Number(e.target.value))}
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="shopplatform">Платформа товара</label>
-                <select
-                  id="shopplatform"
-                  value={shopFormPlatform}
-                  onChange={(e) => setShopFormPlatform(e.target.value as ShopPlatform)}
-                >
-                  <option value="both">Обе платформы</option>
-                  <option value="twitch">Только Twitch</option>
-                  <option value="kick">Только Kick</option>
-                </select>
-              </div>
+              {shopFormKind === "extra_spin" ? (
+                <div>
+                  <label htmlFor="shopspins">Спинов в пакете</label>
+                  <input
+                    id="shopspins"
+                    type="number"
+                    min={1}
+                    max={99}
+                    value={shopFormSpins}
+                    onChange={(e) => setShopFormSpins(Number(e.target.value))}
+                    required
+                  />
+                </div>
+              ) : null}
             </div>
             <div className="row">
               <div>
@@ -2309,8 +2569,8 @@ export function App() {
                     <tr>
                       <th>Изобр.</th>
                       <th>ID</th>
+                      <th>Тип</th>
                       <th>Название</th>
-                      <th>Платформа</th>
                       <th>Цена</th>
                       <th>Порядок</th>
                       <th>Продано / лимит</th>
@@ -2333,6 +2593,9 @@ export function App() {
                           )}
                         </td>
                         <td className="mono">{row.id}</td>
+                        <td className="mono" style={{ fontSize: 12 }}>
+                          {row.kind}
+                        </td>
                         <td>
                           <strong>{row.title}</strong>
                           {row.description ? (
@@ -2347,14 +2610,6 @@ export function App() {
                               {(row.meta as { subtitle?: string | null }).subtitle}
                             </p>
                           ) : null}
-                        </td>
-                        <td>
-                          {(() => {
-                            const p = (row.meta as { platform?: unknown } | null)?.platform;
-                            if (p === "twitch") return "Twitch";
-                            if (p === "kick") return "Kick";
-                            return "Обе";
-                          })()}
                         </td>
                         <td>{row.priceCoins.toLocaleString("ru-RU")}</td>
                         <td>
@@ -2377,7 +2632,6 @@ export function App() {
                               const meta =
                                 (row.meta && typeof row.meta === "object"
                                   ? (row.meta as {
-                                      platform?: ShopPlatform;
                                       spins?: number;
                                       subtitle?: string | null;
                                       badgeText?: string | null;
@@ -2386,11 +2640,11 @@ export function App() {
                                     })
                                   : null) ?? null;
                               setShopEditingId(row.id);
+                              setShopFormId(row.id);
                               setShopFormTitle(row.title);
                               setShopFormDescription(row.description ?? "");
                               setShopFormImageUrl(row.imageUrl ?? "");
                               setShopFormPrice(row.priceCoins);
-                              setShopFormPlatform(meta?.platform ?? "both");
                               const sp = meta?.spins ?? 1;
                               setShopFormSpins(sp);
                               setShopFormSubtitle(meta?.subtitle ?? "");
@@ -2400,41 +2654,14 @@ export function App() {
                               setShopFormStockUnlimited(row.stockTotal == null);
                               setShopFormStockTotal(row.stockTotal ?? 100);
                               setShopFormActive(row.active);
+                              setShopFormKind(
+                                row.kind === "manual_fulfillment"
+                                  ? "manual_fulfillment"
+                                  : "extra_spin"
+                              );
                             }}
                           >
                             Править
-                          </button>{" "}
-                          <button
-                            type="button"
-                            className="secondary"
-                            disabled={loading}
-                            onClick={async () => {
-                              if (!token) return;
-                              setLoading(true);
-                              setErr(null);
-                              try {
-                                const r = await fetch(
-                                  `${apiBase()}/api/admin/shop/items/${encodeURIComponent(row.id)}`,
-                                  {
-                                    method: "PUT",
-                                    headers: authHeaders(true),
-                                    body: JSON.stringify({ active: !row.active }),
-                                  }
-                                );
-                                const j = (await r.json()) as { error?: { message?: string } };
-                                if (!r.ok) {
-                                  setErr(j.error?.message ?? `Ошибка ${r.status}`);
-                                  return;
-                                }
-                                await loadAdminShop();
-                              } catch {
-                                setErr("Сеть недоступна");
-                              } finally {
-                                setLoading(false);
-                              }
-                            }}
-                          >
-                            {row.active ? "Скрыть" : "Показать"}
                           </button>{" "}
                           <button
                             type="button"
@@ -2459,6 +2686,7 @@ export function App() {
                                   resetShopForm();
                                 }
                                 await loadAdminShop();
+                                await loadAdminShopPurchases();
                               } catch {
                                 setErr("Сеть недоступна");
                               } finally {
@@ -2531,6 +2759,9 @@ export function App() {
                   ...(taskFormHelpIcon ? { icon: taskFormHelpIcon } : {}),
                 };
               } else delete meta.help;
+              if (taskFormCoverImageUrl.trim())
+                meta.coverImageUrl = taskFormCoverImageUrl.trim();
+              else delete meta.coverImageUrl;
 
               setLoading(true);
               setErr(null);
@@ -2597,6 +2828,7 @@ export function App() {
                 setTaskFormProgressSource("");
                 setTaskFormTargetValue(0);
                 setTaskFormProgressLabel("");
+                setTaskFormCoverImageUrl("");
                 await loadAdminTasks();
               } catch {
                 setErr("Сеть недоступна");
@@ -2852,6 +3084,32 @@ export function App() {
               </div>
             </div>
             <div>
+              <label htmlFor="tcover">Фон карточки (URL или data:image/*)</label>
+              <textarea
+                id="tcover"
+                value={taskFormCoverImageUrl}
+                onChange={(e) => setTaskFormCoverImageUrl(e.target.value)}
+                rows={2}
+                placeholder="https://... — в приложении размытый фон карточки и модалки"
+              />
+              <div className="row admin-mt-3">
+                <div>
+                  <label htmlFor="tcoverfile">Загрузить файл обложки</label>
+                  <input
+                    id="tcoverfile"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => applyTaskCoverFromFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+              </div>
+              {taskFormCoverImageUrl.trim() ? (
+                <div className="admin-shop-preview admin-shop-preview--img admin-mt-3">
+                  <img src={taskFormCoverImageUrl.trim()} alt="Предпросмотр обложки задания" />
+                </div>
+              ) : null}
+            </div>
+            <div>
               <label htmlFor="tmeta">meta (JSON, Helix/Kick + любые поля)</label>
               <textarea
                 id="tmeta"
@@ -2891,6 +3149,7 @@ export function App() {
                     setTaskFormProgressSource("");
                     setTaskFormTargetValue(0);
                     setTaskFormProgressLabel("");
+                    setTaskFormCoverImageUrl("");
                   }}
                 >
                   Новое (сброс)
@@ -2977,6 +3236,9 @@ export function App() {
                           setTaskFormProgressSource(typeof m.progressSource === "string" ? m.progressSource : "");
                           setTaskFormTargetValue(typeof m.targetValue === "number" ? m.targetValue : 0);
                           setTaskFormProgressLabel(typeof m.progressLabel === "string" ? m.progressLabel : "");
+                          setTaskFormCoverImageUrl(
+                            typeof m.coverImageUrl === "string" ? m.coverImageUrl : ""
+                          );
                         }}
                       >
                         Править

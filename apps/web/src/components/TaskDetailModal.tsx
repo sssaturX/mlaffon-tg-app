@@ -217,7 +217,17 @@ export function TaskDetailModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="task-detail-sheet" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`task-detail-sheet${task.coverImageUrl ? " task-detail-sheet--has-cover" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {task.coverImageUrl ? (
+          <div
+            className="task-detail-sheet__cover"
+            style={{ backgroundImage: `url(${JSON.stringify(task.coverImageUrl)})` }}
+            aria-hidden
+          />
+        ) : null}
         <div className="task-detail-sheet__handle" aria-hidden />
         <div className="task-detail-modal task-detail-modal--sheet">
           <div className="task-detail-modal__head">

@@ -38,6 +38,19 @@ export function extractTaskUiFields(meta: Record<string, unknown> | null): {
   return { actionUrl, actionLabel, verifyLabel, help };
 }
 
+export function extractCoverImageUrl(
+  meta: Record<string, unknown> | null
+): string | null {
+  if (!meta) return null;
+  const u = meta.coverImageUrl;
+  if (typeof u !== "string") return null;
+  const t = u.trim();
+  if (!t) return null;
+  if (/^https?:\/\//i.test(t)) return t;
+  if (/^data:image\//i.test(t)) return t;
+  return null;
+}
+
 export function extractEvidenceExamples(
   meta: Record<string, unknown> | null
 ): TaskEvidenceExample[] | undefined {

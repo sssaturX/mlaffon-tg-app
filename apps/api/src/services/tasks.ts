@@ -20,7 +20,11 @@ import { reverseTaskRewardCredit } from "./taskRewardCompensation.js";
 import { getTaskVerifyQueue } from "../queue/bullmq.js";
 import { processVerifyTaskJob } from "../workers/verifyTaskProcessor.js";
 import type { TaskDto, UserTaskStatus } from "shared";
-import { extractEvidenceExamples, extractTaskUiFields } from "./taskUiMeta.js";
+import {
+  extractCoverImageUrl,
+  extractEvidenceExamples,
+  extractTaskUiFields,
+} from "./taskUiMeta.js";
 import { verifyPlatformTask } from "./taskVerifyLogic.js";
 import { getActiveTasksCached } from "./taskCatalogCache.js";
 import {
@@ -87,6 +91,7 @@ const META_KEYS_HOISTED_TO_ROOT = new Set([
   "progressSource",
   "targetValue",
   "progressLabel",
+  "coverImageUrl",
 ]);
 
 function slimMetaForTaskList(meta: Record<string, unknown>): Record<string, unknown> | null {
@@ -513,6 +518,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     const hardStageCurrentMeta = asNumber(meta.hardStageCurrent);
     const chainOrder = asNumber(meta.chainOrder);
     const ui = extractTaskUiFields(meta);
+    const coverImageUrl = extractCoverImageUrl(meta);
     const uiSection = asString(meta.uiSection);
     const uiOrder = asNumber(meta.uiOrder);
     const requiresEvidence = meta.requiresEvidence === true;
@@ -547,6 +553,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       actionLabel: ui.actionLabel,
       verifyLabel: ui.verifyLabel,
       help: ui.help,
+      ...(coverImageUrl ? { coverImageUrl } : {}),
       progressCurrent: progress?.current,
       progressTarget: progress?.target,
       progressLabel: progress?.label ?? null,

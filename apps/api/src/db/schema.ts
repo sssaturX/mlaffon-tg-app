@@ -674,6 +674,30 @@ export const userInventory = pgTable(
   (t) => [uniqueIndex("user_inventory_unique").on(t.userId, t.itemId)]
 );
 
+/** Факт покупки в магазине (для выдачи призов / учёта). */
+export const shopPurchases = pgTable(
+  "shop_purchases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    shopItemId: text("shop_item_id")
+      .notNull()
+      .references(() => shopItems.id, { onDelete: "restrict" }),
+    priceCoins: integer("price_coins").notNull(),
+    platform: text("platform").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("shop_purchases_user_idx").on(t.userId),
+    index("shop_purchases_item_idx").on(t.shopItemId),
+    index("shop_purchases_created_idx").on(t.createdAt),
+  ]
+);
+
 export const fortuneSpins = pgTable(
   "fortune_spins",
   {

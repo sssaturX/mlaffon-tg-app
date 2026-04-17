@@ -1,5 +1,5 @@
 import { CheckCircle2, ExternalLink, Home, MessageCircle, XCircle } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { getBotUsername } from "../botUsername";
 import { formatOAuthRedirectError } from "../utils/userFacingMessages";
@@ -8,10 +8,9 @@ import { formatOAuthRedirectError } from "../utils/userFacingMessages";
  * Показ во внешнем браузере после OAuth: токена нет.
  *
  * TMA-flow:  WebApp.openLink → OAuth → callback → эта страница.
- *   НЕ делаем автоматический window.location.replace —
- *   на мобильных браузерах после цепочки OAuth-редиректов это нестабильно
- *   и часто блокируется (пользователь «застревает»).
- *   Вместо этого — чёткая страница «Авторизация успешна» + кнопка «Открыть бота».
+ *   При `rc=tma` сразу редиректим в мини-приложение (`startapp=oauth_ok`), как просят пользователи.
+ *   Если редирект заблокирован браузером — остаётся запасная ссылка на той же странице.
+ *   При других `rc` (или без `rc=tma`) — страница «успех» + ручная кнопка (как раньше).
  *
  * Web-flow:  обычный браузер → OAuth → callback → эта страница (rc=web).
  *   Показываем «вернитесь на вкладку с сайтом» + кнопку.
@@ -25,7 +24,9 @@ export default function OAuthBrowserDone() {
   const name = p === "kick" ? "Kick" : "Twitch";
   const connected = searchParams.get("connected") === "1";
   const errRaw = searchParams.get("error");
-  const returnWeb = searchParams.get("rc") === "web";
+  const rc = searchParams.get("rc");
+  const returnWeb = rc === "web";
+  const returnTma = rc === "tma";
 
   const bot = getBotUsername();
   const botDeepLink = useMemo(
@@ -48,7 +49,42 @@ export default function OAuthBrowserDone() {
     }
   }, [errRaw]);
 
-  /* ── TMA success ── */
+  useEffect(() => {
+    if (!connected || returnWeb || !returnTma) return;
+    window.location.replace(miniAppLink);
+  }, [connected, returnWeb, returnTma, miniAppLink]);
+
+  /* ── TMA success (OAuth из мини-приложения, rc=tma) — автоматический возврат в TMA ── */
+  if (connected && returnTma && !returnWeb) {
+    return (
+      <div className="app-shell oauth-browser-done">
+        <main className="app-main oauth-browser-done__main">
+          <div className="oauth-browser-done__card card">
+            <div className="oauth-browser-done__icon-wrap">
+              <CheckCircle2 size={48} strokeWidth={1.75} className="oauth-browser-done__ok" />
+            </div>
+            <h1 className="oauth-browser-done__title">{name} подключён</h1>
+            <p className="oauth-browser-done__lead">
+              Открываем мини-приложение в Telegram…
+            </p>
+            <a href={miniAppLink} className="primary oauth-browser-done__cta">
+              <MessageCircle size={20} aria-hidden />
+              Открыть мини-приложение
+            </a>
+            <a href={botDeepLink} className="oauth-browser-done__link">
+              <ExternalLink size={16} aria-hidden />
+              Открыть бота (@{bot})
+            </a>
+            <p className="muted oauth-browser-done__hint">
+              Если переход не начался, нажмите кнопку выше.
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  /* ── TMA success (без rc=tma) — вручную ── */
   if (connected && !returnWeb) {
     return (
       <div className="app-shell oauth-browser-done">

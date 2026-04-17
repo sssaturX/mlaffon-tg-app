@@ -1,8 +1,6 @@
 import { api } from "../api";
-import type { ActivePlatform } from "../context/PlatformContext";
 
 export type ShopItemMeta = {
-  platform?: ActivePlatform | "both";
   spins?: number;
   subtitle?: string | null;
   badgeText?: string | null;
@@ -21,17 +19,22 @@ export type ShopItem = {
   stockRemaining: number | null;
 };
 
+export type ShopGlobalCopy = {
+  notice: string;
+  warning: string;
+};
+
+export type ShopPagePayload = {
+  items: ShopItem[];
+  globalCopy: ShopGlobalCopy;
+};
+
 export const SHOP_STALE_TIME_MS = 1000 * 60 * 2;
 
 function normalizeMeta(raw: unknown): ShopItemMeta | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const row = raw as Record<string, unknown>;
-  const platform = row.platform;
   return {
-    platform:
-      platform === "twitch" || platform === "kick" || platform === "both"
-        ? platform
-        : "both",
     spins: typeof row.spins === "number" ? row.spins : undefined,
     subtitle: typeof row.subtitle === "string" ? row.subtitle : null,
     badgeText: typeof row.badgeText === "string" ? row.badgeText : null,
@@ -40,16 +43,31 @@ function normalizeMeta(raw: unknown): ShopItemMeta | null {
   };
 }
 
-export async function fetchShopItems(
-  platform: ActivePlatform
-): Promise<ShopItem[]> {
-  const q = new URLSearchParams({ platform });
-  const r = await api<{ items: ShopItem[] }>(`/api/v1/shop/items?${q.toString()}`, {
+function normalizeGlobalCopy(raw: unknown): ShopGlobalCopy {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {
+      notice: "",
+      warning: "",
+    };
+  }
+  const o = raw as Record<string, unknown>;
+  return {
+    notice: typeof o.notice === "string" ? o.notice : "",
+    warning: typeof o.warning === "string" ? o.warning : "",
+  };
+}
+
+export async function fetchShopPage(): Promise<ShopPagePayload> {
+  const r = await api<ShopPagePayload>("/api/v1/shop/items", {
     httpCache: "default",
   });
   if (!r.ok) throw new Error("shop_load");
-  return (r.data.items ?? []).map((item) => ({
+  const items = (r.data.items ?? []).map((item) => ({
     ...item,
     meta: normalizeMeta(item.meta),
   }));
+  return {
+    items,
+    globalCopy: normalizeGlobalCopy(r.data.globalCopy),
+  };
 }

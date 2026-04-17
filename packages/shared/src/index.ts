@@ -55,6 +55,8 @@ export interface TaskDto {
   uiSection?: string | null;
   /** Порядок внутри группы (из meta.uiOrder). */
   uiOrder?: number;
+  /** Фон карточки и модалки задания (из meta.coverImageUrl), URL или data:image. */
+  coverImageUrl?: string | null;
   /** Нужны скрины + модерация перед получением награды. */
   requiresEvidence?: boolean;
   evidenceExamples?: TaskEvidenceExample[];

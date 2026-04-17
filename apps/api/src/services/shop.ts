@@ -1,7 +1,8 @@
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { shopItems, userInventory } from "../db/schema.js";
+import { shopItems, shopPurchases, userInventory } from "../db/schema.js";
 import { applyCredit, applyDebit, type EconomyPlatform } from "./economy.js";
+import { getShopGlobalCopyForClient } from "./shopSettings.js";
 import { nanoid } from "nanoid";
 
 export type ShopItemClientDto = {
@@ -16,35 +17,19 @@ export type ShopItemClientDto = {
   stockRemaining: number | null;
 };
 
-export type ShopItemPlatform = EconomyPlatform | "both";
-
-function resolveShopItemPlatform(meta: unknown): ShopItemPlatform {
-  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return "both";
-  const raw = (meta as { platform?: unknown }).platform;
-  return raw === "twitch" || raw === "kick" || raw === "both" ? raw : "both";
-}
-
-export async function listShopItemsForClient(
-  platform?: EconomyPlatform
-): Promise<ShopItemClientDto[]> {
+export async function listShopItemsForClient(): Promise<ShopItemClientDto[]> {
   const rows = await db.select().from(shopItems).where(eq(shopItems.active, true));
-  const mapped = rows
-    .map((r) => ({
-      id: r.id,
-      title: r.title,
-      description: r.description ?? null,
-      imageUrl: r.imageUrl ?? null,
-      kind: r.kind,
-      priceCoins: r.priceCoins,
-      meta: r.meta ?? null,
-      stockRemaining:
-        r.stockTotal == null ? null : Math.max(0, r.stockTotal - r.stockSold),
-    }))
-    .filter((item) => {
-      if (!platform) return true;
-      const itemPlatform = resolveShopItemPlatform(item.meta);
-      return itemPlatform === "both" || itemPlatform === platform;
-    });
+  const mapped = rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    description: r.description ?? null,
+    imageUrl: r.imageUrl ?? null,
+    kind: r.kind,
+    priceCoins: r.priceCoins,
+    meta: r.meta ?? null,
+    stockRemaining:
+      r.stockTotal == null ? null : Math.max(0, r.stockTotal - r.stockSold),
+  }));
   return mapped.sort((a, b) => {
     const aOrder =
       typeof (a.meta as { sortOrder?: unknown } | null)?.sortOrder === "number"
@@ -59,6 +44,17 @@ export async function listShopItemsForClient(
   });
 }
 
+export async function getShopClientBundle(): Promise<{
+  items: ShopItemClientDto[];
+  globalCopy: Awaited<ReturnType<typeof getShopGlobalCopyForClient>>;
+}> {
+  const [items, globalCopy] = await Promise.all([
+    listShopItemsForClient(),
+    getShopGlobalCopyForClient(),
+  ]);
+  return { items, globalCopy };
+}
+
 export async function purchaseItem(
   userId: string,
   itemId: string,
@@ -70,11 +66,8 @@ export async function purchaseItem(
     .where(eq(shopItems.id, itemId))
     .limit(1);
   if (!item || !item.active) return { ok: false, error: "item_not_found" };
-  if (item.kind !== "extra_spin")
+  if (item.kind !== "extra_spin" && item.kind !== "manual_fulfillment") {
     return { ok: false, error: "item_not_found" };
-  const itemPlatform = resolveShopItemPlatform(item.meta);
-  if (itemPlatform !== "both" && itemPlatform !== platform) {
-    return { ok: false, error: "platform_mismatch" };
   }
 
   if (item.stockTotal != null && item.stockSold >= item.stockTotal) {
@@ -121,21 +114,30 @@ export async function purchaseItem(
     return { ok: false, error: "out_of_stock" };
   }
 
-  const qty = (item.meta as { spins?: number } | null)?.spins ?? 1;
-  await db
-    .insert(userInventory)
-    .values({
-      userId,
-      itemId: "extra_spin",
-      quantity: qty,
-    })
-    .onConflictDoUpdate({
-      target: [userInventory.userId, userInventory.itemId],
-      set: {
-        quantity: sql`${userInventory.quantity} + ${qty}`,
-        updatedAt: sql`now()`,
-      },
-    });
+  if (item.kind === "extra_spin") {
+    const qty = (item.meta as { spins?: number } | null)?.spins ?? 1;
+    await db
+      .insert(userInventory)
+      .values({
+        userId,
+        itemId: item.id,
+        quantity: qty,
+      })
+      .onConflictDoUpdate({
+        target: [userInventory.userId, userInventory.itemId],
+        set: {
+          quantity: sql`${userInventory.quantity} + ${qty}`,
+          updatedAt: sql`now()`,
+        },
+      });
+  }
+
+  await db.insert(shopPurchases).values({
+    userId,
+    shopItemId: item.id,
+    priceCoins: item.priceCoins,
+    platform,
+  });
 
   return { ok: true };
 }

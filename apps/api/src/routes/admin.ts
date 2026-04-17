@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { db } from "../db/index.js";
 import {
   giveaways,
@@ -45,6 +44,11 @@ import {
   listShopItemsAdmin,
   updateShopItemAdmin,
 } from "../services/adminShop.js";
+import { listShopPurchasesAdmin } from "../services/shopPurchases.js";
+import {
+  getShopGlobalCopyForClient,
+  setShopGlobalCopyAdmin,
+} from "../services/shopSettings.js";
 import { invalidateUserTaskDtoCache } from "../services/taskUserListCache.js";
 import { signAdminToken, verifyAdminToken } from "../lib/adminJwt.js";
 import {
@@ -93,23 +97,6 @@ function requireAdmin(req: FastifyRequest, reply: FastifyReply): string | null {
     reply.status(401).send({ error: { code: "unauthorized", message: "Invalid token" } });
     return null;
   }
-}
-
-const SHOP_ID_REGEX = /^[a-z0-9_-]+$/i;
-
-function slugifyShopTitle(input: string): string {
-  const latin = input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return latin.slice(0, 48);
-}
-
-function generateShopItemId(title: string): string {
-  const base = slugifyShopTitle(title) || "shop_item";
-  return `${base}_${nanoid(8)}`;
 }
 
 export async function registerAdminRoutes(app: FastifyInstance) {
@@ -961,14 +948,15 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       "Разрешены только http(s) URL или data:image/* base64"
     );
 
+  const shopKindZ = z.enum(["extra_spin", "manual_fulfillment"]);
+
   const shopCreateBody = z.object({
-    id: z.string().min(1).max(80).regex(SHOP_ID_REGEX).optional(),
+    id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
     title: z.string().min(1).max(200),
-    description: z.string().max(12000).nullable().optional(),
+    description: z.string().max(4000).nullable().optional(),
     imageUrl: shopImageField.nullable().optional(),
-    kind: z.enum(["extra_spin"]),
+    kind: shopKindZ,
     priceCoins: z.number().int().min(1),
-    platform: z.enum(["twitch", "kick", "both"]).optional(),
     spins: z.number().int().min(1).max(99).optional(),
     subtitle: z.string().max(140).nullable().optional(),
     badgeText: z.string().max(60).nullable().optional(),
@@ -980,11 +968,10 @@ export async function registerAdminRoutes(app: FastifyInstance) {
 
   const shopPatchBody = z.object({
     title: z.string().min(1).max(200).optional(),
-    description: z.string().max(12000).nullable().optional(),
+    description: z.string().max(4000).nullable().optional(),
     imageUrl: shopImageField.nullable().optional(),
-    kind: z.enum(["extra_spin"]).optional(),
+    kind: shopKindZ.optional(),
     priceCoins: z.number().int().min(1).optional(),
-    platform: z.enum(["twitch", "kick", "both"]).optional(),
     spins: z.number().int().min(1).max(99).optional(),
     subtitle: z.string().max(140).nullable().optional(),
     badgeText: z.string().max(60).nullable().optional(),
@@ -1009,22 +996,16 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       });
     }
     const d = parsed.data;
-    const requestedId = d.id?.trim();
-    const id =
-      requestedId && SHOP_ID_REGEX.test(requestedId)
-        ? requestedId
-        : generateShopItemId(d.title);
     try {
       await createShopItemAdmin({
-        id,
+        id: d.id,
         title: d.title,
         description: d.description?.trim() ? d.description.trim() : null,
         imageUrl: d.imageUrl?.trim() ? d.imageUrl.trim() : null,
         kind: d.kind,
         priceCoins: d.priceCoins,
         meta: {
-          platform: d.platform ?? "both",
-          spins: d.spins ?? 1,
+          ...(d.kind === "extra_spin" ? { spins: d.spins ?? 1 } : {}),
           subtitle: d.subtitle?.trim() ? d.subtitle.trim() : null,
           badgeText: d.badgeText?.trim() ? d.badgeText.trim() : null,
           buttonLabel: d.buttonLabel?.trim() ? d.buttonLabel.trim() : null,
@@ -1033,7 +1014,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         active: d.active !== false,
         stockTotal: d.stockTotal === undefined ? null : d.stockTotal,
       });
-      return { ok: true, id };
+      return { ok: true };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/unique|duplicate/i.test(msg)) {
@@ -1066,14 +1047,15 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (d.active !== undefined) patch.active = d.active;
     if (d.stockTotal !== undefined) patch.stockTotal = d.stockTotal;
 
-    if (
-      d.platform !== undefined ||
+    const needsMetaMerge =
       d.spins !== undefined ||
       d.subtitle !== undefined ||
       d.badgeText !== undefined ||
       d.buttonLabel !== undefined ||
-      d.sortOrder !== undefined
-    ) {
+      d.sortOrder !== undefined ||
+      d.kind === "manual_fulfillment";
+
+    if (needsMetaMerge) {
       const [cur] = await db.select().from(shopItems).where(eq(shopItems.id, id)).limit(1);
       if (!cur) {
         return reply.status(404).send({
@@ -1084,9 +1066,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         string,
         unknown
       >;
-      patch.meta = {
+      const nextMeta: Record<string, unknown> = {
         ...prev,
-        ...(d.platform !== undefined ? { platform: d.platform } : {}),
         ...(d.spins !== undefined ? { spins: d.spins } : {}),
         ...(d.subtitle !== undefined
           ? { subtitle: d.subtitle?.trim() ? d.subtitle.trim() : null }
@@ -1099,6 +1080,11 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           : {}),
         ...(d.sortOrder !== undefined ? { sortOrder: d.sortOrder } : {}),
       };
+      const effectiveKind = d.kind ?? cur.kind;
+      if (effectiveKind === "manual_fulfillment") {
+        delete nextMeta.spins;
+      }
+      patch.meta = nextMeta;
     }
 
     try {
@@ -1132,6 +1118,44 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Товар не найден" },
       });
     }
+    return { ok: true };
+  });
+
+  app.get("/api/admin/shop/purchases", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const q = req.query as { itemId?: string; limit?: string };
+    const rawItem = q.itemId?.trim();
+    const itemId = rawItem && rawItem.length > 0 ? rawItem : undefined;
+    const lim = q.limit != null ? Number(q.limit) : 200;
+    const purchases = await listShopPurchasesAdmin({
+      itemId,
+      limit: Number.isFinite(lim) ? lim : 200,
+    });
+    return { purchases };
+  });
+
+  app.get("/api/admin/shop/global-copy", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    return await getShopGlobalCopyForClient();
+  });
+
+  const shopGlobalCopyPutBody = z.object({
+    notice: z.string().min(1).max(4000),
+    warning: z.string().min(1).max(4000),
+  });
+
+  app.put("/api/admin/shop/global-copy", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const parsed = shopGlobalCopyPutBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    await setShopGlobalCopyAdmin({
+      notice: parsed.data.notice.trim(),
+      warning: parsed.data.warning.trim(),
+    });
     return { ok: true };
   });
 
