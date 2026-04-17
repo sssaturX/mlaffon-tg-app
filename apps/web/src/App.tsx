@@ -737,6 +737,7 @@ function AppShell({
             <NavLink
               className={({ isActive }) => (isActive ? "active" : "")}
               to="/shop"
+              {...navPrefetchHandlers("/shop")}
             >
               <ShoppingBag className="nav__icon" aria-hidden />
               <span>Магазин</span>

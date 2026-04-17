@@ -6,6 +6,8 @@ export type ShopItemMeta = {
   badgeText?: string | null;
   buttonLabel?: string | null;
   sortOrder?: number;
+  /** Витрина в админке: twitch | kick; без поля — обе. */
+  platform?: "twitch" | "kick";
 };
 
 export type ShopItem = {
@@ -29,17 +31,23 @@ export type ShopPagePayload = {
   globalCopy: ShopGlobalCopy;
 };
 
-export const SHOP_STALE_TIME_MS = 1000 * 60 * 2;
+/** Как главная (FAQ): редко меняется, держим в кэше дольше. */
+export const SHOP_STALE_TIME_MS = 1000 * 60 * 30;
+export const SHOP_GC_TIME_MS = 1000 * 60 * 60;
 
 function normalizeMeta(raw: unknown): ShopItemMeta | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const row = raw as Record<string, unknown>;
+  const platformRaw = row.platform;
+  const platform =
+    platformRaw === "twitch" || platformRaw === "kick" ? platformRaw : undefined;
   return {
     spins: typeof row.spins === "number" ? row.spins : undefined,
     subtitle: typeof row.subtitle === "string" ? row.subtitle : null,
     badgeText: typeof row.badgeText === "string" ? row.badgeText : null,
     buttonLabel: typeof row.buttonLabel === "string" ? row.buttonLabel : null,
     sortOrder: typeof row.sortOrder === "number" ? row.sortOrder : undefined,
+    platform,
   };
 }
 
@@ -89,8 +97,13 @@ function normalizeGlobalCopy(raw: unknown): ShopGlobalCopy {
   };
 }
 
-export async function fetchShopPage(): Promise<ShopPagePayload> {
-  const r = await api<ShopPagePayload>("/api/v1/shop/items", {
+export type ShopClientPlatform = "twitch" | "kick";
+
+export async function fetchShopPage(
+  platform: ShopClientPlatform
+): Promise<ShopPagePayload> {
+  const q = new URLSearchParams({ platform });
+  const r = await api<ShopPagePayload>(`/api/v1/shop/items?${q.toString()}`, {
     httpCache: "default",
   });
   if (!r.ok) throw new Error("shop_load");

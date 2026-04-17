@@ -259,6 +259,24 @@ type PredictionPlatformRow = {
   isActive: boolean;
 };
 
+function adminShopPlatformFromMeta(meta: unknown): "twitch" | "kick" | "both" {
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return "both";
+  const p = (meta as { platform?: unknown }).platform;
+  if (p === "twitch" || p === "kick") return p;
+  return "both";
+}
+
+function adminShopPlatformTableLabel(meta: unknown): string {
+  switch (adminShopPlatformFromMeta(meta)) {
+    case "twitch":
+      return "Twitch";
+    case "kick":
+      return "Kick";
+    default:
+      return "Обе";
+  }
+}
+
 type PredictionRow = {
   id: string;
   title: string;
@@ -460,6 +478,9 @@ export function App() {
   const [shopFormKind, setShopFormKind] = useState<"extra_spin" | "manual_fulfillment">(
     "extra_spin"
   );
+  const [shopFormPlatform, setShopFormPlatform] = useState<"twitch" | "kick" | "both">(
+    "both"
+  );
   const [adminShopPurchases, setAdminShopPurchases] = useState<AdminShopPurchaseRow[] | null>(
     null
   );
@@ -509,6 +530,7 @@ export function App() {
     setShopFormStockTotal(100);
     setShopFormActive(true);
     setShopFormKind("extra_spin");
+    setShopFormPlatform("both");
   }, []);
 
   const applyShopImageFromFile = useCallback((file: File | null) => {
@@ -2324,6 +2346,7 @@ export function App() {
                   sortOrder: shopFormSortOrder,
                   active: shopFormActive,
                   stockTotal,
+                  platform: shopFormPlatform,
                 };
                 const shopBody =
                   shopFormKind === "extra_spin"
@@ -2438,6 +2461,20 @@ export function App() {
                 <option value="manual_fulfillment">
                   Ручная выдача / подарок (manual_fulfillment)
                 </option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="shopplatform">Витрина в приложении</label>
+              <select
+                id="shopplatform"
+                value={shopFormPlatform}
+                onChange={(e) =>
+                  setShopFormPlatform(e.target.value as "twitch" | "kick" | "both")
+                }
+              >
+                <option value="both">Обе (Twitch и Kick)</option>
+                <option value="twitch">Только Twitch</option>
+                <option value="kick">Только Kick</option>
               </select>
             </div>
             <div className="row">
@@ -2570,6 +2607,7 @@ export function App() {
                       <th>Изобр.</th>
                       <th>ID</th>
                       <th>Тип</th>
+                      <th>Витрина</th>
                       <th>Название</th>
                       <th>Цена</th>
                       <th>Порядок</th>
@@ -2596,6 +2634,7 @@ export function App() {
                         <td className="mono" style={{ fontSize: 12 }}>
                           {row.kind}
                         </td>
+                        <td>{adminShopPlatformTableLabel(row.meta)}</td>
                         <td>
                           <strong>{row.title}</strong>
                           {row.description ? (
@@ -2659,6 +2698,7 @@ export function App() {
                                   ? "manual_fulfillment"
                                   : "extra_spin"
                               );
+                              setShopFormPlatform(adminShopPlatformFromMeta(row.meta));
                             }}
                           >
                             Править

@@ -1043,11 +1043,15 @@ app.post(
 app.get("/api/v1/shop/items", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
+  const pq = String(
+    (req.query as { platform?: string }).platform ?? "twitch"
+  ).toLowerCase();
+  const shopPlatform = pq === "kick" ? "kick" : "twitch";
   void reply.header(
     "Cache-Control",
     "private, max-age=30, stale-while-revalidate=120"
   );
-  return await getShopClientBundle();
+  return await getShopClientBundle(shopPlatform);
 });
 
 const shopPurchaseBody = z.object({

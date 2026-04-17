@@ -1,11 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Coins, Package, ShoppingBag, X } from "lucide-react";
 import { api, formatApiError, getToken } from "../api";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { TextWithTelegramMentions } from "../components/TextWithTelegramMentions";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "../query/queryKeys";
-import { fetchShopPage, SHOP_STALE_TIME_MS } from "../query/shopQueryFns";
+import {
+  fetchShopPage,
+  SHOP_GC_TIME_MS,
+  SHOP_STALE_TIME_MS,
+} from "../query/shopQueryFns";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
@@ -16,16 +20,22 @@ export default function Shop() {
   const { showToast } = useToast();
   const { patchEconomy } = useMeEconomySync();
   const { data: shopData, isPending, isError, refetch } = useQuery({
-    queryKey: queryKeys.shop.items(),
-    queryFn: fetchShopPage,
+    queryKey: queryKeys.shop.items(activePlatform),
+    queryFn: () => fetchShopPage(activePlatform),
     enabled: Boolean(getToken()),
     staleTime: SHOP_STALE_TIME_MS,
+    gcTime: SHOP_GC_TIME_MS,
   });
   const items = shopData?.items ?? [];
   const globalCopy = shopData?.globalCopy;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [buying, setBuying] = useState(false);
   const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedId(null);
+    setPurchaseErr(null);
+  }, [activePlatform]);
 
   const selected = useMemo(
     () => items.find((row) => row.id === selectedId) ?? null,

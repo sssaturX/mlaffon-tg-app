@@ -16,6 +16,26 @@ import {
   TASKS_QUERY_STALE_MS,
 } from "../hooks/queries/useTasks";
 import { meEconomyQueryFn, meProfileQueryFn } from "./meQueryFns";
+import {
+  fetchShopPage,
+  SHOP_GC_TIME_MS,
+  SHOP_STALE_TIME_MS,
+  type ShopClientPlatform,
+} from "./shopQueryFns";
+
+const SHOP_PLATFORMS: ShopClientPlatform[] = ["twitch", "kick"];
+
+function prefetchShopCatalog(): void {
+  if (!getToken()) return;
+  for (const p of SHOP_PLATFORMS) {
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.shop.items(p),
+      queryFn: () => fetchShopPage(p),
+      staleTime: SHOP_STALE_TIME_MS,
+      gcTime: SHOP_GC_TIME_MS,
+    });
+  }
+}
 
 /** Hover / touch-down на табах — дедупликация в TanStack Query. */
 export function navPrefetchHandlers(pathname: string): {
@@ -57,6 +77,7 @@ export function prefetchOnBootstrap(): void {
     queryFn: fetchFortuneConfig,
     staleTime: 1000 * 60 * 60 * 24,
   });
+  prefetchShopCatalog();
 }
 
 /** Prefetch по намерению навигации (hover по табам). */
@@ -127,5 +148,10 @@ export function prefetchRouteData(pathname: string): void {
       queryFn: fetchGiveawaysList,
       staleTime: 1000 * 60 * 5,
     });
+    return;
+  }
+
+  if (pathname.startsWith("/shop")) {
+    prefetchShopCatalog();
   }
 }

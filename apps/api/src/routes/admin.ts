@@ -949,6 +949,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     );
 
   const shopKindZ = z.enum(["extra_spin", "manual_fulfillment"]);
+  const shopPlatformZ = z.enum(["twitch", "kick", "both"]);
 
   const shopCreateBody = z.object({
     id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
@@ -962,6 +963,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     badgeText: z.string().max(60).nullable().optional(),
     buttonLabel: z.string().max(60).nullable().optional(),
     sortOrder: z.number().int().min(-999).max(999).optional(),
+    /** Витрина: только Twitch, только Kick или обе (по умолчанию обе — как раньше). */
+    platform: shopPlatformZ.optional().default("both"),
     active: z.boolean().optional(),
     stockTotal: z.union([z.number().int().min(1), z.null()]).optional(),
   });
@@ -977,6 +980,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     badgeText: z.string().max(60).nullable().optional(),
     buttonLabel: z.string().max(60).nullable().optional(),
     sortOrder: z.number().int().min(-999).max(999).optional(),
+    platform: shopPlatformZ.optional(),
     active: z.boolean().optional(),
     stockTotal: z.union([z.number().int().min(1), z.null()]).optional(),
   });
@@ -1010,6 +1014,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           badgeText: d.badgeText?.trim() ? d.badgeText.trim() : null,
           buttonLabel: d.buttonLabel?.trim() ? d.buttonLabel.trim() : null,
           sortOrder: d.sortOrder ?? 0,
+          ...(d.platform && d.platform !== "both" ? { platform: d.platform } : {}),
         },
         active: d.active !== false,
         stockTotal: d.stockTotal === undefined ? null : d.stockTotal,
@@ -1053,6 +1058,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       d.badgeText !== undefined ||
       d.buttonLabel !== undefined ||
       d.sortOrder !== undefined ||
+      d.platform !== undefined ||
       d.kind === "manual_fulfillment";
 
     if (needsMetaMerge) {
@@ -1083,6 +1089,10 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       const effectiveKind = d.kind ?? cur.kind;
       if (effectiveKind === "manual_fulfillment") {
         delete nextMeta.spins;
+      }
+      if (d.platform !== undefined) {
+        if (d.platform === "both") delete nextMeta.platform;
+        else nextMeta.platform = d.platform;
       }
       patch.meta = nextMeta;
     }

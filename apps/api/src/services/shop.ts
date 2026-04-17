@@ -5,6 +5,19 @@ import { applyCredit, applyDebit, type EconomyPlatform } from "./economy.js";
 import { getShopGlobalCopyForClient } from "./shopSettings.js";
 import { nanoid } from "nanoid";
 
+/** Платформа витрины магазина (совпадает с переключателем Twitch/Kick в приложении). */
+export type ShopClientPlatform = "twitch" | "kick";
+
+export function shopItemVisibleForPlatform(
+  meta: unknown,
+  platform: ShopClientPlatform
+): boolean {
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return true;
+  const p = (meta as Record<string, unknown>).platform;
+  if (p === "twitch" || p === "kick") return p === platform;
+  return true;
+}
+
 export type ShopItemClientDto = {
   id: string;
   title: string;
@@ -17,7 +30,9 @@ export type ShopItemClientDto = {
   stockRemaining: number | null;
 };
 
-export async function listShopItemsForClient(): Promise<ShopItemClientDto[]> {
+export async function listShopItemsForClient(
+  platform: ShopClientPlatform
+): Promise<ShopItemClientDto[]> {
   const rows = await db.select().from(shopItems).where(eq(shopItems.active, true));
   const mapped = rows.map((r) => ({
     id: r.id,
@@ -30,7 +45,10 @@ export async function listShopItemsForClient(): Promise<ShopItemClientDto[]> {
     stockRemaining:
       r.stockTotal == null ? null : Math.max(0, r.stockTotal - r.stockSold),
   }));
-  return mapped.sort((a, b) => {
+  const visible = mapped.filter((row) =>
+    shopItemVisibleForPlatform(row.meta, platform)
+  );
+  return visible.sort((a, b) => {
     const aOrder =
       typeof (a.meta as { sortOrder?: unknown } | null)?.sortOrder === "number"
         ? ((a.meta as { sortOrder?: number } | null)?.sortOrder ?? 0)
@@ -44,12 +62,12 @@ export async function listShopItemsForClient(): Promise<ShopItemClientDto[]> {
   });
 }
 
-export async function getShopClientBundle(): Promise<{
+export async function getShopClientBundle(platform: ShopClientPlatform): Promise<{
   items: ShopItemClientDto[];
   globalCopy: Awaited<ReturnType<typeof getShopGlobalCopyForClient>>;
 }> {
   const [items, globalCopy] = await Promise.all([
-    listShopItemsForClient(),
+    listShopItemsForClient(platform),
     getShopGlobalCopyForClient(),
   ]);
   return { items, globalCopy };
@@ -67,6 +85,10 @@ export async function purchaseItem(
     .limit(1);
   if (!item || !item.active) return { ok: false, error: "item_not_found" };
   if (item.kind !== "extra_spin" && item.kind !== "manual_fulfillment") {
+    return { ok: false, error: "item_not_found" };
+  }
+
+  if (!shopItemVisibleForPlatform(item.meta, platform)) {
     return { ok: false, error: "item_not_found" };
   }
 
