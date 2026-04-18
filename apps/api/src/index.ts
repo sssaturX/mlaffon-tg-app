@@ -1049,7 +1049,7 @@ app.get("/api/v1/shop/items", async (req, reply) => {
   const shopPlatform = pq === "kick" ? "kick" : "twitch";
   void reply.header(
     "Cache-Control",
-    "private, max-age=30, stale-while-revalidate=120"
+    "private, max-age=300, stale-while-revalidate=1800"
   );
   return await getShopClientBundle(shopPlatform);
 });

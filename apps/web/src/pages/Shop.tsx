@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ImgHTMLAttributes } from "react";
 import { ArrowRight, Coins, Package, ShoppingBag, X } from "lucide-react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api, formatApiError, getToken } from "../api";
-import { PageSkeleton } from "../components/PageSkeleton";
 import { TextWithTelegramMentions } from "../components/TextWithTelegramMentions";
-import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "../query/queryKeys";
 import {
   fetchShopPage,
@@ -15,17 +14,48 @@ import { useActivePlatform } from "../context/PlatformContext";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { getMeFromCache } from "../hooks/queries/useMergedMe";
 
+function ShopShowcaseSkeleton() {
+  return (
+    <div className="shop-page">
+      <div
+        className="shop-showcase shop-showcase--skeleton"
+        aria-busy="true"
+        aria-label="Загрузка магазина"
+      >
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="shop-showcase-card shop-showcase-card--skeleton"
+            aria-hidden
+          >
+            <div className="shop-showcase-card__media">
+              <div className="skeleton skeleton--shop-media" />
+            </div>
+            <div className="shop-showcase-card__body">
+              <div className="skeleton skeleton--shop-title" />
+              <div className="skeleton skeleton--shop-line" />
+              <div className="skeleton skeleton--shop-row" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Shop() {
   const { activePlatform } = useActivePlatform();
   const { showToast } = useToast();
   const { patchEconomy } = useMeEconomySync();
-  const { data: shopData, isPending, isError, refetch } = useQuery({
-    queryKey: queryKeys.shop.items(activePlatform),
-    queryFn: () => fetchShopPage(activePlatform),
-    enabled: Boolean(getToken()),
-    staleTime: SHOP_STALE_TIME_MS,
-    gcTime: SHOP_GC_TIME_MS,
-  });
+  const { data: shopData, isError, refetch, isFetching, isPlaceholderData } =
+    useQuery({
+      queryKey: queryKeys.shop.items(activePlatform),
+      queryFn: () => fetchShopPage(activePlatform),
+      enabled: Boolean(getToken()),
+      staleTime: SHOP_STALE_TIME_MS,
+      gcTime: SHOP_GC_TIME_MS,
+      placeholderData: keepPreviousData,
+    });
   const items = shopData?.items ?? [];
   const globalCopy = shopData?.globalCopy;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -36,6 +66,20 @@ export default function Shop() {
     setSelectedId(null);
     setPurchaseErr(null);
   }, [activePlatform]);
+
+  useEffect(() => {
+    const url = items[0]?.imageUrl;
+    if (!url) return;
+    const link = document.createElement("link");
+    link.rel = "preload";
+    link.as = "image";
+    link.href = url;
+    link.setAttribute("fetchpriority", "high");
+    document.head.appendChild(link);
+    return () => {
+      link.remove();
+    };
+  }, [items]);
 
   const selected = useMemo(
     () => items.find((row) => row.id === selectedId) ?? null,
@@ -52,9 +96,8 @@ export default function Shop() {
       : 0;
   const cantAfford = coinsShort > 0;
 
-  if (isPending) return <PageSkeleton />;
-
-  if (isError) {
+  /** Ошибка без кэша, или ошибка после смены платформы (нельзя показывать placeholder от другой платформы). */
+  if (isError && (!shopData || isPlaceholderData)) {
     return (
       <div className="shop-page">
         <div className="card stack">
@@ -65,6 +108,10 @@ export default function Shop() {
         </div>
       </div>
     );
+  }
+
+  if (!shopData) {
+    return <ShopShowcaseSkeleton />;
   }
 
   const hasItems = items.length > 0;
@@ -98,10 +145,15 @@ export default function Shop() {
   return (
     <div className="shop-page">
       {hasItems ? (
-        <div className="shop-showcase fade-in-soft">
-          {items.map((item) => {
+        <div
+          className={`shop-showcase fade-in-soft${
+            isFetching && isPlaceholderData ? " shop-showcase--platform-switch" : ""
+          }`}
+        >
+          {items.map((item, index) => {
             const meta = item.meta;
             const soldOut = item.stockRemaining === 0;
+            const priorityImage = index < 2 && Boolean(item.imageUrl);
             return (
               <button
                 key={item.id}
@@ -117,8 +169,11 @@ export default function Shop() {
                     <img
                       src={item.imageUrl}
                       alt=""
-                      loading="lazy"
+                      loading={priorityImage ? "eager" : "lazy"}
                       decoding="async"
+                      {...(priorityImage
+                        ? ({ fetchPriority: "high" } as ImgHTMLAttributes<HTMLImageElement>)
+                        : {})}
                     />
                   ) : (
                     <Package size={38} strokeWidth={1.5} />

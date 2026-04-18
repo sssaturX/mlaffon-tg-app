@@ -277,6 +277,29 @@ function adminShopPlatformTableLabel(meta: unknown): string {
   }
 }
 
+/** Латиница/цифры из названия; если пусто — уникальный id (кириллица без транслита). */
+function suggestShopItemId(title: string): string {
+  const normalized = title
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9_-]/g, "");
+  const core = normalized.replace(/^-+|-+$/g, "").slice(0, 48);
+  if (core.length >= 2) return core;
+  return `item-${Date.now().toString(36)}`;
+}
+
+function adminShopKindLabel(kind: string): string {
+  switch (kind) {
+    case "extra_spin":
+      return "Спины";
+    case "manual_fulfillment":
+      return "Ручная выдача";
+    default:
+      return kind;
+  }
+}
+
 type PredictionRow = {
   id: string;
   title: string;
@@ -2168,164 +2191,21 @@ export function App() {
         <>
           <h2 className="admin-mt-0">Магазин</h2>
           <p className="muted">
-            Витрина, покупки и тексты в попапе (серый абзац и красное предупреждение). Тип{" "}
-            <code>manual_fulfillment</code> — только списание монет и запись покупки (выдача вручную в
-            Telegram). <code>extra_spin</code> — начисляет спины в инвентарь.
+            Сначала заполните карточку товара и сохраните — она появится в приложении.{" "}
+            <strong>Спины</strong> — монеты списываются и начисляются вращения в игре.{" "}
+            <strong>Ручная выдача</strong> — только списание монет и запись покупки (мерч, коды — вы
+            отдаёте пользователю в Telegram).
           </p>
 
-          <div className="card stack admin-mt-3">
-            <h3 className="admin-mt-0">Тексты в попапе покупки</h3>
-            <p className="muted admin-m-0">
-              Упоминания вида <code>@Username</code> в приложении станут ссылками на Telegram.
-            </p>
-            {shopGlobalCopyLoading ? (
-              <p className="muted">Загружаем…</p>
-            ) : (
-              <>
-                <div>
-                  <label htmlFor="shopglobnotice">Текст под товаром (серый)</label>
-                  <textarea
-                    id="shopglobnotice"
-                    value={shopGlobalNotice}
-                    onChange={(e) => setShopGlobalNotice(e.target.value)}
-                    rows={3}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="shopglobwarn">Предупреждение (красный блок)</label>
-                  <textarea
-                    id="shopglobwarn"
-                    value={shopGlobalWarning}
-                    onChange={(e) => setShopGlobalWarning(e.target.value)}
-                    rows={3}
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={loading || !shopGlobalNotice.trim() || !shopGlobalWarning.trim()}
-                  onClick={async () => {
-                    if (!token) return;
-                    setLoading(true);
-                    setErr(null);
-                    try {
-                      const r = await fetch(`${apiBase()}/api/admin/shop/global-copy`, {
-                        method: "PUT",
-                        headers: authHeaders(true),
-                        body: JSON.stringify({
-                          notice: shopGlobalNotice.trim(),
-                          warning: shopGlobalWarning.trim(),
-                        }),
-                      });
-                      const j = (await r.json()) as { error?: { message?: string } };
-                      if (!r.ok) {
-                        setErr(j.error?.message ?? `Ошибка ${r.status}`);
-                        return;
-                      }
-                      await loadShopGlobalCopy();
-                    } catch {
-                      setErr("Сеть недоступна");
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                >
-                  Сохранить тексты попапа
-                </button>
-              </>
-            )}
-          </div>
-
-          <div className="card stack admin-mt-3">
-            <h3 className="admin-mt-0">Покупки</h3>
-            <div className="row">
-              <div>
-                <label htmlFor="shoppurchfilter">Товар</label>
-                <select
-                  id="shoppurchfilter"
-                  value={shopPurchaseFilterItemId}
-                  onChange={(e) => setShopPurchaseFilterItemId(e.target.value)}
-                >
-                  <option value="">Все</option>
-                  {(adminShopItems ?? []).map((it) => (
-                    <option key={it.id} value={it.id}>
-                      {it.title} ({it.id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {shopPurchasesLoading ? (
-              <p className="muted">Загружаем покупки…</p>
-            ) : (
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Дата (UTC)</th>
-                      <th>Товар</th>
-                      <th>Пользователь</th>
-                      <th>Цена</th>
-                      <th>Счёт</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(adminShopPurchases ?? []).map((p) => (
-                      <tr key={p.id}>
-                        <td className="mono" style={{ fontSize: 12 }}>
-                          {p.createdAt.slice(0, 19).replace("T", " ")}
-                        </td>
-                        <td>
-                          <strong>{p.itemTitle}</strong>
-                          <div className="muted mono" style={{ fontSize: 11 }}>
-                            {p.shopItemId}
-                          </div>
-                        </td>
-                        <td>
-                          {[p.firstName, p.lastName].filter(Boolean).join(" ") || "—"}
-                          {p.username ? (
-                            <div className="mono" style={{ fontSize: 12 }}>
-                              @{p.username.replace(/^@+/, "")}
-                            </div>
-                          ) : p.telegramId ? (
-                            <div className="mono muted" style={{ fontSize: 12 }}>
-                              id {p.telegramId}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td>{p.priceCoins.toLocaleString("ru-RU")}</td>
-                        <td>{p.platform}</td>
-                        <td>
-                          {p.telegramChatLink ? (
-                            <a
-                              href={p.telegramChatLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="admin-link"
-                            >
-                              Написать
-                            </a>
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {(adminShopPurchases ?? []).length === 0 && !shopPurchasesLoading ? (
-              <p className="muted">Покупок пока нет.</p>
-            ) : null}
-          </div>
-
           <form
-            className="card stack"
+            className="card stack admin-mt-3"
             onSubmit={async (e) => {
               e.preventDefault();
               if (!token) return;
+              if (!shopEditingId && !shopFormId.trim()) {
+                setErr("Укажите внутренний ID или нажмите «Сгенерировать из названия».");
+                return;
+              }
               if (!shopFormStockUnlimited && shopFormStockTotal < 1) {
                 setErr("Укажите лимит ≥ 1 или включите «без лимита».");
                 return;
@@ -2392,193 +2272,246 @@ export function App() {
               }
             }}
           >
-            <div>
-              <label htmlFor="shopid">ID товара (латиница, без пробелов)</label>
-              <input
-                id="shopid"
-                value={shopFormId}
-                onChange={(e) => setShopFormId(e.target.value)}
-                disabled={shopEditingId != null}
-                required={shopEditingId == null}
-                placeholder="extra_spin_pack_2"
-              />
-            </div>
-            <div>
-              <label htmlFor="shoptitle">Название</label>
-              <input
-                id="shoptitle"
-                value={shopFormTitle}
-                onChange={(e) => setShopFormTitle(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="shopdesc">Описание</label>
-              <textarea
-                id="shopdesc"
-                value={shopFormDescription}
-                onChange={(e) => setShopFormDescription(e.target.value)}
-                rows={3}
-                placeholder="Текст на карточке в приложении"
-              />
-            </div>
-            <div>
-              <label htmlFor="shopimg">Картинка (URL или data:image/*)</label>
-              <textarea
-                id="shopimg"
-                value={shopFormImageUrl}
-                onChange={(e) => setShopFormImageUrl(e.target.value)}
-                rows={3}
-                placeholder="https://... или data:image/png;base64,..."
-              />
-              <div className="row admin-mt-3">
-                <div>
-                  <label htmlFor="shopimgfile">Загрузить файл</label>
-                  <input
-                    id="shopimgfile"
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => applyShopImageFromFile(e.target.files?.[0] ?? null)}
-                  />
-                </div>
-              </div>
-              {shopFormImageUrl.trim() ? (
-                <div className="admin-shop-preview admin-shop-preview--img admin-mt-3">
-                  <img src={shopFormImageUrl.trim()} alt="Предпросмотр товара" />
-                </div>
+            <div className="admin-shop-form__head">
+              <h3 className="admin-mt-0" style={{ marginBottom: 0 }}>
+                {shopEditingId ? "Редактирование товара" : "Новый товар"}
+              </h3>
+              {shopEditingId ? (
+                <span className="muted mono" style={{ fontSize: 13 }}>
+                  id: {shopEditingId}
+                </span>
               ) : null}
             </div>
-            <div>
-              <label htmlFor="shopkind">Тип товара</label>
-              <select
-                id="shopkind"
-                value={shopFormKind}
-                onChange={(e) =>
-                  setShopFormKind(e.target.value as "extra_spin" | "manual_fulfillment")
-                }
-              >
-                <option value="extra_spin">Доп. спины (extra_spin)</option>
-                <option value="manual_fulfillment">
-                  Ручная выдача / подарок (manual_fulfillment)
-                </option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="shopplatform">Витрина в приложении</label>
-              <select
-                id="shopplatform"
-                value={shopFormPlatform}
-                onChange={(e) =>
-                  setShopFormPlatform(e.target.value as "twitch" | "kick" | "both")
-                }
-              >
-                <option value="both">Обе (Twitch и Kick)</option>
-                <option value="twitch">Только Twitch</option>
-                <option value="kick">Только Kick</option>
-              </select>
-            </div>
-            <div className="row">
+
+            <div className="admin-shop-section">
+              <h4 className="admin-shop-section__title">1. Название и описание</h4>
               <div>
-                <label htmlFor="shopprice">Цена (монет)</label>
+                <label htmlFor="shoptitle">Название на витрине</label>
                 <input
-                  id="shopprice"
-                  type="number"
-                  min={1}
-                  value={shopFormPrice}
-                  onChange={(e) => setShopFormPrice(Number(e.target.value))}
+                  id="shoptitle"
+                  value={shopFormTitle}
+                  onChange={(e) => setShopFormTitle(e.target.value)}
                   required
+                  placeholder="Например: 5 дополнительных спинов"
                 />
               </div>
-              {shopFormKind === "extra_spin" ? (
+              {!shopEditingId ? (
+                <div className="admin-shop-id-row admin-mt-3">
+                  <div>
+                    <label htmlFor="shopid">Внутренний ID (латиница, цифры, «-» или «_»)</label>
+                    <input
+                      id="shopid"
+                      value={shopFormId}
+                      onChange={(e) => setShopFormId(e.target.value)}
+                      placeholder="Нажмите кнопку справа или введите вручную"
+                    />
+                    <p className="admin-shop-hint">
+                      Не меняется после создания. Если в названии есть латиница — можно сгенерировать
+                      автоматически.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={loading}
+                    onClick={() => setShopFormId(suggestShopItemId(shopFormTitle))}
+                  >
+                    Сгенерировать из названия
+                  </button>
+                </div>
+              ) : null}
+              <div className="admin-mt-3">
+                <label htmlFor="shopdesc">Описание на карточке</label>
+                <textarea
+                  id="shopdesc"
+                  value={shopFormDescription}
+                  onChange={(e) => setShopFormDescription(e.target.value)}
+                  rows={3}
+                  placeholder="Необязательно — дополнительный текст под названием"
+                />
+              </div>
+            </div>
+
+            <div className="admin-shop-section">
+              <h4 className="admin-shop-section__title">2. Картинка</h4>
+              <div>
+                <label htmlFor="shopimg">Ссылка или вставка (URL / data:image…)</label>
+                <textarea
+                  id="shopimg"
+                  value={shopFormImageUrl}
+                  onChange={(e) => setShopFormImageUrl(e.target.value)}
+                  rows={2}
+                  placeholder="https://… или загрузите файл ниже"
+                />
+                <div className="row admin-mt-3">
+                  <div>
+                    <label htmlFor="shopimgfile">Загрузить с компьютера</label>
+                    <input
+                      id="shopimgfile"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => applyShopImageFromFile(e.target.files?.[0] ?? null)}
+                    />
+                  </div>
+                </div>
+                {shopFormImageUrl.trim() ? (
+                  <div className="admin-shop-preview admin-shop-preview--img admin-mt-3">
+                    <img src={shopFormImageUrl.trim()} alt="Предпросмотр товара" />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="admin-shop-section">
+              <h4 className="admin-shop-section__title">3. Тип, витрина и цена</h4>
+              <div>
+                <label htmlFor="shopkind">Что получает пользователь после оплаты</label>
+                <select
+                  id="shopkind"
+                  value={shopFormKind}
+                  onChange={(e) =>
+                    setShopFormKind(e.target.value as "extra_spin" | "manual_fulfillment")
+                  }
+                >
+                  <option value="extra_spin">Спины в колесе удачи (автоматически)</option>
+                  <option value="manual_fulfillment">
+                    Ручная выдача (мерч, промокод — вы связываетесь с покупателем)
+                  </option>
+                </select>
+                <p className="admin-shop-hint">
+                  {shopFormKind === "extra_spin"
+                    ? "Укажите, сколько спинов начислить за эту цену."
+                    : "Спины не начисляются — только запись покупки и списание монет."}
+                </p>
+              </div>
+              <div className="admin-mt-3">
+                <label htmlFor="shopplatform">Где показывать в приложении</label>
+                <select
+                  id="shopplatform"
+                  value={shopFormPlatform}
+                  onChange={(e) =>
+                    setShopFormPlatform(e.target.value as "twitch" | "kick" | "both")
+                  }
+                >
+                  <option value="both">И на Twitch, и на Kick</option>
+                  <option value="twitch">Только при выбранном Twitch</option>
+                  <option value="kick">Только при выбранном Kick</option>
+                </select>
+              </div>
+              <div className="row admin-mt-3">
                 <div>
-                  <label htmlFor="shopspins">Спинов в пакете</label>
+                  <label htmlFor="shopprice">Цена в монетах</label>
                   <input
-                    id="shopspins"
+                    id="shopprice"
                     type="number"
                     min={1}
-                    max={99}
-                    value={shopFormSpins}
-                    onChange={(e) => setShopFormSpins(Number(e.target.value))}
+                    value={shopFormPrice}
+                    onChange={(e) => setShopFormPrice(Number(e.target.value))}
                     required
                   />
                 </div>
-              ) : null}
-            </div>
-            <div className="row">
-              <div>
-                <label htmlFor="shopsubtitle">Подзаголовок на карточке</label>
-                <input
-                  id="shopsubtitle"
-                  value={shopFormSubtitle}
-                  onChange={(e) => setShopFormSubtitle(e.target.value)}
-                  placeholder="Короткая подпись под названием"
-                />
-              </div>
-              <div>
-                <label htmlFor="shopbadge">Бейдж (верхний левый)</label>
-                <input
-                  id="shopbadge"
-                  value={shopFormBadgeText}
-                  onChange={(e) => setShopFormBadgeText(e.target.value)}
-                  placeholder="например: HOT"
-                />
+                {shopFormKind === "extra_spin" ? (
+                  <div>
+                    <label htmlFor="shopspins">Сколько спинов в этом товаре</label>
+                    <input
+                      id="shopspins"
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={shopFormSpins}
+                      onChange={(e) => setShopFormSpins(Number(e.target.value))}
+                      required
+                    />
+                  </div>
+                ) : null}
               </div>
             </div>
-            <div className="row">
-              <div>
-                <label htmlFor="shopbtnlabel">Текст кнопки/CTA</label>
-                <input
-                  id="shopbtnlabel"
-                  value={shopFormButtonLabel}
-                  onChange={(e) => setShopFormButtonLabel(e.target.value)}
-                  placeholder="например: Купить сейчас"
-                />
-              </div>
-              <div>
-                <label htmlFor="shopsort">Порядок (меньше = выше)</label>
-                <input
-                  id="shopsort"
-                  type="number"
-                  value={shopFormSortOrder}
-                  onChange={(e) => setShopFormSortOrder(Number(e.target.value))}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="admin-checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={shopFormStockUnlimited}
-                  onChange={(e) => setShopFormStockUnlimited(e.target.checked)}
-                />
-                <span className="admin-checkbox-row__text">Без лимита в наличии</span>
-              </label>
-              {!shopFormStockUnlimited ? (
-                <div style={{ marginTop: 8 }}>
-                  <label htmlFor="shopstock">Всего в наличии (штук)</label>
+
+            <details className="admin-shop-details admin-shop-section">
+              <summary>Дополнительно: бейдж, подписи и порядок в списке</summary>
+              <p className="admin-shop-hint admin-m-0" style={{ marginBottom: 12 }}>
+                Всё необязательно — по умолчанию карточка выглядит нормально и без этого.
+              </p>
+              <div className="row">
+                <div>
+                  <label htmlFor="shopsubtitle">Подзаголовок под названием</label>
                   <input
-                    id="shopstock"
-                    type="number"
-                    min={1}
-                    value={shopFormStockTotal}
-                    onChange={(e) => setShopFormStockTotal(Number(e.target.value))}
+                    id="shopsubtitle"
+                    value={shopFormSubtitle}
+                    onChange={(e) => setShopFormSubtitle(e.target.value)}
+                    placeholder="Короткая строка"
                   />
                 </div>
-              ) : null}
+                <div>
+                  <label htmlFor="shopbadge">Бейдж на фото (например «Хит»)</label>
+                  <input
+                    id="shopbadge"
+                    value={shopFormBadgeText}
+                    onChange={(e) => setShopFormBadgeText(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="row admin-mt-3">
+                <div>
+                  <label htmlFor="shopbtnlabel">Текст на кнопке карточки</label>
+                  <input
+                    id="shopbtnlabel"
+                    value={shopFormButtonLabel}
+                    onChange={(e) => setShopFormButtonLabel(e.target.value)}
+                    placeholder="По умолчанию: «Открыть»"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="shopsort">Порядок (меньше число — выше в списке)</label>
+                  <input
+                    id="shopsort"
+                    type="number"
+                    value={shopFormSortOrder}
+                    onChange={(e) => setShopFormSortOrder(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+            </details>
+
+            <div className="admin-shop-section">
+              <h4 className="admin-shop-section__title">4. Остаток и публикация</h4>
+              <div>
+                <label className="admin-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={shopFormStockUnlimited}
+                    onChange={(e) => setShopFormStockUnlimited(e.target.checked)}
+                  />
+                  <span className="admin-checkbox-row__text">Без лимита (продаём сколько угодно)</span>
+                </label>
+                {!shopFormStockUnlimited ? (
+                  <div style={{ marginTop: 8 }}>
+                    <label htmlFor="shopstock">Сколько штук всего (после продажи товар скроется)</label>
+                    <input
+                      id="shopstock"
+                      type="number"
+                      min={1}
+                      value={shopFormStockTotal}
+                      onChange={(e) => setShopFormStockTotal(Number(e.target.value))}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              <div className="admin-mt-3">
+                <label className="admin-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={shopFormActive}
+                    onChange={(e) => setShopFormActive(e.target.checked)}
+                  />
+                  <span className="admin-checkbox-row__text">Показывать в приложении</span>
+                </label>
+              </div>
             </div>
-            <div>
-              <label className="admin-checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={shopFormActive}
-                  onChange={(e) => setShopFormActive(e.target.checked)}
-                />
-                <span className="admin-checkbox-row__text">Активен (виден в приложении)</span>
-              </label>
-            </div>
+
             <div className="row">
               <button type="submit" className="primary" disabled={loading}>
-                {shopEditingId ? "Сохранить" : "Добавить товар"}
+                {shopEditingId ? "Сохранить изменения" : "Добавить в магазин"}
               </button>
               {shopEditingId ? (
                 <button
@@ -2594,6 +2527,12 @@ export function App() {
               ) : null}
             </div>
           </form>
+
+          <h3 className="admin-mt-3 admin-mb-0">Все товары</h3>
+          <p className="muted" style={{ marginTop: 6 }}>
+            Таблица обновляется после сохранения. Технические поля <code>extra_spin</code> /{" "}
+            <code>manual_fulfillment</code> — это типы в базе.
+          </p>
 
           {adminShopItems === null ? (
             <AdminSkeletonRows rows={3} />
@@ -2631,8 +2570,11 @@ export function App() {
                           )}
                         </td>
                         <td className="mono">{row.id}</td>
-                        <td className="mono" style={{ fontSize: 12 }}>
-                          {row.kind}
+                        <td style={{ fontSize: 13 }}>
+                          {adminShopKindLabel(row.kind)}
+                          <div className="muted mono" style={{ fontSize: 11 }}>
+                            {row.kind}
+                          </div>
                         </td>
                         <td>{adminShopPlatformTableLabel(row.meta)}</td>
                         <td>
@@ -2747,6 +2689,159 @@ export function App() {
               ) : null}
             </>
           )}
+
+          <div className="card stack admin-mt-3">
+            <h3 className="admin-mt-0">Покупки</h3>
+            <p className="muted admin-m-0">
+              Кто купил и с какого счёта (Twitch / Kick). Ссылка «Написать» ведёт в Telegram, если
+              есть username.
+            </p>
+            <div className="row admin-mt-3">
+              <div>
+                <label htmlFor="shoppurchfilter">Фильтр по товару</label>
+                <select
+                  id="shoppurchfilter"
+                  value={shopPurchaseFilterItemId}
+                  onChange={(e) => setShopPurchaseFilterItemId(e.target.value)}
+                >
+                  <option value="">Все</option>
+                  {(adminShopItems ?? []).map((it) => (
+                    <option key={it.id} value={it.id}>
+                      {it.title} ({it.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {shopPurchasesLoading ? (
+              <p className="muted">Загружаем покупки…</p>
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Дата (UTC)</th>
+                      <th>Товар</th>
+                      <th>Пользователь</th>
+                      <th>Цена</th>
+                      <th>Счёт</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(adminShopPurchases ?? []).map((p) => (
+                      <tr key={p.id}>
+                        <td className="mono" style={{ fontSize: 12 }}>
+                          {p.createdAt.slice(0, 19).replace("T", " ")}
+                        </td>
+                        <td>
+                          <strong>{p.itemTitle}</strong>
+                          <div className="muted mono" style={{ fontSize: 11 }}>
+                            {p.shopItemId}
+                          </div>
+                        </td>
+                        <td>
+                          {[p.firstName, p.lastName].filter(Boolean).join(" ") || "—"}
+                          {p.username ? (
+                            <div className="mono" style={{ fontSize: 12 }}>
+                              @{p.username.replace(/^@+/, "")}
+                            </div>
+                          ) : p.telegramId ? (
+                            <div className="mono muted" style={{ fontSize: 12 }}>
+                              id {p.telegramId}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td>{p.priceCoins.toLocaleString("ru-RU")}</td>
+                        <td>{p.platform}</td>
+                        <td>
+                          {p.telegramChatLink ? (
+                            <a
+                              href={p.telegramChatLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="admin-link"
+                            >
+                              Написать
+                            </a>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {(adminShopPurchases ?? []).length === 0 && !shopPurchasesLoading ? (
+              <p className="muted">Покупок пока нет.</p>
+            ) : null}
+          </div>
+
+          <div className="card stack admin-mt-3">
+            <h3 className="admin-mt-0">Тексты в окне подтверждения покупки</h3>
+            <p className="muted admin-m-0">
+              Один общий серый текст и красное предупреждение для всех товаров. Упоминания{" "}
+              <code>@Username</code> в приложении станут ссылками на Telegram.
+            </p>
+            {shopGlobalCopyLoading ? (
+              <p className="muted">Загружаем…</p>
+            ) : (
+              <>
+                <div className="admin-mt-3">
+                  <label htmlFor="shopglobnotice">Текст под товаром (серый абзац)</label>
+                  <textarea
+                    id="shopglobnotice"
+                    value={shopGlobalNotice}
+                    onChange={(e) => setShopGlobalNotice(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="shopglobwarn">Предупреждение (красный блок)</label>
+                  <textarea
+                    id="shopglobwarn"
+                    value={shopGlobalWarning}
+                    onChange={(e) => setShopGlobalWarning(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={loading || !shopGlobalNotice.trim() || !shopGlobalWarning.trim()}
+                  onClick={async () => {
+                    if (!token) return;
+                    setLoading(true);
+                    setErr(null);
+                    try {
+                      const r = await fetch(`${apiBase()}/api/admin/shop/global-copy`, {
+                        method: "PUT",
+                        headers: authHeaders(true),
+                        body: JSON.stringify({
+                          notice: shopGlobalNotice.trim(),
+                          warning: shopGlobalWarning.trim(),
+                        }),
+                      });
+                      const j = (await r.json()) as { error?: { message?: string } };
+                      if (!r.ok) {
+                        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                        return;
+                      }
+                      await loadShopGlobalCopy();
+                    } catch {
+                      setErr("Сеть недоступна");
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  Сохранить тексты
+                </button>
+              </>
+            )}
+          </div>
         </>
       ) : null}
 

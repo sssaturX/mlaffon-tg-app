@@ -23,18 +23,35 @@ import {
   type ShopClientPlatform,
 } from "./shopQueryFns";
 
-const SHOP_PLATFORMS: ShopClientPlatform[] = ["twitch", "kick"];
-
-function prefetchShopCatalog(): void {
-  if (!getToken()) return;
-  for (const p of SHOP_PLATFORMS) {
-    void queryClient.prefetchQuery({
-      queryKey: queryKeys.shop.items(p),
-      queryFn: () => fetchShopPage(p),
-      staleTime: SHOP_STALE_TIME_MS,
-      gcTime: SHOP_GC_TIME_MS,
-    });
+function runWhenIdle(cb: () => void): void {
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(() => cb(), { timeout: 2500 });
+  } else {
+    window.setTimeout(cb, 250);
   }
+}
+
+/** Одна платформа — для приоритетного prefetch и дедупликации с `useQuery`. */
+export function prefetchShopPlatform(platform: ShopClientPlatform): void {
+  if (!getToken()) return;
+  void queryClient.prefetchQuery({
+    queryKey: queryKeys.shop.items(platform),
+    queryFn: () => fetchShopPage(platform),
+    staleTime: SHOP_STALE_TIME_MS,
+    gcTime: SHOP_GC_TIME_MS,
+  });
+}
+
+/**
+ * Витрина для обеих платформ: сначала активная из localStorage (меньше конкуренции с другими prefetch),
+ * вторая — в idle, чтобы не забивать канал на старте.
+ */
+export function prefetchShopCatalog(): void {
+  if (!getToken()) return;
+  const primary = getStoredActivePlatform();
+  const secondary: ShopClientPlatform = primary === "kick" ? "twitch" : "kick";
+  prefetchShopPlatform(primary);
+  runWhenIdle(() => prefetchShopPlatform(secondary));
 }
 
 /** Hover / touch-down на табах — дедупликация в TanStack Query. */
