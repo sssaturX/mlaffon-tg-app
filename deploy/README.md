@@ -7,7 +7,7 @@
 | [mlaffon-api.service](mlaffon-api.service) | systemd: API |
 | [mlaffon-worker.service](mlaffon-worker.service) | systemd: основной BullMQ worker (outbox, domain-timers, task-verify, cron) |
 | [mlaffon-worker-fraud.service](mlaffon-worker-fraud.service) | systemd: только очередь `fraud-review` (опционально) |
-| [redeploy.sh](redeploy.sh) | **Деплой**: `git pull`, `docker compose`, `npm ci`, **`VAPID_*`**, Telegram как ниже, **`CORS`/security env** (см. ниже), **`npm run build`**, `db:push` + `db:seed` (retry), `chmod`, **автоматически**: копирование `deploy/mlaffon-*.service` → `/etc/systemd/system/`, `daemon-reload`, **`systemctl enable` + `restart`** для api, worker и worker-fraud, smoke `/health` и `/api/v1/home/public` |
+| [redeploy.sh](redeploy.sh) | **Деплой**: `git pull`, `docker compose`, `npm ci`, **`VAPID_*`**, Telegram как ниже, **`CORS`/security env** (см. ниже), **`npm run build`**, `db:push` → **`db:sync-faq`** (слияние FAQ из кода в `app_settings`) → `db:seed` (retry, опционально), `chmod`, **автоматически**: копирование `deploy/mlaffon-*.service` → `/etc/systemd/system/`, `daemon-reload`, **`systemctl enable` + `restart`** для api, worker и worker-fraud, smoke `/health` и `/api/v1/home/public` |
 | [deploy.env.example](deploy.env.example) | Пример `deploy/deploy.env`: `VITE_*`, домены (`PUBLIC_WEB_URL` / `CORS_*`), флаги деплоя |
 
 **Админка не логинится:** в `apps/api/.env` должны быть заданы `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PASSPHRASE` (без них API отвечает 503). После правки `.env`: `sudo systemctl restart mlaffon-api`. Сборка админки шлёт запросы на `/api` **того же хоста** `admin.…` (Caddy проксирует на API) — отдельный `VITE_API_ORIGIN` на проде для поддомена не обязателен.
@@ -59,8 +59,10 @@
 
 ### Полезные флаги для `redeploy.sh`
 
-- `DEPLOY_SKIP_DB=1` — пропустить `db:push`
-- `DEPLOY_DB_SEED=0` — пропустить `db:seed` (по умолчанию `db:seed` выполняется)
+- `DEPLOY_SKIP_DB=1` — пропустить `db:push`, `db:sync-faq` и `db:seed`
+- `DEPLOY_SKIP_FAQ_SYNC=1` — не выполнять `db:sync-faq` после `db:push` (по умолчанию FAQ из `apps/api/src/content/faqDefault.ts` мержится в БД)
+- `DEPLOY_FAQ_SYNC_RETRIES=3`, `DEPLOY_FAQ_SYNC_RETRY_DELAY=3` — retry для `db:sync-faq`
+- `DEPLOY_DB_SEED=0` — пропустить полный `db:seed` (FAQ всё равно обновится через `db:sync-faq`, если не отключён)
 - `DEPLOY_SKIP_INFRA=1` — не запускать `docker compose up -d postgres redis`
 - `DEPLOY_DB_RETRIES=5` и `DEPLOY_DB_RETRY_DELAY=3` — retry для `db:push`
 - `DEPLOY_DB_SEED_RETRIES=3` и `DEPLOY_DB_SEED_RETRY_DELAY=3` — retry для `db:seed`

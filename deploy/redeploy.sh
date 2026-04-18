@@ -2,7 +2,7 @@
 #
 # Продовый redeploy:
 # git pull -> (docker compose up postgres/redis + wait health) -> npm ci -> build
-# -> db push (retry) -> chmod/rights -> systemd: копирование unit из deploy/, daemon-reload, enable + restart
+# -> db push (retry) -> db:sync-faq (FAQ из кода в БД) -> db:seed (опционально) -> chmod/rights -> systemd: копирование unit из deploy/, daemon-reload, enable + restart
 #    (mlaffon-api, mlaffon-worker, mlaffon-worker-fraud) -> health checks.
 #
 # Broadcast/realtime: основной worker обязателен; worker-fraud — по умолчанию тоже ставится и перезапускается.
@@ -13,8 +13,9 @@
 #
 # Переменные окружения:
 #   REPO=/opt/mlaffon/mlaffon-tg-app
-#   DEPLOY_SKIP_DB=1           # не выполнять db:push
+#   DEPLOY_SKIP_DB=1           # не выполнять db:push / db:sync-faq / db:seed
 #   DEPLOY_DB_SEED=0           # НЕ выполнять db:seed (по умолчанию seed включён)
+#   DEPLOY_SKIP_FAQ_SYNC=1     # не выполнять db:sync-faq (по умолчанию FAQ мержится из кода в БД)
 #   DEPLOY_SKIP_INFRA=1        # не запускать docker compose postgres/redis
 #   DEPLOY_CADDY=1             # обновить /etc/caddy/Caddyfile и reload
 #   DEPLOY_DB_RETRIES=5        # кол-во retry для db:push
@@ -51,6 +52,9 @@ DEPLOY_DB_RETRY_DELAY="${DEPLOY_DB_RETRY_DELAY:-3}"
 DEPLOY_DB_SEED_RETRIES="${DEPLOY_DB_SEED_RETRIES:-3}"
 DEPLOY_DB_SEED_RETRY_DELAY="${DEPLOY_DB_SEED_RETRY_DELAY:-3}"
 DEPLOY_DB_SEED="${DEPLOY_DB_SEED:-1}"
+DEPLOY_SKIP_FAQ_SYNC="${DEPLOY_SKIP_FAQ_SYNC:-0}"
+DEPLOY_FAQ_SYNC_RETRIES="${DEPLOY_FAQ_SYNC_RETRIES:-3}"
+DEPLOY_FAQ_SYNC_RETRY_DELAY="${DEPLOY_FAQ_SYNC_RETRY_DELAY:-3}"
 DEPLOY_SYSTEMD_DAEMON_RELOAD="${DEPLOY_SYSTEMD_DAEMON_RELOAD:-1}"
 DEPLOY_HEALTH_RETRIES="${DEPLOY_HEALTH_RETRIES:-15}"
 DEPLOY_HEALTH_RETRY_DELAY="${DEPLOY_HEALTH_RETRY_DELAY:-2}"
@@ -120,12 +124,12 @@ assert_api_scripts() {
     const fs = require('fs');
     const p = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
     const s = p && p.scripts ? p.scripts : {};
-    const miss = ['build','db:push','db:seed'].filter((k) => typeof s[k] !== 'string');
+    const miss = ['build','db:push','db:seed','db:sync-faq'].filter((k) => typeof s[k] !== 'string');
     if (miss.length) {
       console.error('missing scripts in apps/api/package.json:', miss.join(', '));
       process.exit(1);
     }
-  " "$pkg" || die "Проверьте scripts в $pkg (нужны build, db:push, db:seed)"
+  " "$pkg" || die "Проверьте scripts в $pkg (нужны build, db:push, db:seed, db:sync-faq)"
 }
 
 wait_compose_service_healthy() {
@@ -544,12 +548,20 @@ show_mlaffon_units_status() {
 
 run_db_sync() {
   if [[ "${DEPLOY_SKIP_DB:-0}" == "1" ]]; then
-    log "пропуск db:push (DEPLOY_SKIP_DB=1)"
+    log "пропуск db:push / db:sync-faq / db:seed (DEPLOY_SKIP_DB=1)"
     return 0
   fi
   log "db:push (apps/api) с retry=${DEPLOY_DB_RETRIES}"
   run_with_retries "$DEPLOY_DB_RETRIES" "$DEPLOY_DB_RETRY_DELAY" bash -lc "cd '$REPO/apps/api' && npm run db:push" \
     || die "db:push не удалось после ${DEPLOY_DB_RETRIES} попыток"
+
+  if [[ "${DEPLOY_SKIP_FAQ_SYNC:-0}" != "1" ]]; then
+    log "db:sync-faq (слияние FAQ из кода в app_settings) retry=${DEPLOY_FAQ_SYNC_RETRIES}"
+    run_with_retries "$DEPLOY_FAQ_SYNC_RETRIES" "$DEPLOY_FAQ_SYNC_RETRY_DELAY" bash -lc "cd '$REPO/apps/api' && npm run db:sync-faq" \
+      || die "db:sync-faq не удалось после ${DEPLOY_FAQ_SYNC_RETRIES} попыток"
+  else
+    log "пропуск db:sync-faq (DEPLOY_SKIP_FAQ_SYNC=1)"
+  fi
 
   if [[ "$DEPLOY_DB_SEED" != "0" ]]; then
     log "db:seed (apps/api) с retry=${DEPLOY_DB_SEED_RETRIES}"

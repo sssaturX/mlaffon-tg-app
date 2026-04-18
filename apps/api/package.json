@@ -15,6 +15,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/seed.ts",
+    "db:sync-faq": "tsx src/syncFaq.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
