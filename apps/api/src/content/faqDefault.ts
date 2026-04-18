@@ -1,4 +1,9 @@
-/** Дефолтный FAQ для сида и ответа API, если в `app_settings` ещё нет ключа `faq`. */
+/**
+ * Дефолтный FAQ для API и сида.
+ *
+ * `mergeFaqDbWithDefaults` + `npm run db:seed` обновляют `app_settings.faq`: порядок и тексты
+ * совпадающих по `q` пунктов берутся из `DEFAULT_FAQ_ITEMS`, кастомные вопросы (другой `q`) дописываются в конец.
+ */
 export const DEFAULT_FAQ_ITEMS: { q: string; a: string }[] = [
   {
     q: "Не нашёл ответ на свой вопрос",
@@ -33,6 +38,10 @@ export const DEFAULT_FAQ_ITEMS: { q: string; a: string }[] = [
     a: "Мы не несем ответственности за ваши финансовые решения и возможные потери.",
   },
   {
+    q: "Создание мультиаккаунтов",
+    a: "Мультиаккаунты запрещены. При выявлении нарушений администрация оставляет за собой право заблокировать один или все аккаунты пользователя без предупреждения.",
+  },
+  {
     q: "Об игре и шансах",
     a: "Никогда не рассматривайте казино как способ заработка — в долгосрочной перспективе игрок всегда в минусе.",
   },
@@ -41,3 +50,27 @@ export const DEFAULT_FAQ_ITEMS: { q: string; a: string }[] = [
     a: "Азартные игры предназначены только для пользователей 18+.",
   },
 ];
+
+/** Нормализация значения из БД и слияние с дефолтным списком (для сида). */
+export function mergeFaqDbWithDefaults(storedValue: unknown): { q: string; a: string }[] {
+  const raw = storedValue as { items?: unknown } | null | undefined;
+  const prev = Array.isArray(raw?.items)
+    ? raw.items.filter(
+        (x): x is { q: string; a: string } =>
+          x != null &&
+          typeof x === "object" &&
+          typeof (x as { q?: unknown }).q === "string" &&
+          typeof (x as { a?: unknown }).a === "string"
+      )
+    : [];
+
+  const defaultQs = new Set(DEFAULT_FAQ_ITEMS.map((i) => i.q));
+  const merged = DEFAULT_FAQ_ITEMS.map((d) => ({ q: d.q, a: d.a }));
+
+  for (const item of prev) {
+    if (!defaultQs.has(item.q)) {
+      merged.push({ q: item.q, a: item.a });
+    }
+  }
+  return merged;
+}

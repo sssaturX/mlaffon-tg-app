@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "./db/index.js";
 import { appSettings, promoCodes, shopItems, tasks } from "./db/schema.js";
 import { invalidateActiveTasksCache } from "./services/taskCatalogCache.js";
-import { DEFAULT_FAQ_ITEMS } from "./content/faqDefault.js";
+import { mergeFaqDbWithDefaults } from "./content/faqDefault.js";
 
 /** Официальный канал для API-заданий follow (Twitch login / Kick slug в URL). */
 const OFFICIAL_TWITCH_BROADCASTER_LOGIN = "mlaffonxd";
@@ -437,11 +437,20 @@ async function seed() {
     .from(appSettings)
     .where(eq(appSettings.key, "faq"))
     .limit(1);
+  const faqItems = mergeFaqDbWithDefaults(faqRow?.value);
   if (!faqRow) {
     await db.insert(appSettings).values({
       key: "faq",
-      value: { items: DEFAULT_FAQ_ITEMS },
+      value: { items: faqItems },
     });
+  } else {
+    await db
+      .update(appSettings)
+      .set({
+        value: { items: faqItems },
+        updatedAt: new Date(),
+      })
+      .where(eq(appSettings.key, "faq"));
   }
 
   const [pc] = await db.select().from(promoCodes).where(eq(promoCodes.code, "WELCOME")).limit(1);
