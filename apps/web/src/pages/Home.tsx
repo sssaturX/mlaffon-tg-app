@@ -5,12 +5,13 @@ import { useHomeContent, useHomeGiveaways } from "../hooks/queries/useHomeQuerie
 import { flushSync } from "react-dom";
 import WebApp from "@twa-dev/sdk";
 import { Link } from "react-router-dom";
-import type { MeResponse } from "shared";
+import type { MeResponse, MediaImageUploadResponse } from "shared";
 import { api, formatApiError, getToken } from "../api";
 import { refreshProfileOnly } from "../meDomain/meHydration";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ResponsivePicture } from "../components/ResponsivePicture";
 import { UserPhotoAvatar } from "../components/UserPhotoAvatar";
 import { emailAvatarLetter } from "../utils/emailAvatarLetter";
 import { LiveBroadcastCard, openExternal } from "../components/LiveBroadcastCard";
@@ -41,6 +42,7 @@ type HomePublic = {
     prizeText: string;
     description: string | null;
     imageUrl: string | null;
+    imageMedia?: MediaImageUploadResponse | null;
     endsAt: string;
     winnerCount: number;
     ticketPriceCoins: number;
@@ -778,7 +780,16 @@ export default function Home({ me }: { me: MeResponse | null }) {
                 onPointerEnter={() => prefetchRouteData(`/giveaway/${g.id}`)}
                 onPointerDown={() => prefetchRouteData(`/giveaway/${g.id}`)}
               >
-                {g.imageUrl ? (
+                {g.imageMedia ? (
+                  <div className="giveaway-card__picture-wrap">
+                    <ResponsivePicture
+                      image={g.imageMedia}
+                      alt=""
+                      sizes="(max-width: 640px) 50vw, 280px"
+                      layout="fill"
+                    />
+                  </div>
+                ) : g.imageUrl ? (
                   <img
                     src={g.imageUrl}
                     alt=""

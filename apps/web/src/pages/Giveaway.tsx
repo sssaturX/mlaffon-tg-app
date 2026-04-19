@@ -15,6 +15,7 @@ import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ResponsivePicture } from "../components/ResponsivePicture";
 import { useGiveawayDetail } from "../hooks/queries/useGiveaways";
 import { queryKeys } from "../query/queryKeys";
 
@@ -195,7 +196,17 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
         <Link to="/" className="giveaway-detail__back" aria-label="Назад">
           <ChevronLeft size={22} />
         </Link>
-        {g.imageUrl ? (
+        {g.imageMedia ? (
+          <div className="giveaway-detail__banner-wrap">
+            <ResponsivePicture
+              image={g.imageMedia}
+              alt=""
+              sizes="100vw"
+              hero
+              layout="fill"
+            />
+          </div>
+        ) : g.imageUrl ? (
           <img
             src={g.imageUrl}
             alt=""

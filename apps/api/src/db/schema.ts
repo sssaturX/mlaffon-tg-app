@@ -385,6 +385,8 @@ export const giveaways = pgTable("giveaways", {
   /** Полное описание правил / призов (текст для карточки). */
   description: text("description"),
   imageUrl: text("image_url"),
+  /** Набор URL после медиа-пайплайна (AVIF/WebP/JPEG + LQIP) для `<picture>` в приложении. */
+  imageMedia: jsonb("image_media"),
   endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
   active: boolean("active").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),

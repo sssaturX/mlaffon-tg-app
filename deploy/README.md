@@ -8,7 +8,14 @@
 | [mlaffon-worker.service](mlaffon-worker.service) | systemd: основной BullMQ worker (outbox, domain-timers, task-verify, cron) |
 | [mlaffon-worker-fraud.service](mlaffon-worker-fraud.service) | systemd: только очередь `fraud-review` (опционально) |
 | [redeploy.sh](redeploy.sh) | **Деплой**: `git pull`, `docker compose`, `npm ci`, **`VAPID_*`**, Telegram как ниже, **`CORS`/security env** (см. ниже), **`npm run build`**, `db:push` → **`db:sync-faq`** (слияние FAQ из кода в `app_settings`) → `db:seed` (retry, опционально), `chmod`, **автоматически**: копирование `deploy/mlaffon-*.service` → `/etc/systemd/system/`, `daemon-reload`, **`systemctl enable` + `restart`** для api, worker и worker-fraud, smoke `/health` и `/api/v1/home/public` |
-| [deploy.env.example](deploy.env.example) | Пример `deploy/deploy.env`: `VITE_*`, домены (`PUBLIC_WEB_URL` / `CORS_*`), флаги деплоя |
+| [deploy.env.example](deploy.env.example) | Пример `deploy/deploy.env`: `VITE_*`, домены (`PUBLIC_WEB_URL` / `CORS_*`), **медиа S3/CDN**, флаги деплоя |
+
+### Что нужно для запуска (кратко)
+
+1. **На сервере** — клон репо, `apps/api/.env` с минимум `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `TELEGRAM_BOT_TOKEN`, креды админки `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_PASSPHRASE` (см. README выше про админку).
+2. **`deploy/deploy.env`** (скопировать из `deploy.env.example`) — как минимум `export PUBLIC_WEB_URL=…` (и при желании `PUBLIC_ADMIN_URL`, `VITE_BOT_USERNAME`). При `./deploy/redeploy.sh` скрипт подхватит файл и **допишет пустые** поля в `apps/api/.env` (CORS, домены, **медиа** — если вы их экспортнули).
+3. **Медиа (картинки из админки, CDN)** — опционально: в `deploy/deploy.env` добавьте `export MEDIA_S3_BUCKET=…`, `export MEDIA_PUBLIC_BASE_URL=https://ваш-cdn…`, `export AWS_ACCESS_KEY_ID=…`, `export AWS_SECRET_ACCESS_KEY=…` (для R2/MinIO см. [IMAGES.md](IMAGES.md)). Без них приложение и деплой работают, но загрузка изображений вернёт 503.
+4. Запуск: `chmod +x deploy/redeploy.sh && ./deploy/redeploy.sh` из корня репо на VPS (или `REPO=/path/to/repo ./deploy/redeploy.sh`). Скрипт делает `git pull`, docker Postgres/Redis, `npm ci`, билд, **`db:push`** (схема БД, в т.ч. новые колонки), перезапуск systemd.
 
 **Админка не логинится:** в `apps/api/.env` должны быть заданы `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PASSPHRASE` (без них API отвечает 503). После правки `.env`: `sudo systemctl restart mlaffon-api`. Сборка админки шлёт запросы на `/api` **того же хоста** `admin.…` (Caddy проксирует на API) — отдельный `VITE_API_ORIGIN` на проде для поддомена не обязателен.
 
@@ -73,7 +80,7 @@
 - `DEPLOY_TELEGRAM_WEBHOOK_SECRET=1` — сгенерировать/записать `TELEGRAM_WEBHOOK_SECRET` в `apps/api/.env`, если его ещё нет (вебхук)
 - `TELEGRAM_WEBHOOK_SECRET` в `deploy/deploy.env` — тот же эффект: значение попадёт в `apps/api/.env` при каждом деплое
 - `DEPLOY_SKIP_TELEGRAM_CHECK=1` — не требовать непустой `TELEGRAM_BOT_TOKEN` в `apps/api/.env`
-- **`DEPLOY_MERGE_DEPLOY_ENV_INTO_API=1`** (по умолчанию) — пустые `NODE_ENV`, `PUBLIC_WEB_URL`, `PUBLIC_ADMIN_URL`, `CORS_ORIGINS` в `apps/api/.env` дополняются из `export` в `deploy/deploy.env`
+- **`DEPLOY_MERGE_DEPLOY_ENV_INTO_API=1`** (по умолчанию) — пустые `NODE_ENV`, `PUBLIC_WEB_URL`, `PUBLIC_ADMIN_URL`, `CORS_ORIGINS` и **медиа-ключи** (`MEDIA_*`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) в `apps/api/.env` дополняются из `export` в `deploy/deploy.env`
 - **`DEPLOY_SKIP_ENV_SECURITY=1`** — не дописывать дефолты WS/auth и не генерировать `CORS_ORIGINS` из `PUBLIC_WEB_URL`
 - **`DEPLOY_ASSUME_PRODUCTION_API=1`** — если в `apps/api/.env` нет `NODE_ENV`, дописать `production`
 - **`DEPLOY_CORS_AUTO_ADMIN=1`** (по умолчанию) — при автогенерации CORS добавить `https://admin.<хост>` от `PUBLIC_WEB_URL`, если нет `PUBLIC_ADMIN_URL`

@@ -4,6 +4,7 @@ import type {
   HomeContentResponse,
   HomeGiveawaysResponse,
   LeaderboardResponse,
+  MediaImageUploadResponse,
   MeEconomyResponse,
   MeProfileResponse,
   ReferralsResponse,
@@ -90,6 +91,7 @@ export type GiveawayListItemDto = {
   title: string;
   prizeText: string;
   imageUrl: string | null;
+  imageMedia?: MediaImageUploadResponse | null;
   endsAt: string;
   platform: "twitch" | "kick" | "both";
   winnerCount: number;
@@ -115,6 +117,7 @@ export type GiveawayDetailDto = {
   prizeText: string;
   description: string | null;
   imageUrl: string | null;
+  imageMedia?: MediaImageUploadResponse | null;
   endsAt: string;
   platform: "twitch" | "kick" | "both";
   active: boolean;

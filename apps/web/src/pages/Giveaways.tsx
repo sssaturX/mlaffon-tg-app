@@ -5,6 +5,7 @@ import type { MeResponse } from "shared";
 import type { GiveawayListItemDto } from "../query/fetchers";
 import { useGiveawaysList } from "../hooks/queries/useGiveaways";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ResponsivePicture } from "../components/ResponsivePicture";
 
 function formatCountdown(iso: string): string {
   const end = new Date(iso).getTime();
@@ -108,7 +109,16 @@ export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
               to={`/giveaway/${g.id}`}
               className="card giveaway-card giveaway-card--link"
             >
-              {g.imageUrl ? (
+              {g.imageMedia ? (
+                <div className="giveaway-card__picture-wrap">
+                  <ResponsivePicture
+                    image={g.imageMedia}
+                    alt=""
+                    sizes="(max-width: 640px) 50vw, 280px"
+                    layout="fill"
+                  />
+                </div>
+              ) : g.imageUrl ? (
                 <img
                   src={g.imageUrl}
                   alt=""

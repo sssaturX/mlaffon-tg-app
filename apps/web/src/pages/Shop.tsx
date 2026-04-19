@@ -3,6 +3,7 @@ import { ArrowRight, Coins, Package, ShoppingBag, X } from "lucide-react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api, formatApiError, getToken } from "../api";
 import { TextWithTelegramMentions } from "../components/TextWithTelegramMentions";
+import { ResponsivePicture } from "../components/ResponsivePicture";
 import { queryKeys } from "../query/queryKeys";
 import {
   fetchShopPage,
@@ -153,7 +154,7 @@ export default function Shop() {
           {items.map((item, index) => {
             const meta = item.meta;
             const soldOut = item.stockRemaining === 0;
-            const priorityImage = index < 2 && Boolean(item.imageUrl);
+            const priorityImage = index < 2 && Boolean(item.imageUrl || item.imageMedia);
             return (
               <button
                 key={item.id}
@@ -165,7 +166,15 @@ export default function Shop() {
                 }}
               >
                 <div className="shop-showcase-card__media">
-                  {item.imageUrl ? (
+                  {item.imageMedia ? (
+                    <ResponsivePicture
+                      image={item.imageMedia}
+                      alt=""
+                      sizes="(max-width: 640px) 50vw, 240px"
+                      hero={priorityImage}
+                      layout="fill"
+                    />
+                  ) : item.imageUrl ? (
                     <img
                       src={item.imageUrl}
                       alt=""
@@ -239,7 +248,15 @@ export default function Shop() {
             </div>
 
             <div className="shop-popup__item">
-              {selected.imageUrl ? (
+              {selected.imageMedia ? (
+                <ResponsivePicture
+                  image={selected.imageMedia}
+                  alt=""
+                  sizes="72px"
+                  layout="fill"
+                  className="shop-popup__img--picture"
+                />
+              ) : selected.imageUrl ? (
                 <img src={selected.imageUrl} alt="" className="shop-popup__img" />
               ) : (
                 <div className="shop-popup__img shop-popup__img--ph">

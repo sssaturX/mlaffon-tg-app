@@ -1,4 +1,10 @@
-import type { TaskEvidenceExample, TaskHelpHint, TaskHelpIcon } from "shared";
+import type {
+  MediaImageUploadResponse,
+  TaskEvidenceExample,
+  TaskHelpHint,
+  TaskHelpIcon,
+} from "shared";
+import { parseStoredMediaImage } from "../lib/mediaImageJson.js";
 
 const HELP_ICONS: TaskHelpIcon[] = ["tv", "gift", "help", "radio"];
 
@@ -36,6 +42,13 @@ export function extractTaskUiFields(meta: Record<string, unknown> | null): {
     }
   }
   return { actionUrl, actionLabel, verifyLabel, help };
+}
+
+export function extractCoverImageMedia(
+  meta: Record<string, unknown> | null
+): MediaImageUploadResponse | null {
+  if (!meta || meta.coverImageMedia == null) return null;
+  return parseStoredMediaImage(meta.coverImageMedia);
 }
 
 export function extractCoverImageUrl(

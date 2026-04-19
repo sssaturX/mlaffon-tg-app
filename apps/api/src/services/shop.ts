@@ -4,6 +4,8 @@ import { shopItems, shopPurchases, userInventory } from "../db/schema.js";
 import { applyCredit, applyDebit, type EconomyPlatform } from "./economy.js";
 import { getShopGlobalCopyForClient } from "./shopSettings.js";
 import { nanoid } from "nanoid";
+import type { MediaImageUploadResponse } from "shared";
+import { parseStoredMediaImage } from "../lib/mediaImageJson.js";
 
 /** Платформа витрины магазина (совпадает с переключателем Twitch/Kick в приложении). */
 export type ShopClientPlatform = "twitch" | "kick";
@@ -23,6 +25,7 @@ export type ShopItemClientDto = {
   title: string;
   description: string | null;
   imageUrl: string | null;
+  imageMedia?: MediaImageUploadResponse | null;
   kind: string;
   priceCoins: number;
   meta: unknown;
@@ -34,17 +37,27 @@ export async function listShopItemsForClient(
   platform: ShopClientPlatform
 ): Promise<ShopItemClientDto[]> {
   const rows = await db.select().from(shopItems).where(eq(shopItems.active, true));
-  const mapped = rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    description: r.description ?? null,
-    imageUrl: r.imageUrl ?? null,
-    kind: r.kind,
-    priceCoins: r.priceCoins,
-    meta: r.meta ?? null,
-    stockRemaining:
-      r.stockTotal == null ? null : Math.max(0, r.stockTotal - r.stockSold),
-  }));
+  const mapped = rows.map((r) => {
+    const meta = r.meta ?? null;
+    const imageMedia =
+      meta && typeof meta === "object" && !Array.isArray(meta)
+        ? parseStoredMediaImage(
+            (meta as Record<string, unknown>).imageMedia
+          )
+        : null;
+    return {
+      id: r.id,
+      title: r.title,
+      description: r.description ?? null,
+      imageUrl: r.imageUrl ?? null,
+      ...(imageMedia ? { imageMedia } : {}),
+      kind: r.kind,
+      priceCoins: r.priceCoins,
+      meta,
+      stockRemaining:
+        r.stockTotal == null ? null : Math.max(0, r.stockTotal - r.stockSold),
+    };
+  });
   const visible = mapped.filter((row) =>
     shopItemVisibleForPlatform(row.meta, platform)
   );

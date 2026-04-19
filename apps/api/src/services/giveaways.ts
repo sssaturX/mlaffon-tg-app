@@ -8,8 +8,10 @@ import {
   platformAccounts,
   users,
 } from "../db/schema.js";
+import { parseStoredMediaImage } from "../lib/mediaImageJson.js";
 import { applyDebit } from "./economy.js";
 import { checkTelegramChannelMembership } from "./telegramChannel.js";
+import type { MediaImageUploadResponse } from "shared";
 
 export function displayUsername(u: {
   username: string | null;
@@ -91,6 +93,7 @@ export type GiveawayPublicDetail = {
   prizeText: string;
   description: string | null;
   imageUrl: string | null;
+  imageMedia?: MediaImageUploadResponse | null;
   endsAt: string;
   platform: GiveawayPlatformScope;
   active: boolean;
@@ -179,6 +182,7 @@ export async function getGiveawayPublicDetail(
     prizeText: g.prizeText,
     description: g.description ?? null,
     imageUrl: g.imageUrl,
+    imageMedia: parseStoredMediaImage(g.imageMedia),
     endsAt: g.endsAt.toISOString(),
     platform: (g.platform ?? "both") as GiveawayPlatformScope,
     active: g.active,
@@ -446,6 +450,7 @@ export type GiveawayListItem = {
   title: string;
   prizeText: string;
   imageUrl: string | null;
+  imageMedia?: MediaImageUploadResponse | null;
   endsAt: string;
   platform: GiveawayPlatformScope;
   winnerCount: number;
@@ -478,6 +483,7 @@ export async function listGiveawaysPublic(): Promise<GiveawayListItem[]> {
       title: g.title,
       prizeText: g.prizeText,
       imageUrl: g.imageUrl,
+      imageMedia: parseStoredMediaImage(g.imageMedia),
       endsAt: g.endsAt.toISOString(),
       platform: (g.platform ?? "both") as GiveawayPlatformScope,
       winnerCount: g.winnerCount,

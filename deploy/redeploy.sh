@@ -37,6 +37,10 @@
 # origin из TWITCH_REDIRECT_URI / KICK_REDIRECT_URI; пишется CORS_ORIGINS (+ admin поддомен);
 # при DEPLOY_AUTO_PRODUCTION_CORS=1 и отсутствии NODE_ENV дописывается production. Дефолты WS/auth — как раньше.
 #
+# Медиа (S3/CDN): при DEPLOY_MERGE_DEPLOY_ENV_INTO_API=1 из export в deploy/deploy.env в apps/api/.env
+# дописываются только отсутствующие ключи: MEDIA_S3_BUCKET, MEDIA_PUBLIC_BASE_URL, MEDIA_S3_REGION,
+# MEDIA_S3_ENDPOINT, MEDIA_S3_FORCE_PATH_STYLE, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (см. deploy/IMAGES.md).
+#
 # Telegram:
 #   — В apps/api/.env обязателен непустой TELEGRAM_BOT_TOKEN (отключить проверку: DEPLOY_SKIP_TELEGRAM_CHECK=1).
 #   — Long polling (по умолчанию): не задавайте TELEGRAM_WEBHOOK_SECRET в .env и не экспортируйте его из deploy.env.
@@ -385,7 +389,7 @@ ensure_api_env_security_defaults() {
     sync_env_var_into_api_if_missing "$envf" PUBLIC_WEB_URL
     sync_env_var_into_api_if_missing "$envf" PUBLIC_ADMIN_URL
     sync_env_var_into_api_if_missing "$envf" MINI_APP_WEB_URL
-    sync_env_var_into_api_if_missing "$envf" CORS_ORIGINS
+       sync_env_var_into_api_if_missing "$envf" CORS_ORIGINS
   fi
 
   if [[ "${DEPLOY_ASSUME_PRODUCTION_API:-0}" == "1" ]]; then
@@ -572,6 +576,36 @@ run_db_sync() {
   fi
 }
 
+# S3/CDN для загрузки картинок (админка, POST …/media/*). Работает и при DEPLOY_SKIP_ENV_SECURITY=1.
+sync_media_env_from_deploy() {
+  if [[ "${DEPLOY_MERGE_DEPLOY_ENV_INTO_API:-1}" != "1" ]]; then
+    return 0
+  fi
+  local envf="$REPO/apps/api/.env"
+  sync_env_var_into_api_if_missing "$envf" MEDIA_S3_BUCKET
+  sync_env_var_into_api_if_missing "$envf" MEDIA_PUBLIC_BASE_URL
+  sync_env_var_into_api_if_missing "$envf" MEDIA_S3_REGION
+  sync_env_var_into_api_if_missing "$envf" MEDIA_S3_ENDPOINT
+  sync_env_var_into_api_if_missing "$envf" MEDIA_S3_FORCE_PATH_STYLE
+  sync_env_var_into_api_if_missing "$envf" AWS_ACCESS_KEY_ID
+  sync_env_var_into_api_if_missing "$envf" AWS_SECRET_ACCESS_KEY
+}
+
+# Не блокирует деплой: медиа опционально (без ключей API отдаёт 503 на загрузку картинок).
+log_media_pipeline_status() {
+  local envf="$REPO/apps/api/.env"
+  local b pub ak sk
+  b="$(read_kv_from_envfile "$envf" MEDIA_S3_BUCKET)"
+  pub="$(read_kv_from_envfile "$envf" MEDIA_PUBLIC_BASE_URL)"
+  ak="$(read_kv_from_envfile "$envf" AWS_ACCESS_KEY_ID)"
+  sk="$(read_kv_from_envfile "$envf" AWS_SECRET_ACCESS_KEY)"
+  if [[ -n "${b// }" && -n "${pub// }" && -n "${ak// }" && -n "${sk// }" ]]; then
+    log "медиа-пайплайн: MEDIA_* и AWS_* в $envf заданы — загрузка изображений из админки / API включена"
+  else
+    log "медиа-пайплайн: не заданы MEDIA_S3_BUCKET / MEDIA_PUBLIC_BASE_URL / AWS ключи — см. deploy/IMAGES.md и export в deploy/deploy.env"
+  fi
+}
+
 post_deploy_smoke_checks() {
   log "проверка health API"
   run_with_retries "$DEPLOY_HEALTH_RETRIES" "$DEPLOY_HEALTH_RETRY_DELAY" curl -fsS "http://127.0.0.1:3001/health" >/dev/null \
@@ -614,6 +648,8 @@ main() {
   ensure_vapid_in_api_env
   configure_telegram_for_deploy
   ensure_api_env_security_defaults
+  sync_media_env_from_deploy
+  log_media_pipeline_status
   assert_required_env_vars_production
 
   log "npm run build (api + web + admin)"

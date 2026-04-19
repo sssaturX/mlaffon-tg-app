@@ -3,6 +3,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
+import multipart from "@fastify/multipart";
 import { z } from "zod";
 import { eq, and, sql } from "drizzle-orm";
 import { db, waitForDatabaseReady } from "./db/index.js";
@@ -57,6 +58,8 @@ import { registerPredictionRoutes } from "./routes/predictions.js";
 import { registerDropRoutes } from "./routes/drops.js";
 import { registerPushRoutes } from "./routes/push.js";
 import { registerTelegramWebhookRoutes } from "./routes/telegramWebhook.js";
+import { registerMediaRoutes } from "./routes/media.js";
+import { MAX_ORIGINAL_IMAGE_BYTES } from "./services/mediaConfig.js";
 import { maybeStartTelegramLongPolling } from "./services/telegramPolling.js";
 import {
   buildHomeContentResponse,
@@ -169,6 +172,10 @@ await app.register(rateLimit, {
 
 await app.register(websocket);
 
+await app.register(multipart, {
+  limits: { fileSize: MAX_ORIGINAL_IMAGE_BYTES },
+});
+
 await registerAuth(app);
 
 app.post("/api/v1/ws-ticket", async (req, reply) => {
@@ -200,6 +207,7 @@ await registerPredictionRoutes(app);
 await registerDropRoutes(app);
 await registerPushRoutes(app);
 await registerTelegramWebhookRoutes(app);
+await registerMediaRoutes(app);
 
 app.get("/health", async () => ({ ok: true }));
 

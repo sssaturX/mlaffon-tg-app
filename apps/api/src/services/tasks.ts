@@ -21,6 +21,7 @@ import { getTaskVerifyQueue } from "../queue/bullmq.js";
 import { processVerifyTaskJob } from "../workers/verifyTaskProcessor.js";
 import type { TaskDto, UserTaskStatus } from "shared";
 import {
+  extractCoverImageMedia,
   extractCoverImageUrl,
   extractEvidenceExamples,
   extractTaskUiFields,
@@ -92,6 +93,7 @@ const META_KEYS_HOISTED_TO_ROOT = new Set([
   "targetValue",
   "progressLabel",
   "coverImageUrl",
+  "coverImageMedia",
 ]);
 
 function slimMetaForTaskList(meta: Record<string, unknown>): Record<string, unknown> | null {
@@ -518,7 +520,9 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
     const hardStageCurrentMeta = asNumber(meta.hardStageCurrent);
     const chainOrder = asNumber(meta.chainOrder);
     const ui = extractTaskUiFields(meta);
-    const coverImageUrl = extractCoverImageUrl(meta);
+    const coverMedia = extractCoverImageMedia(meta);
+    const coverImageUrl =
+      extractCoverImageUrl(meta) ?? coverMedia?.fallbackSrc ?? null;
     const uiSection = asString(meta.uiSection);
     const uiOrder = asNumber(meta.uiOrder);
     const requiresEvidence = meta.requiresEvidence === true;
@@ -554,6 +558,7 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
       verifyLabel: ui.verifyLabel,
       help: ui.help,
       ...(coverImageUrl ? { coverImageUrl } : {}),
+      ...(coverMedia ? { coverImageMedia: coverMedia } : {}),
       progressCurrent: progress?.current,
       progressTarget: progress?.target,
       progressLabel: progress?.label ?? null,

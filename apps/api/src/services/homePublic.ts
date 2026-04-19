@@ -1,6 +1,7 @@
 import { and, eq, isNull, desc } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { appSettings, giveaways } from "../db/schema.js";
+import { parseStoredMediaImage } from "../lib/mediaImageJson.js";
 import { getParticipantCountsForGiveawayIds } from "./giveaways.js";
 import { DEFAULT_FAQ_ITEMS } from "../content/faqDefault.js";
 
@@ -31,6 +32,7 @@ export async function buildHomeGiveawaysResponse(): Promise<{
     prizeText: string;
     description: string | null;
     imageUrl: string | null;
+    imageMedia: ReturnType<typeof parseStoredMediaImage>;
     endsAt: string;
     winnerCount: number;
     ticketPriceCoins: number;
@@ -54,6 +56,7 @@ export async function buildHomeGiveawaysResponse(): Promise<{
       prizeText: x.prizeText,
       description: x.description ?? null,
       imageUrl: x.imageUrl,
+      imageMedia: parseStoredMediaImage(x.imageMedia),
       endsAt: x.endsAt.toISOString(),
       winnerCount: x.winnerCount,
       ticketPriceCoins: x.ticketPriceCoins,
@@ -70,6 +73,7 @@ export async function buildHomePublicResponse(): Promise<{
     prizeText: string;
     description: string | null;
     imageUrl: string | null;
+    imageMedia: ReturnType<typeof parseStoredMediaImage>;
     endsAt: string;
     winnerCount: number;
     ticketPriceCoins: number;

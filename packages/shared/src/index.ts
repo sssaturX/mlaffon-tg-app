@@ -17,6 +17,24 @@ export interface TaskEvidenceExample {
   caption?: string;
 }
 
+/** Ответ `POST /api/v1/media/images` — набор URL для `<picture>` + LQIP. */
+export interface MediaImageUrlsByWidth {
+  avif: string;
+  webp: string;
+  jpeg: string;
+}
+
+export interface MediaImageUploadResponse {
+  hash: string;
+  basePath: string;
+  widths: number[];
+  urlsByWidth: Record<string, MediaImageUrlsByWidth>;
+  srcset: { avif: string; webp: string; jpeg: string };
+  fallbackSrc: string;
+  lqipDataUrl: string;
+  processMs: number;
+}
+
 export interface TaskDto {
   id: string;
   title: string;
@@ -57,6 +75,8 @@ export interface TaskDto {
   uiOrder?: number;
   /** Фон карточки и модалки задания (из meta.coverImageUrl), URL или data:image. */
   coverImageUrl?: string | null;
+  /** Обложка через медиа-пайплайн (AVIF/WebP/JPEG + LQIP), если задано в meta.coverImageMedia. */
+  coverImageMedia?: MediaImageUploadResponse | null;
   /** Нужны скрины + модерация перед получением награды. */
   requiresEvidence?: boolean;
   evidenceExamples?: TaskEvidenceExample[];
@@ -142,6 +162,8 @@ export interface HomeGiveawayPublic {
   prizeText: string;
   description: string | null;
   imageUrl: string | null;
+  /** Полный набор URL после пайплайна (для `<picture>`). */
+  imageMedia?: MediaImageUploadResponse | null;
   endsAt: string;
   winnerCount: number;
   ticketPriceCoins: number;

@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import WebApp from "@twa-dev/sdk";
 import type { Platform, TaskDto } from "shared";
 import { HelpSheetModal } from "./HelpSheetModal";
+import { ResponsivePicture } from "./ResponsivePicture";
 import { TaskEvidenceExamples } from "./TaskEvidenceExamples";
 
 /** Справка не показываем для API-подписок Twitch/Kick — только мешает в шапке. */
@@ -218,10 +219,18 @@ export function TaskDetailModal({
       }}
     >
       <div
-        className={`task-detail-sheet${task.coverImageUrl ? " task-detail-sheet--has-cover" : ""}`}
+        className={`task-detail-sheet${task.coverImageUrl || task.coverImageMedia ? " task-detail-sheet--has-cover" : ""}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {task.coverImageUrl ? (
+        {task.coverImageMedia ? (
+          <ResponsivePicture
+            image={task.coverImageMedia}
+            alt=""
+            sizes="(max-width: 640px) 100vw, 420px"
+            layout="fill"
+            className="task-detail-sheet__cover"
+          />
+        ) : task.coverImageUrl ? (
           <div
             className="task-detail-sheet__cover"
             style={{ backgroundImage: `url(${JSON.stringify(task.coverImageUrl)})` }}

@@ -6,6 +6,7 @@ import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { HelpSheetModal } from "../components/HelpSheetModal";
 import { TaskDetailModal } from "../components/TaskDetailModal";
+import { ResponsivePicture } from "../components/ResponsivePicture";
 import { useRefetchTasks, useTasks } from "../hooks/queries/useTasks";
 import {
   markTaskEvidenceSubmitted,
@@ -362,9 +363,17 @@ export default function Tasks() {
     return (
       <article
         key={t.id}
-        className={`task-card-preview fade-in-soft ${streamTheme} ${t.validationType === "api" ? "task-card-preview--accent" : ""} ${done ? "task-card-preview--done" : ""}${t.coverImageUrl ? " task-card-preview--has-cover" : ""}`}
+        className={`task-card-preview fade-in-soft ${streamTheme} ${t.validationType === "api" ? "task-card-preview--accent" : ""} ${done ? "task-card-preview--done" : ""}${t.coverImageUrl || t.coverImageMedia ? " task-card-preview--has-cover" : ""}`}
       >
-        {t.coverImageUrl ? (
+        {t.coverImageMedia ? (
+          <ResponsivePicture
+            image={t.coverImageMedia}
+            alt=""
+            sizes="(max-width: 640px) 100vw, 420px"
+            layout="fill"
+            className="task-card-preview__cover"
+          />
+        ) : t.coverImageUrl ? (
           <div
             className="task-card-preview__cover"
             style={{ backgroundImage: `url(${JSON.stringify(t.coverImageUrl)})` }}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MediaImageUploadResponse } from "shared";
 
 const ADMIN_NAV_ITEMS = [
   { id: "giveaways" as const, label: "Розыгрыши" },
@@ -29,6 +30,14 @@ const ADMIN_STATS_AUTO_REFRESH_MIN_MS = 45_000;
  * На поддомене admin.* всегда используем тот же origin (`/api/...` → Caddy → 127.0.0.1:3001),
  * даже если в билде случайно задан VITE_API_ORIGIN на другой хост — иначе логин ломается.
  */
+function parseMediaImageFromMeta(v: unknown): MediaImageUploadResponse | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.fallbackSrc !== "string" || typeof o.hash !== "string") return null;
+  if (!o.srcset || typeof o.srcset !== "object") return null;
+  return v as MediaImageUploadResponse;
+}
+
 function apiBase(): string {
   const env = (import.meta.env.VITE_API_ORIGIN ?? "").trim().replace(/\/$/, "");
   if (typeof window !== "undefined" && window.location.hostname.startsWith("admin.")) {
@@ -50,6 +59,7 @@ type GiveawayRow = {
   prizeText: string;
   description: string | null;
   imageUrl: string | null;
+  imageMedia?: unknown;
   endsAt: string;
   platform: string;
   active: boolean;
@@ -128,6 +138,7 @@ type GiveawayDetailResponse = {
     prizeText: string;
     description: string | null;
     imageUrl: string | null;
+    imageMedia?: unknown;
     endsAt: string;
     active: boolean;
     sortOrder: number;
@@ -356,6 +367,7 @@ export function App() {
     return d.toISOString().slice(0, 16);
   });
   const [gwImage, setGwImage] = useState("");
+  const [gwImageMedia, setGwImageMedia] = useState<MediaImageUploadResponse | null>(null);
   const [gwRequireChannel, setGwRequireChannel] = useState(false);
   const [gwTelegramChannelId, setGwTelegramChannelId] = useState("");
   const [gwChannelInviteUrl, setGwChannelInviteUrl] = useState("");
@@ -457,6 +469,8 @@ export function App() {
   const [taskFormTargetValue, setTaskFormTargetValue] = useState(0);
   const [taskFormProgressLabel, setTaskFormProgressLabel] = useState("");
   const [taskFormCoverImageUrl, setTaskFormCoverImageUrl] = useState("");
+  const [taskFormCoverMedia, setTaskFormCoverMedia] =
+    useState<MediaImageUploadResponse | null>(null);
   const [predictionPlatforms, setPredictionPlatforms] = useState<PredictionPlatformRow[] | null>(null);
   const [predictions, setPredictions] = useState<PredictionRow[] | null>(null);
   const [predictionTitle, setPredictionTitle] = useState("");
@@ -489,6 +503,8 @@ export function App() {
   const [shopFormTitle, setShopFormTitle] = useState("");
   const [shopFormDescription, setShopFormDescription] = useState("");
   const [shopFormImageUrl, setShopFormImageUrl] = useState("");
+  const [shopFormImageMedia, setShopFormImageMedia] =
+    useState<MediaImageUploadResponse | null>(null);
   const [shopFormPrice, setShopFormPrice] = useState(50);
   const [shopFormSpins, setShopFormSpins] = useState(3);
   const [shopFormSubtitle, setShopFormSubtitle] = useState("");
@@ -537,12 +553,61 @@ export function App() {
     return h;
   }, [token]);
 
+  const uploadAdminMediaFile = useCallback(
+    async (file: File): Promise<MediaImageUploadResponse | null> => {
+      const maxBytes = 10 * 1024 * 1024;
+      if (!token) {
+        setErr("Нет сессии админки.");
+        return null;
+      }
+      if (!/^image\//i.test(file.type)) {
+        setErr("Выберите файл изображения (png/jpg/webp/gif…).");
+        return null;
+      }
+      if (file.size > maxBytes) {
+        setErr("Слишком большой файл. Максимум 10 МБ.");
+        return null;
+      }
+      const fd = new FormData();
+      fd.set("file", file, file.name);
+      try {
+        const r = await fetch(`${apiBase()}/api/admin/media/images`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        });
+        const j = (await r.json()) as
+          | MediaImageUploadResponse
+          | { error?: { message?: string } };
+        if (!r.ok) {
+          const msg =
+            j && typeof j === "object" && "error" in j
+              ? j.error?.message
+              : undefined;
+          setErr(msg ?? `Ошибка загрузки ${r.status}`);
+          return null;
+        }
+        if (!("fallbackSrc" in j) || typeof j.fallbackSrc !== "string") {
+          setErr("Некорректный ответ сервера при загрузке изображения.");
+          return null;
+        }
+        setErr(null);
+        return j as MediaImageUploadResponse;
+      } catch {
+        setErr("Сеть недоступна при загрузке изображения.");
+        return null;
+      }
+    },
+    [token]
+  );
+
   const resetShopForm = useCallback(() => {
     setShopEditingId(null);
     setShopFormId("");
     setShopFormTitle("");
     setShopFormDescription("");
     setShopFormImageUrl("");
+    setShopFormImageMedia(null);
     setShopFormPrice(50);
     setShopFormSpins(3);
     setShopFormSubtitle("");
@@ -556,55 +621,27 @@ export function App() {
     setShopFormPlatform("both");
   }, []);
 
-  const applyShopImageFromFile = useCallback((file: File | null) => {
-    if (!file) return;
-    const maxBytes = 3 * 1024 * 1024;
-    if (!/^image\//i.test(file.type)) {
-      setErr("Выберите файл изображения (png/jpg/webp/gif).");
-      return;
-    }
-    if (file.size > maxBytes) {
-      setErr("Слишком большой файл. Максимум 3 МБ.");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      if (!result.startsWith("data:image/")) {
-        setErr("Не удалось прочитать изображение.");
-        return;
-      }
-      setShopFormImageUrl(result);
-      setErr(null);
-    };
-    reader.onerror = () => setErr("Не удалось загрузить файл.");
-    reader.readAsDataURL(file);
-  }, []);
+  const applyShopImageFromFile = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      const data = await uploadAdminMediaFile(file);
+      if (!data) return;
+      setShopFormImageUrl(data.fallbackSrc);
+      setShopFormImageMedia(data);
+    },
+    [uploadAdminMediaFile]
+  );
 
-  const applyTaskCoverFromFile = useCallback((file: File | null) => {
-    if (!file) return;
-    const maxBytes = 3 * 1024 * 1024;
-    if (!/^image\//i.test(file.type)) {
-      setErr("Обложка: выберите файл изображения (png/jpg/webp/gif).");
-      return;
-    }
-    if (file.size > maxBytes) {
-      setErr("Обложка: слишком большой файл. Максимум 3 МБ.");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      if (!result.startsWith("data:image/")) {
-        setErr("Обложка: не удалось прочитать изображение.");
-        return;
-      }
-      setTaskFormCoverImageUrl(result);
-      setErr(null);
-    };
-    reader.onerror = () => setErr("Обложка: не удалось загрузить файл.");
-    reader.readAsDataURL(file);
-  }, []);
+  const applyTaskCoverFromFile = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      const data = await uploadAdminMediaFile(file);
+      if (!data) return;
+      setTaskFormCoverImageUrl(data.fallbackSrc);
+      setTaskFormCoverMedia(data);
+    },
+    [uploadAdminMediaFile]
+  );
 
   const openUserManage = useCallback(
     async (u: AdminUserRow) => {
@@ -1226,6 +1263,7 @@ export function App() {
         platform: gwPlatform,
       };
       if (gwImage.trim()) body.imageUrl = gwImage.trim();
+      if (gwImageMedia) body.imageMedia = gwImageMedia;
       if (gwDescription.trim()) body.description = gwDescription.trim();
       if (gwRequireChannel) {
         body.requireChannelSubscription = true;
@@ -1245,6 +1283,8 @@ export function App() {
       setGwTitle("");
       setGwPrize("");
       setGwDescription("");
+      setGwImage("");
+      setGwImageMedia(null);
       await loadGiveaways();
       await loadStats();
     } catch {
@@ -1622,8 +1662,35 @@ export function App() {
           />
         </div>
         <div>
-          <label htmlFor="gimg">Картинка URL (опционально)</label>
-          <input id="gimg" type="url" value={gwImage} onChange={(e) => setGwImage(e.target.value)} />
+          <label htmlFor="gimg">Картинка: URL или файл (файл — CDN AVIF/WebP)</label>
+          <input
+            id="gimg"
+            type="url"
+            value={gwImage}
+            onChange={(e) => {
+              setGwImage(e.target.value);
+              setGwImageMedia(null);
+            }}
+ placeholder="https://…"
+          />
+          <div className="admin-mt-3">
+            <label htmlFor="gimgfile">Загрузить с компьютера</label>
+            <input
+              id="gimgfile"
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                if (!f) return;
+                void (async () => {
+                  const data = await uploadAdminMediaFile(f);
+                  if (!data) return;
+                  setGwImage(data.fallbackSrc);
+                  setGwImageMedia(data);
+                })();
+              }}
+            />
+          </div>
         </div>
         <div className="admin-field-full">
           <span className="admin-field-label">Условие участия</span>
@@ -2211,13 +2278,19 @@ export function App() {
                 return;
               }
               const stockTotal = shopFormStockUnlimited ? null : shopFormStockTotal;
+              const shopImgTrim = shopFormImageUrl.trim();
               setLoading(true);
               setErr(null);
               try {
                 const shopBodyBase = {
                   title: shopFormTitle,
                   description: shopFormDescription.trim() || null,
-                  imageUrl: shopFormImageUrl.trim() || null,
+                  imageUrl: shopImgTrim || null,
+                  ...(shopFormImageMedia
+                    ? { imageMedia: shopFormImageMedia }
+                    : shopImgTrim
+                      ? {}
+                      : { imageMedia: null }),
                   kind: shopFormKind,
                   priceCoins: shopFormPrice,
                   subtitle: shopFormSubtitle.trim() || null,
@@ -2335,11 +2408,16 @@ export function App() {
             <div className="admin-shop-section">
               <h4 className="admin-shop-section__title">2. Картинка</h4>
               <div>
-                <label htmlFor="shopimg">Ссылка или вставка (URL / data:image…)</label>
+                <label htmlFor="shopimg">
+                  Ссылка (URL) или загрузка файла ниже — файл уходит в CDN-пайплайн (AVIF/WebP)
+                </label>
                 <textarea
                   id="shopimg"
                   value={shopFormImageUrl}
-                  onChange={(e) => setShopFormImageUrl(e.target.value)}
+                  onChange={(e) => {
+                    setShopFormImageUrl(e.target.value);
+                    setShopFormImageMedia(null);
+                  }}
                   rows={2}
                   placeholder="https://… или загрузите файл ниже"
                 />
@@ -2350,7 +2428,9 @@ export function App() {
                       id="shopimgfile"
                       type="file"
                       accept="image/*"
-                      onChange={(e) => applyShopImageFromFile(e.target.files?.[0] ?? null)}
+                      onChange={(e) => {
+                        void applyShopImageFromFile(e.target.files?.[0] ?? null);
+                      }}
                     />
                   </div>
                 </div>
@@ -2625,6 +2705,11 @@ export function App() {
                               setShopFormTitle(row.title);
                               setShopFormDescription(row.description ?? "");
                               setShopFormImageUrl(row.imageUrl ?? "");
+                              setShopFormImageMedia(
+                                parseMediaImageFromMeta(
+                                  (row.meta as Record<string, unknown> | null)?.imageMedia
+                                )
+                              );
                               setShopFormPrice(row.priceCoins);
                               const sp = meta?.spins ?? 1;
                               setShopFormSpins(sp);
@@ -2894,9 +2979,17 @@ export function App() {
                   ...(taskFormHelpIcon ? { icon: taskFormHelpIcon } : {}),
                 };
               } else delete meta.help;
-              if (taskFormCoverImageUrl.trim())
+              if (taskFormCoverMedia) {
+                meta.coverImageMedia = taskFormCoverMedia;
+                meta.coverImageUrl =
+                  taskFormCoverImageUrl.trim() || taskFormCoverMedia.fallbackSrc;
+              } else if (taskFormCoverImageUrl.trim()) {
                 meta.coverImageUrl = taskFormCoverImageUrl.trim();
-              else delete meta.coverImageUrl;
+                delete meta.coverImageMedia;
+              } else {
+                delete meta.coverImageUrl;
+                delete meta.coverImageMedia;
+              }
 
               setLoading(true);
               setErr(null);
@@ -2964,6 +3057,7 @@ export function App() {
                 setTaskFormTargetValue(0);
                 setTaskFormProgressLabel("");
                 setTaskFormCoverImageUrl("");
+                setTaskFormCoverMedia(null);
                 await loadAdminTasks();
               } catch {
                 setErr("Сеть недоступна");
@@ -3219,11 +3313,16 @@ export function App() {
               </div>
             </div>
             <div>
-              <label htmlFor="tcover">Фон карточки (URL или data:image/*)</label>
+              <label htmlFor="tcover">
+                Фон карточки: URL или загрузка файла (файл — CDN AVIF/WebP)
+              </label>
               <textarea
                 id="tcover"
                 value={taskFormCoverImageUrl}
-                onChange={(e) => setTaskFormCoverImageUrl(e.target.value)}
+                onChange={(e) => {
+                  setTaskFormCoverImageUrl(e.target.value);
+                  setTaskFormCoverMedia(null);
+                }}
                 rows={2}
                 placeholder="https://... — в приложении размытый фон карточки и модалки"
               />
@@ -3234,7 +3333,9 @@ export function App() {
                     id="tcoverfile"
                     type="file"
                     accept="image/*"
-                    onChange={(e) => applyTaskCoverFromFile(e.target.files?.[0] ?? null)}
+                    onChange={(e) => {
+                      void applyTaskCoverFromFile(e.target.files?.[0] ?? null);
+                    }}
                   />
                 </div>
               </div>
@@ -3285,6 +3386,7 @@ export function App() {
                     setTaskFormTargetValue(0);
                     setTaskFormProgressLabel("");
                     setTaskFormCoverImageUrl("");
+                    setTaskFormCoverMedia(null);
                   }}
                 >
                   Новое (сброс)
@@ -3374,6 +3476,7 @@ export function App() {
                           setTaskFormCoverImageUrl(
                             typeof m.coverImageUrl === "string" ? m.coverImageUrl : ""
                           );
+                          setTaskFormCoverMedia(parseMediaImageFromMeta(m.coverImageMedia));
                         }}
                       >
                         Править

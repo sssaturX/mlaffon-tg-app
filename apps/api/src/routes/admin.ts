@@ -72,6 +72,9 @@ import {
   resolvePrediction,
   startPrediction,
 } from "../services/predictions.js";
+import { readMultipartImagePart } from "../lib/readMultipartImage.js";
+import { mediaImageUploadResponseSchema } from "../lib/mediaImageJson.js";
+import { runMediaImageUpload } from "../services/mediaUploadService.js";
 import {
   adminAdjustBalance,
   adminDeleteUser,
@@ -100,6 +103,23 @@ function requireAdmin(req: FastifyRequest, reply: FastifyReply): string | null {
 }
 
 export async function registerAdminRoutes(app: FastifyInstance) {
+  app.post("/api/admin/media/images", async (req, reply) => {
+    if (!requireAdmin(req, reply)) return;
+    const part = await readMultipartImagePart(req);
+    if (!part.ok) {
+      return reply.status(part.status).send({
+        error: { code: part.code, message: part.message },
+      });
+    }
+    const result = await runMediaImageUpload(part.buffer, req.log);
+    if (!result.ok) {
+      return reply.status(result.status).send({
+        error: { code: result.code, message: result.message },
+      });
+    }
+    return result.data;
+  });
+
   const loginBody = z.object({
     email: z.string().email(),
     password: z.string().min(1),
@@ -449,6 +469,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         prizeText: g.prizeText,
         description: g.description ?? null,
         imageUrl: g.imageUrl,
+        imageMedia: g.imageMedia ?? null,
         endsAt: g.endsAt.toISOString(),
         active: g.active,
         sortOrder: g.sortOrder,
@@ -469,7 +490,11 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       title: z.string().min(1),
       prizeText: z.string().min(1),
       description: z.string().optional().nullable(),
-      imageUrl: z.string().url().optional().nullable(),
+      imageUrl: z
+        .union([z.string().url(), z.literal("")])
+        .optional()
+        .nullable(),
+      imageMedia: mediaImageUploadResponseSchema.optional().nullable(),
       endsAt: z.string().datetime(),
       platform: z.enum(["twitch", "kick", "both"]).optional(),
       active: z.boolean().optional(),
@@ -506,13 +531,16 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (invUrl && !/^https?:\/\//i.test(invUrl)) {
       invUrl = `https://${invUrl}`;
     }
+    const imgUrl =
+      d.imageUrl && d.imageUrl.trim().length > 0 ? d.imageUrl.trim() : null;
     const [ins] = await db
       .insert(giveaways)
       .values({
         title: d.title,
         prizeText: d.prizeText,
         description: d.description?.trim() ? d.description.trim() : null,
-        imageUrl: d.imageUrl ?? null,
+        imageUrl: imgUrl,
+        imageMedia: d.imageMedia ?? null,
         endsAt: new Date(d.endsAt),
         platform: d.platform ?? "both",
         active: d.active ?? true,
@@ -546,6 +574,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         prizeText: g.prizeText,
         description: g.description ?? null,
         imageUrl: g.imageUrl,
+        imageMedia: g.imageMedia ?? null,
         endsAt: g.endsAt.toISOString(),
         active: g.active,
         sortOrder: g.sortOrder,
@@ -956,6 +985,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     title: z.string().min(1).max(200),
     description: z.string().max(4000).nullable().optional(),
     imageUrl: shopImageField.nullable().optional(),
+    imageMedia: mediaImageUploadResponseSchema.optional().nullable(),
     kind: shopKindZ,
     priceCoins: z.number().int().min(1),
     spins: z.number().int().min(1).max(99).optional(),
@@ -973,6 +1003,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     title: z.string().min(1).max(200).optional(),
     description: z.string().max(4000).nullable().optional(),
     imageUrl: shopImageField.nullable().optional(),
+    imageMedia: mediaImageUploadResponseSchema.optional().nullable(),
     kind: shopKindZ.optional(),
     priceCoins: z.number().int().min(1).optional(),
     spins: z.number().int().min(1).max(99).optional(),
@@ -1015,6 +1046,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           buttonLabel: d.buttonLabel?.trim() ? d.buttonLabel.trim() : null,
           sortOrder: d.sortOrder ?? 0,
           ...(d.platform && d.platform !== "both" ? { platform: d.platform } : {}),
+          ...(d.imageMedia ? { imageMedia: d.imageMedia } : {}),
         },
         active: d.active !== false,
         stockTotal: d.stockTotal === undefined ? null : d.stockTotal,
@@ -1059,7 +1091,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       d.buttonLabel !== undefined ||
       d.sortOrder !== undefined ||
       d.platform !== undefined ||
-      d.kind === "manual_fulfillment";
+      d.kind === "manual_fulfillment" ||
+      d.imageMedia !== undefined;
 
     if (needsMetaMerge) {
       const [cur] = await db.select().from(shopItems).where(eq(shopItems.id, id)).limit(1);
@@ -1093,6 +1126,10 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       if (d.platform !== undefined) {
         if (d.platform === "both") delete nextMeta.platform;
         else nextMeta.platform = d.platform;
+      }
+      if (d.imageMedia !== undefined) {
+        if (d.imageMedia == null) delete nextMeta.imageMedia;
+        else nextMeta.imageMedia = d.imageMedia;
       }
       patch.meta = nextMeta;
     }
