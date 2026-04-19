@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { shopItems } from "../db/schema.js";
+import { invalidateShopBundleCache } from "./shopBundleCache.js";
 
 export type AdminShopItemRow = {
   id: string;
@@ -66,6 +67,7 @@ export async function createShopItemAdmin(input: {
     stockTotal: input.stockTotal,
     stockSold: 0,
   });
+  invalidateShopBundleCache();
 }
 
 export async function updateShopItemAdmin(
@@ -109,10 +111,12 @@ export async function updateShopItemAdmin(
     .update(shopItems)
     .set(set as Partial<typeof shopItems.$inferInsert>)
     .where(eq(shopItems.id, id));
+  invalidateShopBundleCache();
   return true;
 }
 
 export async function deleteShopItemAdmin(id: string): Promise<boolean> {
   const r = await db.delete(shopItems).where(eq(shopItems.id, id)).returning({ id: shopItems.id });
+  if (r.length > 0) invalidateShopBundleCache();
   return r.length > 0;
 }

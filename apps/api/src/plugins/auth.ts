@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { users } from "../db/schema.js";
 import { verifySession } from "../lib/jwt.js";
+import { markRequestTrace } from "../lib/requestTrace.js";
 import { isUserBanned } from "../services/userBan.js";
 
 declare module "fastify" {
@@ -29,12 +30,14 @@ export async function registerAuth(app: FastifyInstance) {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
       req.userId = undefined;
+      markRequestTrace(req, "auth_skip_no_bearer");
       return;
     }
     const token = auth.slice(7);
     try {
       const p = verifySession(token);
       req.userId = p.sub;
+      markRequestTrace(req, "jwt_verified");
     } catch {
       req.userId = undefined;
     }
@@ -46,6 +49,7 @@ export async function registerAuth(app: FastifyInstance) {
           .from(users)
           .where(eq(users.id, req.userId))
           .limit(1);
+        markRequestTrace(req, "db_user_lookup");
         if (!u) {
           req.userId = undefined;
           void reply.status(401).send({
@@ -94,6 +98,7 @@ export async function registerAuth(app: FastifyInstance) {
         });
         return;
       }
+      markRequestTrace(req, "auth_complete");
     }
   });
 }

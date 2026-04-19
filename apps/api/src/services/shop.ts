@@ -6,6 +6,12 @@ import { getShopGlobalCopyForClient } from "./shopSettings.js";
 import { nanoid } from "nanoid";
 import type { MediaImageUploadResponse } from "shared";
 import { parseStoredMediaImage } from "../lib/mediaImageJson.js";
+import { singleFlight } from "../lib/singleFlight.js";
+import {
+  getShopBundleFromCache,
+  invalidateShopBundleCache,
+  setShopBundleCache,
+} from "./shopBundleCache.js";
 
 /** Платформа витрины магазина (совпадает с переключателем Twitch/Kick в приложении). */
 export type ShopClientPlatform = "twitch" | "kick";
@@ -79,11 +85,32 @@ export async function getShopClientBundle(platform: ShopClientPlatform): Promise
   items: ShopItemClientDto[];
   globalCopy: Awaited<ReturnType<typeof getShopGlobalCopyForClient>>;
 }> {
-  const [items, globalCopy] = await Promise.all([
-    listShopItemsForClient(platform),
-    getShopGlobalCopyForClient(),
-  ]);
-  return { items, globalCopy };
+  const cached = await getShopBundleFromCache(platform);
+  if (cached) {
+    return {
+      items: cached.items as ShopItemClientDto[],
+      globalCopy: cached.globalCopy,
+    };
+  }
+  return singleFlight(`shop:bundle:load:${platform}`, async () => {
+    const again = await getShopBundleFromCache(platform);
+    if (again) {
+      return {
+        items: again.items as ShopItemClientDto[],
+        globalCopy: again.globalCopy,
+      };
+    }
+    const [items, globalCopy] = await Promise.all([
+      listShopItemsForClient(platform),
+      getShopGlobalCopyForClient(),
+    ]);
+    const bundle = { items, globalCopy };
+    await setShopBundleCache(platform, {
+      items: bundle.items as unknown[],
+      globalCopy: bundle.globalCopy,
+    });
+    return bundle;
+  });
 }
 
 export async function purchaseItem(
@@ -174,5 +201,6 @@ export async function purchaseItem(
     platform,
   });
 
+  invalidateShopBundleCache();
   return { ok: true };
 }

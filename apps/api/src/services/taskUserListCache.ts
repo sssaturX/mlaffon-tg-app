@@ -2,7 +2,7 @@ import { getRedis } from "../lib/redis.js";
 import type { TaskDto } from "shared";
 
 const KEY_PREFIX = "mlaffon:tasks:userdto:v1:";
-const TTL_SEC = 20;
+const TTL_SEC = 30;
 
 function cacheKey(userId: string): string {
   return `${KEY_PREFIX}${userId}`;

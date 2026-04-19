@@ -83,6 +83,14 @@ import { invalidateUserTaskDtoCache } from "./services/taskUserListCache.js";
 import { resolveCorsOrigin } from "./lib/corsOrigins.js";
 import { sanitizeRequestUrlForLog } from "./lib/sanitizeLogUrl.js";
 import { issueWsTicket } from "./lib/wsTicket.js";
+import { warmupRedis } from "./lib/redis.js";
+import { startPgPoolMetrics } from "./lib/pgPoolMetrics.js";
+import { startEventLoopMonitor } from "./lib/eventLoopMonitor.js";
+import {
+  buildRequestTracePayload,
+  initRequestTrace,
+  shouldEmitRequestTrace,
+} from "./lib/requestTrace.js";
 
 const AUTH_RATE_LIMIT_MAX = Number.parseInt(
   process.env.AUTH_RATE_LIMIT_MAX ?? "15",
@@ -131,6 +139,63 @@ const app = Fastify({
     },
   },
 });
+
+app.addHook("onRequest", (req, _reply, done) => {
+  initRequestTrace(req);
+  done();
+});
+
+const SLOW_REQ_MS = Number.parseInt(process.env.API_SLOW_REQUEST_MS ?? "2000", 10);
+const TRACE_SAMPLE_RATE = Number.parseFloat(
+  process.env.API_TRACE_SAMPLE_RATE ?? "0"
+);
+if (SLOW_REQ_MS > 0 || (Number.isFinite(TRACE_SAMPLE_RATE) && TRACE_SAMPLE_RATE > 0)) {
+  app.addHook("onResponse", (req, reply, done) => {
+    const ms = reply.elapsedTime;
+    const path = String(req.url ?? "").split("?")[0] ?? "";
+    if (!path.startsWith("/api")) {
+      done();
+      return;
+    }
+    const elapsed = typeof ms === "number" ? ms : 0;
+    const sampleRoll = Math.random();
+    const tracePayload = buildRequestTracePayload(req, elapsed);
+    const slow =
+      SLOW_REQ_MS > 0 && typeof ms === "number" && ms >= SLOW_REQ_MS;
+    const sampled = shouldEmitRequestTrace(elapsed, sampleRoll);
+
+    const contentLength = reply.getHeader("content-length");
+    const extra =
+      tracePayload != null
+        ? { ...tracePayload, ...(contentLength ? { contentLength } : {}) }
+        : contentLength
+          ? { contentLength }
+          : {};
+
+    if (slow) {
+      req.log.warn(
+        {
+          ms: elapsed,
+          method: req.method,
+          url: sanitizeRequestUrlForLog(String(req.url ?? "")),
+          ...extra,
+        },
+        "slow_api_request"
+      );
+    } else if (sampled && Object.keys(extra).length > 0) {
+      req.log.info(
+        {
+          ms: elapsed,
+          method: req.method,
+          url: sanitizeRequestUrlForLog(String(req.url ?? "")),
+          ...extra,
+        },
+        "request_trace"
+      );
+    }
+    done();
+  });
+}
 
 await app.register(cors, {
   origin: resolveCorsOrigin(),
@@ -1237,9 +1302,14 @@ const host = process.env.HOST ?? "0.0.0.0";
 try {
   await waitForDatabaseReady();
   await seedDefaultPointPlatforms();
+  await warmupRedis();
+  const stopPgPoolMetrics = startPgPoolMetrics(app.log);
+  const stopEventLoopMonitor = startEventLoopMonitor(app.log);
   await startRealtimeSubscriber(app.log);
   const telegramPollStop: { current?: () => void } = {};
   app.addHook("onClose", async () => {
+    stopPgPoolMetrics();
+    stopEventLoopMonitor();
     telegramPollStop.current?.();
   });
   await app.listen({ port, host });

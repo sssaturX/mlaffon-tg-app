@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { appSettings } from "../db/schema.js";
+import { invalidateShopBundleCache } from "./shopBundleCache.js";
 
 const SHOP_GLOBAL_COPY_KEY = "shop_global_copy";
 
@@ -55,4 +56,5 @@ export async function setShopGlobalCopyAdmin(
       target: appSettings.key,
       set: { value, updatedAt: sql`now()` },
     });
+  invalidateShopBundleCache();
 }

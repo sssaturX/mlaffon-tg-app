@@ -89,13 +89,15 @@ export async function buildMeProfileResponse(
 export async function buildMeEconomyResponse(
   userId: string
 ): Promise<MeEconomyResponse> {
-  const streamStreak = await ensureStreamStreakRow(userId);
-
-  const [b] = await db
-    .select()
-    .from(userBalances)
-    .where(eq(userBalances.userId, userId))
-    .limit(1);
+  const [streamStreak, balRows] = await Promise.all([
+    ensureStreamStreakRow(userId),
+    db
+      .select()
+      .from(userBalances)
+      .where(eq(userBalances.userId, userId))
+      .limit(1),
+  ]);
+  const b = balRows[0];
   if (!b) throw new Error("user_not_found");
 
   const coinsTwitch = b.twitchCoins ?? 0;

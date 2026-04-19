@@ -5,10 +5,22 @@ import * as schema from "./schema.js";
 const connectionString =
   process.env.DATABASE_URL ?? "postgres://mlaffon:mlaffon@localhost:5432/mlaffon";
 
-const pool = new pg.Pool({ connectionString });
+const poolMax = Number.parseInt(process.env.PG_POOL_MAX ?? "20", 10);
+const pool = new pg.Pool({
+  connectionString,
+  max: Number.isFinite(poolMax) && poolMax > 0 ? poolMax : 20,
+  connectionTimeoutMillis: Number.parseInt(
+    process.env.PG_CONNECTION_TIMEOUT_MS ?? "10000",
+    10
+  ),
+  idleTimeoutMillis: Number.parseInt(
+    process.env.PG_IDLE_TIMEOUT_MS ?? "30000",
+    10
+  ),
+});
 
 export const db = drizzle(pool, { schema });
-export { schema };
+export { schema, pool };
 
 /**
  * После `docker compose down -v` Postgres поднимается с пустым томом и несколько секунд

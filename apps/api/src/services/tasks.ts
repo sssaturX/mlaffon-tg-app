@@ -27,7 +27,11 @@ import {
   extractTaskUiFields,
 } from "./taskUiMeta.js";
 import { verifyPlatformTask } from "./taskVerifyLogic.js";
-import { getActiveTasksCached } from "./taskCatalogCache.js";
+import { singleFlight } from "../lib/singleFlight.js";
+import {
+  getActiveTasksCached,
+  type CachedTaskRow,
+} from "./taskCatalogCache.js";
 import {
   getCachedUserTaskDtoList,
   invalidateUserTaskDtoCache,
@@ -328,21 +332,31 @@ async function enforceTaskRevocationIfNeeded(
   if (revoked) invalidateUserTaskDtoCache(userId);
 }
 
-export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
-  const all = await getActiveTasksCached();
-
-  await Promise.all(
-    all.map((t) => {
-      if (toTaskMeta(t.meta).revokeOnUnsubscribe !== true) {
-        return Promise.resolve();
-      }
-      const pk = periodKeyForTask(t);
-      return enforceTaskRevocationIfNeeded(userId, t, pk);
-    })
+/** Не распараллеливать десятки revoke-транзакций — упираемся в пул Postgres. */
+async function runRevocationChecksBatched(
+  userId: string,
+  taskRows: (typeof tasks.$inferSelect)[]
+): Promise<void> {
+  const revokeTasks = taskRows.filter(
+    (t) => toTaskMeta(t.meta).revokeOnUnsubscribe === true
   );
+  const batch = 5;
+  for (let i = 0; i < revokeTasks.length; i += batch) {
+    const slice = revokeTasks.slice(i, i + batch);
+    await Promise.all(
+      slice.map((t) =>
+        enforceTaskRevocationIfNeeded(userId, t, periodKeyForTask(t))
+      )
+    );
+  }
+}
 
-  const cachedList = await getCachedUserTaskDtoList(userId);
-  if (cachedList) return cachedList;
+async function computeUserTaskDtoList(
+  userId: string,
+  all: CachedTaskRow[]
+): Promise<TaskDto[]> {
+  const again = await getCachedUserTaskDtoList(userId);
+  if (again) return again;
 
   const todayPk = utcDateString();
   const allTaskIds = [...new Set(all.map((x) => x.id))];
@@ -597,6 +611,16 @@ export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
   });
   void setCachedUserTaskDtoList(userId, rows);
   return rows;
+}
+
+export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
+  const all = await getActiveTasksCached();
+  await runRevocationChecksBatched(userId, all);
+  const cachedList = await getCachedUserTaskDtoList(userId);
+  if (cachedList) return cachedList;
+  return singleFlight(`tasks:userdto:${userId}`, () =>
+    computeUserTaskDtoList(userId, all)
+  );
 }
 
 export async function claimTask(

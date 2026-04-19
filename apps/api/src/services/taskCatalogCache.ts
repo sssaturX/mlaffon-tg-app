@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { tasks } from "../db/schema.js";
 import { getRedis } from "../lib/redis.js";
+import { singleFlight } from "../lib/singleFlight.js";
 import { flushAllUserTaskDtoCaches } from "./taskUserListCache.js";
 
 const CACHE_KEY = "mlaffon:tasks:active:v1";
@@ -25,13 +26,24 @@ export async function getActiveTasksCached(): Promise<CachedTaskRow[]> {
     /* Redis недоступен — только БД */
   }
 
-  const rows = await db.select().from(tasks).where(eq(tasks.active, true));
-  try {
-    await getRedis().setex(CACHE_KEY, TTL_SEC, JSON.stringify(rows));
-  } catch {
-    /* ignore */
-  }
-  return rows;
+  return singleFlight("mlaffon:tasks:active:loader", async () => {
+    try {
+      const raw = await getRedis().get(CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as CachedTaskRow[];
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      /* ignore */
+    }
+    const rows = await db.select().from(tasks).where(eq(tasks.active, true));
+    try {
+      await getRedis().setex(CACHE_KEY, TTL_SEC, JSON.stringify(rows));
+    } catch {
+      /* ignore */
+    }
+    return rows;
+  });
 }
 
 /** Вызывать после изменения заданий в админке / сиде. */
