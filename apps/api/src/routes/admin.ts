@@ -170,7 +170,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: result.code, message: result.message },
       });
     }
-    audit(admin, req, "upload_media", "media", null, { url: (result.data as Record<string, unknown>).url });
+    audit(admin, req, "upload_media", "media", null, { url: result.data.fallbackSrc });
     return result.data;
   });
 
