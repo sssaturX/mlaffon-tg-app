@@ -1120,11 +1120,16 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   const shopKindZ = z.enum(["extra_spin", "manual_fulfillment"]);
   const shopPlatformZ = z.enum(["twitch", "kick", "both"]);
 
+  const shopImageUrlIn = z.preprocess(
+    (v) => (v === "" ? null : v),
+    shopImageField.nullable().optional()
+  );
+
   const shopCreateBody = z.object({
     id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
     title: z.string().min(1).max(200),
     description: z.string().max(4000).nullable().optional(),
-    imageUrl: shopImageField.nullable().optional(),
+    imageUrl: shopImageUrlIn,
     imageMedia: mediaImageUploadResponseSchema.optional().nullable(),
     kind: shopKindZ,
     priceCoins: z.number().int().min(1),
@@ -1142,7 +1147,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   const shopPatchBody = z.object({
     title: z.string().min(1).max(200).optional(),
     description: z.string().max(4000).nullable().optional(),
-    imageUrl: shopImageField.nullable().optional(),
+    imageUrl: shopImageUrlIn,
     imageMedia: mediaImageUploadResponseSchema.optional().nullable(),
     kind: shopKindZ.optional(),
     priceCoins: z.number().int().min(1).optional(),
@@ -1307,15 +1312,6 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     const id = (req.params as { id: string }).id;
     const del = await deleteShopItemAdmin(id);
     if (!del.ok) {
-      if (del.reason === "has_purchases") {
-        return reply.status(409).send({
-          error: {
-            code: "shop_has_purchases",
-            message:
-              "Нельзя удалить товар: есть записи о покупках. Снимите с витрины (выключите активность) или оставьте товар в базе.",
-          },
-        });
-      }
       return reply.status(404).send({
         error: { code: "not_found", message: "Товар не найден" },
       });

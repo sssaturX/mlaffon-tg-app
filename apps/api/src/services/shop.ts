@@ -279,6 +279,7 @@ export async function purchaseItem(
     await tx.insert(shopPurchases).values({
       userId,
       shopItemId: item.id,
+      itemTitleSnapshot: item.title,
       priceCoins: item.priceCoins,
       platform,
     });

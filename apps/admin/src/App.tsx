@@ -237,7 +237,7 @@ type AdminShopItemRow = {
 type AdminShopPurchaseRow = {
   id: string;
   createdAt: string;
-  shopItemId: string;
+  shopItemId: string | null;
   itemTitle: string;
   priceCoins: number;
   platform: string;
@@ -2822,7 +2822,7 @@ export function App() {
                         <td>
                           <strong>{p.itemTitle}</strong>
                           <div className="muted mono" style={{ fontSize: 11 }}>
-                            {p.shopItemId}
+                            {p.shopItemId ?? "товар удалён из каталога"}
                           </div>
                         </td>
                         <td>

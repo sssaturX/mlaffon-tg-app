@@ -696,9 +696,12 @@ export const shopPurchases = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    shopItemId: text("shop_item_id")
-      .notNull()
-      .references(() => shopItems.id, { onDelete: "restrict" }),
+    /** После удаления товара из каталога обнуляется (ON DELETE SET NULL); название остаётся в `itemTitleSnapshot`. */
+    shopItemId: text("shop_item_id").references(() => shopItems.id, {
+      onDelete: "set null",
+    }),
+    /** Название товара на момент покупки / перед удалением карточки (для отчётов). */
+    itemTitleSnapshot: text("item_title_snapshot").notNull().default(""),
     priceCoins: integer("price_coins").notNull(),
     platform: text("platform").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })

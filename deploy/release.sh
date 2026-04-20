@@ -16,7 +16,7 @@
 #   MLAFFON_BASE=/opt/mlaffon           # base directory
 #   API_PORT=3001                       # API listen port
 #   DEPLOY_SKIP_BACKUP=0               # skip pre-deploy backup
-#   DEPLOY_SKIP_MIGRATIONS=0           # skip drizzle push
+#   DEPLOY_SKIP_MIGRATIONS=0           # skip SQL file + drizzle push
 #   DEPLOY_SKIP_CDN=0                  # skip CDN validation
 #   DEPLOY_SKIP_WARMUP=0               # skip cache warmup
 #   DEPLOY_ALLOW_DESTRUCTIVE=0         # pass --force to drizzle push
@@ -253,6 +253,22 @@ if [[ "${DEPLOY_SKIP_MIGRATIONS:-0}" == "1" ]]; then
 else
   cd "${RELEASE_DIR}/apps/api"
 
+  # Ручные idempotent SQL в apps/api/drizzle/*.sql — drizzle-kit push их не выполняет.
+  API_ENV="${RELEASE_DIR}/apps/api/.env"
+  DB_URL="$(read_env_val "$API_ENV" "DATABASE_URL")"
+  [[ -n "$DB_URL" ]] || die "DATABASE_URL missing in ${API_ENV} (needed for migrations)"
+  command -v psql &>/dev/null || die "psql not found (install postgresql-client; required for SQL migrations)"
+
+  SHOP_MIG_SQL="${RELEASE_DIR}/apps/api/drizzle/0006_shop_purchases_item_snapshot_fk.sql"
+  if [[ -f "$SHOP_MIG_SQL" ]]; then
+    log "Applying idempotent SQL: $(basename "$SHOP_MIG_SQL") (shop_purchases snapshot / FK)"
+    run_retry 3 5 psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$SHOP_MIG_SQL" 2>&1 ||
+      die "SQL migration failed: 0006_shop_purchases_item_snapshot_fk.sql"
+    ok "SQL migration applied"
+  else
+    warn "Expected file missing: apps/api/drizzle/0006_shop_purchases_item_snapshot_fk.sql — skip SQL step"
+  fi
+
   DRIZZLE_ARGS=""
   if [[ "${DEPLOY_ALLOW_DESTRUCTIVE:-0}" == "1" ]]; then
     DRIZZLE_ARGS="--force"
@@ -261,7 +277,7 @@ else
 
   log "Running drizzle-kit push…"
   run_retry 3 5 npx drizzle-kit push $DRIZZLE_ARGS 2>&1 || die "Migration failed after retries"
-  ok "Migrations applied"
+  ok "drizzle-kit push applied"
 
   if [[ "${DEPLOY_SKIP_FAQ_SYNC:-0}" != "1" ]]; then
     log "Running db:sync-faq…"

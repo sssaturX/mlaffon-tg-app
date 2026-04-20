@@ -1,4 +1,4 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { shopItems, shopPurchases } from "../db/schema.js";
 import { invalidateShopBundleCache } from "./shopBundleCache.js";
@@ -115,22 +115,25 @@ export async function updateShopItemAdmin(
   return true;
 }
 
-export type DeleteShopItemResult =
-  | { ok: true }
-  | { ok: false; reason: "not_found" | "has_purchases" };
+export type DeleteShopItemResult = { ok: true } | { ok: false; reason: "not_found" };
 
 /**
- * Удаление товара. `shop_purchases` ссылается на `shop_items` с ON DELETE RESTRICT —
- * при наличии покупок DELETE в БД падает; возвращаем явную причину вместо 500.
+ * Удаление товара. Перед удалением переносим актуальное название в `item_title_snapshot` у покупок;
+ * FK `shop_purchases.shop_item_id` — ON DELETE SET NULL (история покупок сохраняется).
  */
 export async function deleteShopItemAdmin(id: string): Promise<DeleteShopItemResult> {
-  const [{ n }] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(shopPurchases)
+  const [row] = await db
+    .select({ title: shopItems.title })
+    .from(shopItems)
+    .where(eq(shopItems.id, id))
+    .limit(1);
+  if (!row) return { ok: false, reason: "not_found" };
+
+  await db
+    .update(shopPurchases)
+    .set({ itemTitleSnapshot: row.title })
     .where(eq(shopPurchases.shopItemId, id));
-  if ((n ?? 0) > 0) {
-    return { ok: false, reason: "has_purchases" };
-  }
+
   const r = await db.delete(shopItems).where(eq(shopItems.id, id)).returning({ id: shopItems.id });
   if (r.length > 0) invalidateShopBundleCache();
   return r.length > 0 ? { ok: true } : { ok: false, reason: "not_found" };

@@ -5,7 +5,8 @@ import { shopItems, shopPurchases, users } from "../db/schema.js";
 export type AdminShopPurchaseRow = {
   id: string;
   createdAt: string;
-  shopItemId: string;
+  /** `null`, если карточку товара удалили из каталога (название в `itemTitle`). */
+  shopItemId: string | null;
   itemTitle: string;
   priceCoins: number;
   platform: string;
@@ -37,11 +38,11 @@ export async function listShopPurchasesAdmin(opts: {
       username: users.username,
       firstName: users.firstName,
       lastName: users.lastName,
-      itemTitle: shopItems.title,
+      itemTitle: sql<string>`COALESCE(${shopItems.title}, NULLIF(TRIM(${shopPurchases.itemTitleSnapshot}), ''), '—')`,
     })
     .from(shopPurchases)
     .innerJoin(users, eq(users.id, shopPurchases.userId))
-    .innerJoin(shopItems, eq(shopItems.id, shopPurchases.shopItemId))
+    .leftJoin(shopItems, eq(shopItems.id, shopPurchases.shopItemId))
     .where(filters.length ? and(...filters) : sql`true`)
     .orderBy(desc(shopPurchases.createdAt))
     .limit(limit);
