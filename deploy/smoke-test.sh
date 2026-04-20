@@ -123,13 +123,14 @@ fi
 (( JSON_MODE )) || echo ""
 (( JSON_MODE )) || echo "--- WebSocket ---"
 WS_BASE="${BASE/http/ws}"
+# curl -w %%{http_code} on HTTP 101 (WS upgrade) sometimes prints glued digits (e.g. 101000); match 101/400/401 as substrings.
 WS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
   -H "Connection: Upgrade" \
   -H "Upgrade: websocket" \
   -H "Sec-WebSocket-Version: 13" \
   -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
   "$BASE/api/v1/ws" 2>/dev/null || echo "000")
-if [ "$WS_STATUS" = "101" ] || [ "$WS_STATUS" = "400" ] || [ "$WS_STATUS" = "401" ]; then
+if [[ "$WS_STATUS" =~ (101|400|401) ]]; then
   (( JSON_MODE )) || echo "  ✓ WebSocket endpoint reachable ($WS_STATUS)"
   PASS=$((PASS + 1))
   _add_json "WebSocket" "pass" "101|400|401" "$WS_STATUS"
