@@ -284,7 +284,7 @@ export default function Tasks() {
   }
 
   return (
-    <div>
+    <div className="tasks-page">
       <div className="task-hint task-hint--stream" role="note">
         <Lightbulb size={20} className="task-hint__icon" aria-hidden />
         <span>

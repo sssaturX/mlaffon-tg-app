@@ -5015,6 +5015,23 @@ button.primary.auth-submit:disabled {
   margin-bottom: 0;
 }
 
+/* Задания: страница тянется под main; виртуальная лента скроллится внутри области под подсказкой */
+.tasks-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.tasks-feed-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
 /* Задания: секции + sheet с полным описанием */
 .task-stream__section {
   margin-bottom: 22px;

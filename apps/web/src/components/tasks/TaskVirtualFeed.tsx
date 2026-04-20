@@ -1,5 +1,5 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useWindowVirtualizer } from "@tanstack/react-virtual";
+import { useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Platform, TaskDto } from "shared";
 import { TaskCardPreview } from "./TaskCardPreview";
 
@@ -89,35 +89,27 @@ function TaskFeedWindowVirtual({
     return rows;
   }, [sectionKeys, grouped]);
 
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const [scrollMargin, setScrollMargin] = useState(0);
+  /** Скролл внутри области ленты — без useWindowVirtualizer/scrollMargin (они давали ложный зазор под подсказкой). */
+  const scrollParentRef = useRef<HTMLDivElement>(null);
 
-  useLayoutEffect(() => {
-    const el = anchorRef.current;
-    if (!el) return;
-    const update = (): void => {
-      setScrollMargin(el.getBoundingClientRect().top + window.scrollY);
-    };
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, [flatRows.length, activePlatform]);
-
-  const virtualizer = useWindowVirtualizer({
+  const virtualizer = useVirtualizer({
     count: flatRows.length,
+    getScrollElement: () => scrollParentRef.current,
     estimateSize: (index) => {
       const r = flatRows[index];
       return r?.kind === "section" ? EST_SECTION : EST_TASK;
     },
     overscan: 6,
-    scrollMargin,
   });
 
   const totalSize = virtualizer.getTotalSize();
   const items = virtualizer.getVirtualItems();
 
   return (
-    <div className="task-stream task-stream--virtual" ref={anchorRef}>
+    <div
+      className="task-stream task-stream--virtual tasks-feed-scroll"
+      ref={scrollParentRef}
+    >
       <div
         style={{
           height: totalSize,
