@@ -48,12 +48,8 @@ import {
   handleMeUpdateFromWs,
   invalidateInflightMeRefresh,
 } from "./services/meService";
-import {
-  navPrefetchHandlers,
-  prefetchOnBootstrap,
-  prefetchShopCatalog,
-} from "./query/prefetch";
-import { meEconomyQueryFn, meProfileQueryFn, meProfileQueryFnNoCache } from "./query/meQueryFns";
+import { navPrefetchHandlers, prefetchOnBootstrap } from "./query/prefetch";
+import { meSessionQueryFn, meSessionQueryFnNoCache } from "./query/meQueryFns";
 import { appEventBus } from "./events/appEventBus";
 import { emitAppBootstrap } from "./meDomain/bootstrapOrchestrator";
 import { queryClient } from "./query/queryClient";
@@ -104,10 +100,13 @@ export default function App() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { showToast } = useToast();
-  const [ready, setReady] = useState(false);
+  /** В TMA ждём initData/auth; в браузере — сразу можно грузить /me при наличии JWT. */
+  const [sessionBootstrapReady, setSessionBootstrapReady] = useState(
+    () => typeof window !== "undefined" && !looksLikeTelegramMiniApp()
+  );
   const [webLogin, setWebLogin] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { me, isInitialLoading, profileQ, economyQ } = useMergedMe();
+  const { me, sessionQ } = useMergedMe(sessionBootstrapReady);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [online, setOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true
@@ -176,20 +175,14 @@ export default function App() {
         if (cancelled) return;
         if (r.ok) {
           setToken(r.data.token);
-          queryClient.removeQueries({ queryKey: queryKeys.me.profile() });
-          queryClient.removeQueries({ queryKey: queryKeys.me.economy() });
-          const profileFn = isOAuthReturn ? meProfileQueryFnNoCache : meProfileQueryFn;
-          void Promise.all([
-            queryClient.prefetchQuery({
-              queryKey: queryKeys.me.profile(),
-              queryFn: profileFn,
-            }),
-            queryClient.prefetchQuery({
-              queryKey: queryKeys.me.economy(),
-              queryFn: meEconomyQueryFn,
-            }),
-          ]);
-          prefetchShopCatalog();
+          queryClient.removeQueries({ queryKey: queryKeys.me.all });
+          const sessionFn = isOAuthReturn
+            ? meSessionQueryFnNoCache
+            : meSessionQueryFn;
+          void queryClient.prefetchQuery({
+            queryKey: queryKeys.me.session(),
+            queryFn: sessionFn,
+          });
           if (r.data.accountsMerged === true) {
             showToast(
               "Аккаунты объединены. Оставлен профиль с большим прогрессом.",
@@ -202,24 +195,17 @@ export default function App() {
           setError(m);
           showToast(m, "error");
         }
-        setReady(true);
+        setSessionBootstrapReady(true);
         return;
       }
 
       if (existing && !isTelegramAccountLink) {
-        void Promise.all([
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.me.profile(),
-            queryFn: meProfileQueryFn,
-          }),
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.me.economy(),
-            queryFn: meEconomyQueryFn,
-          }),
-        ]);
-        prefetchShopCatalog();
+        void queryClient.prefetchQuery({
+          queryKey: queryKeys.me.session(),
+          queryFn: meSessionQueryFn,
+        });
         if (cancelled) return;
-        setReady(true);
+        setSessionBootstrapReady(true);
         return;
       }
 
@@ -228,23 +214,16 @@ export default function App() {
         if (cancelled) return;
         if (r.ok) {
           setToken(r.data.token);
-          void Promise.all([
-            queryClient.prefetchQuery({
-              queryKey: queryKeys.me.profile(),
-              queryFn: meProfileQueryFn,
-            }),
-            queryClient.prefetchQuery({
-              queryKey: queryKeys.me.economy(),
-              queryFn: meEconomyQueryFn,
-            }),
-          ]);
-          prefetchShopCatalog();
+          void queryClient.prefetchQuery({
+            queryKey: queryKeys.me.session(),
+            queryFn: meSessionQueryFn,
+          });
         } else {
           const m = formatApiError(r);
           setError(m);
           showToast(m, "error");
         }
-        setReady(true);
+        setSessionBootstrapReady(true);
         return;
       }
 
@@ -253,19 +232,20 @@ export default function App() {
           "Не удалось получить данные Telegram. Откройте мини-приложение из бота.";
         setError(m);
         showToast(m, "error");
-        setReady(true);
+        setSessionBootstrapReady(true);
         return;
       }
 
       if (import.meta.env.VITE_ALLOW_WEB_AUTH !== "0") {
         setWebLogin(true);
+        setSessionBootstrapReady(true);
         return;
       }
 
       const m = "Откройте приложение внутри Telegram";
       setError(m);
       showToast(m, "error");
-      setReady(true);
+      setSessionBootstrapReady(true);
     })();
     return () => {
       cancelled = true;
@@ -273,17 +253,16 @@ export default function App() {
   }, [showToast]);
 
   useEffect(() => {
-    if (!ready || !getToken() || !me) return;
+    if (!sessionBootstrapReady || !getToken() || !me) return;
     if (!hasLinkedStreamingAccount(me)) return;
     if (!hasSeenOnboarding()) setOnboardingOpen(true);
-  }, [ready, me]);
+  }, [sessionBootstrapReady, me]);
 
   useEffect(() => {
-    if (ready && getToken()) {
-      prefetchShopCatalog();
+    if (sessionBootstrapReady && getToken()) {
       emitAppBootstrap("token_ready");
     }
-  }, [ready]);
+  }, [sessionBootstrapReady]);
 
   /**
    * OAuth callback в внешнем браузере — проверяем ДО всего остального.
@@ -311,29 +290,18 @@ export default function App() {
     return (
       <WebLogin
         onLoggedIn={() => {
-          void Promise.all([
-            queryClient.prefetchQuery({
-              queryKey: queryKeys.me.profile(),
-              queryFn: meProfileQueryFn,
-            }),
-            queryClient.prefetchQuery({
-              queryKey: queryKeys.me.economy(),
-              queryFn: meEconomyQueryFn,
-            }),
-          ]);
-          prefetchShopCatalog();
+          void queryClient.prefetchQuery({
+            queryKey: queryKeys.me.session(),
+            queryFn: meSessionQueryFn,
+          });
           setWebLogin(false);
-          setReady(true);
+          setSessionBootstrapReady(true);
         }}
       />
     );
   }
 
-  if (!ready) {
-    return <AppLoadingSpinner />;
-  }
-
-  if (error || !getToken()) {
+  if (sessionBootstrapReady && (error || !getToken())) {
     return (
       <div className="app-shell">
         <div className="app-main">
@@ -360,32 +328,6 @@ export default function App() {
     );
   }
 
-  if (isInitialLoading) {
-    return <AppLoadingSpinner />;
-  }
-
-  if (profileQ.isError || economyQ.isError) {
-    return (
-      <div className="app-shell">
-        <div className="app-main">
-          <div className="card stack">
-            <h1>Профиль</h1>
-            <p className="err">
-              Не удалось загрузить данные. Проверьте сеть и попробуйте снова.
-            </p>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => void syncMeFromNetwork()}
-            >
-              Повторить
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   if (me?.banned) {
     const displayName =
       me.firstName?.trim() ||
@@ -403,15 +345,17 @@ export default function App() {
     );
   }
 
-  if (!me) {
-    return <AppLoadingSpinner />;
-  }
-
   return (
     <MeEconomySyncProvider>
       <AppShell
         me={me}
-        needsPlatformLink={!hasLinkedStreamingAccount(me)}
+        authInitializing={!sessionBootstrapReady}
+        meSessionError={sessionQ.isError}
+        meSessionPending={sessionQ.isPending}
+        onRetryMe={() => {
+          void queryClient.refetchQueries({ queryKey: queryKeys.me.session() });
+        }}
+        needsPlatformLink={me ? !hasLinkedStreamingAccount(me) : false}
         online={online}
         onboardingOpen={onboardingOpen}
         onCloseOnboarding={() => setOnboardingOpen(false)}
@@ -426,13 +370,22 @@ const botFooter =
 
 function AppShell({
   me,
+  authInitializing,
+  meSessionError,
+  meSessionPending,
+  onRetryMe,
   needsPlatformLink,
   online,
   onboardingOpen,
   onCloseOnboarding,
   onShowOnboarding,
 }: {
-  me: MeResponse;
+  me: MeResponse | null;
+  /** Ждём initData / обмен JWT в TMA — shell уже виден, /me ещё не стартуем. */
+  authInitializing: boolean;
+  meSessionError: boolean;
+  meSessionPending: boolean;
+  onRetryMe: () => void;
   /** Полноэкранный экран привязки Kick/Twitch до первого OAuth. */
   needsPlatformLink: boolean;
   online: boolean;
@@ -464,6 +417,31 @@ function AppShell({
     bootstrapDoneRef.current = true;
     prefetchOnBootstrap();
   }, [needsPlatformLink]);
+
+  /** WS после первого кадра shell — не конкурирует с `GET /me` и первой отрисовкой. */
+  const [wsDeferred, setWsDeferred] = useState(false);
+  useEffect(() => {
+    if (!me) {
+      setWsDeferred(false);
+      return;
+    }
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled) setWsDeferred(true);
+    };
+    if (typeof requestIdleCallback === "function") {
+      const id = requestIdleCallback(run, { timeout: 2000 });
+      return () => {
+        cancelled = true;
+        if (typeof cancelIdleCallback === "function") cancelIdleCallback(id);
+      };
+    }
+    const t = window.setTimeout(run, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [me?.id]);
 
   const [tourOpen, setTourOpen] = useState(false);
   const [tourStep, setTourStep] = useState(0);
@@ -520,8 +498,8 @@ function AppShell({
         invalidateInflightMeRefresh();
       },
     },
-    /** WS нужен и до привязки стрима: `me_update` и `initial_state` без лишнего REST. Сервер не требует OAuth-платформы. */
-    !!me
+    /** Билет и сокет — после idle/короткой задержки, не в одном кадре с первым рендером. */
+    Boolean(me) && wsDeferred
   );
 
   const { data: dropSnap } = useQuery({
@@ -563,6 +541,9 @@ function AppShell({
       : activePlatform === "twitch"
         ? me.coinsTwitch
         : me.coinsKick;
+
+  const headerBalanceLoading =
+    (authInitializing || (me == null && meSessionPending)) && !meSessionError;
 
   useEffect(() => {
     const theme = getPlatformTheme(activePlatform);
@@ -649,6 +630,23 @@ function AppShell({
         </div>
       ) : null}
 
+      {authInitializing && !needsPlatformLink ? (
+        <div className="auth-init-banner" role="status">
+          Подключение к Telegram…
+        </div>
+      ) : null}
+
+      {meSessionError && !needsPlatformLink ? (
+        <div className="me-error-banner" role="alert">
+          <p className="err m-0">
+            Не удалось загрузить профиль. Проверьте сеть и попробуйте снова.
+          </p>
+          <button type="button" className="primary" onClick={onRetryMe}>
+            Повторить
+          </button>
+        </div>
+      ) : null}
+
       {showDropTicker ? (
         <DropTicker secondsLeft={dropSecondsLeft} onOpen={openDrop} />
       ) : null}
@@ -671,6 +669,7 @@ function AppShell({
           <ScreenHeader
             title={routeTitle(location.pathname)}
             balance={headerBalance ?? 0}
+            balanceLoading={headerBalanceLoading}
           />
         ) : null}
 
@@ -682,7 +681,7 @@ function AppShell({
                 path="/"
                 element={<HomePage me={me} />}
               />
-              <Route path="/giveaways" element={<GiveawaysPage me={me} />} />
+              <Route path="/giveaways" element={<GiveawaysPage />} />
               <Route
                 path="/giveaway/:id"
                 element={<GiveawayPage me={me} />}

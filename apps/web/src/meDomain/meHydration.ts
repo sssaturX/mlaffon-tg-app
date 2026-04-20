@@ -1,8 +1,8 @@
 import type { MeEconomyResponse, MeProfileResponse, MeResponse } from "shared";
-import { mergeMeProfileAndEconomy } from "shared";
+import { mergeMeProfileAndEconomy, splitMeResponse } from "shared";
 import { formatApiError, getToken, setToken } from "../api";
 import { ApiQueryError } from "../query/apiQueryError";
-import { fetchMeEconomy, fetchMeProfile, fetchMeProfileNoCache } from "../query/fetchers";
+import { fetchMe, fetchMeProfileNoCache } from "../query/fetchers";
 import { queryClient } from "../query/queryClient";
 import { queryKeys } from "../query/queryKeys";
 import { getMeFromCache } from "../hooks/queries/useMergedMe";
@@ -48,25 +48,14 @@ export async function hydrateMeThroughEventBus(
   const economyV0 = getDomainVersion().economy;
 
   try {
-    const economyState = queryClient.getQueryState(queryKeys.me.economy());
-    const economyCached = queryClient.getQueryData<MeEconomyResponse>(
-      queryKeys.me.economy()
-    );
-    const economyFresh =
-      economyCached &&
-      economyState?.dataUpdatedAt &&
-      Date.now() - economyState.dataUpdatedAt < HYDRATE_SKIP_IF_FRESH_MS;
-
-    const [profile, economy] = await Promise.all([
-      fetchMeProfile(),
-      economyFresh ? Promise.resolve(economyCached) : fetchMeEconomy(),
-    ]);
+    const full = await fetchMe();
+    const { profile, economy } = splitMeResponse(full);
 
     appEventBus.emit("me:update", {
       kind: "http_snapshot",
       source: "http",
       profile,
-      economy: economyFresh ? undefined : economy,
+      economy,
       profileV0,
       economyV0,
     });

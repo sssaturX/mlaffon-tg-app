@@ -275,7 +275,11 @@ await registerPushRoutes(app);
 await registerTelegramWebhookRoutes(app);
 await registerMediaRoutes(app);
 
-import { registerMetricsHooks, registerMetricsEndpoint } from "./lib/metrics.js";
+import {
+  registerMetricsHooks,
+  registerMetricsEndpoint,
+  tasksHttpSeconds,
+} from "./lib/metrics.js";
 registerMetricsHooks(app);
 registerMetricsEndpoint(app);
 
@@ -816,15 +820,21 @@ app.post("/api/v1/live-broadcast/watch", async (req, reply) => {
 });
 
 app.get("/api/v1/tasks", async (req, reply) => {
+  const t0 = performance.now();
   const userId = authUser(req, reply);
   if (!userId) return;
   const platform = String(
     (req.query as { platform?: string }).platform ?? "all"
   );
+  const platLabel =
+    platform === "twitch" || platform === "kick" || platform === "all"
+      ? platform
+      : "all";
   const list = filterTasksForPlatform(
     await listTasksForUser(userId),
     platform
   );
+  tasksHttpSeconds.observe({ platform: platLabel }, (performance.now() - t0) / 1000);
   /** Не кэшировать агрессивно: каталог и meta (обложки, тексты) меняются из админки. */
   void reply.header("Cache-Control", "private, no-cache, must-revalidate");
   return { tasks: list };

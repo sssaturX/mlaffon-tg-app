@@ -7,6 +7,7 @@ import type {
   MediaImageUploadResponse,
   MeEconomyResponse,
   MeProfileResponse,
+  MeResponse,
   ReferralsResponse,
   TaskDto,
 } from "shared";
@@ -26,6 +27,19 @@ export async function fetchHomeGiveaways(): Promise<HomeGiveawaysResponse> {
   const r = await api<HomeGiveawaysResponse>("/api/v1/home/giveaways", {
     httpCache: "default",
   });
+  throwIfApiErr(r);
+  return r.data;
+}
+
+/** Один запрос вместо пары profile+economy; то же тело, что и merge профиля и экономики. */
+export async function fetchMe(): Promise<MeResponse> {
+  const r = await api<MeResponse>("/api/v1/me");
+  throwIfApiErr(r);
+  return r.data;
+}
+
+export async function fetchMeNoCache(): Promise<MeResponse> {
+  const r = await api<MeResponse>("/api/v1/me", { httpCache: "no-store" });
   throwIfApiErr(r);
   return r.data;
 }

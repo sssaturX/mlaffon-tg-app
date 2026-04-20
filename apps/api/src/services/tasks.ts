@@ -37,6 +37,10 @@ import {
   invalidateUserTaskDtoCache,
   setCachedUserTaskDtoList,
 } from "./taskUserListCache.js";
+import {
+  tasksListBuildSeconds,
+  tasksListCacheOutcome,
+} from "../lib/metrics.js";
 
 function periodKeyForTask(task: { type: string }): string {
   if (task.type === "daily") return utcDateString();
@@ -613,14 +617,44 @@ async function computeUserTaskDtoList(
   return rows;
 }
 
+/**
+ * Список заданий для пользователя.
+ *
+ * Важно: Redis-кэш полного списка (`getCachedUserTaskDtoList`) проверяем **до**
+ * `runRevocationChecksBatched`. Ранее проверки отзыва шли на каждый GET и вызывали
+ * `verifyPlatformTask` → синхронные вызовы Helix/Kick API, что давало multi-second
+ * latency даже на warm cache (особенно для Twitch follow/subscription).
+ * Отзыв по-прежнему выполняется на cold path (cache miss) и при инвалидации кэша.
+ */
 export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
+  const t0 = Date.now();
   const all = await getActiveTasksCached();
-  await runRevocationChecksBatched(userId, all);
   const cachedList = await getCachedUserTaskDtoList(userId);
-  if (cachedList) return cachedList;
-  return singleFlight(`tasks:userdto:${userId}`, () =>
+  if (cachedList) {
+    tasksListCacheOutcome.inc({ result: "hit" });
+    const sec = (Date.now() - t0) / 1000;
+    tasksListBuildSeconds.observe({ cache: "hit" }, sec);
+    return cachedList;
+  }
+  tasksListCacheOutcome.inc({ result: "miss" });
+  await runRevocationChecksBatched(userId, all);
+  const afterRevoke = await getCachedUserTaskDtoList(userId);
+  if (afterRevoke) {
+    const sec = (Date.now() - t0) / 1000;
+    tasksListBuildSeconds.observe({ cache: "miss_revoke_warmed" }, sec);
+    return afterRevoke;
+  }
+  const out = await singleFlight(`tasks:userdto:${userId}`, () =>
     computeUserTaskDtoList(userId, all)
   );
+  const sec = (Date.now() - t0) / 1000;
+  tasksListBuildSeconds.observe({ cache: "miss_compute" }, sec);
+  if (sec > 1) {
+    console.warn(
+      `[tasks] slow listTasksForUser user=${userId} ${(sec * 1000).toFixed(0)}ms`
+    );
+  }
+  return out;
 }
 
 export async function claimTask(

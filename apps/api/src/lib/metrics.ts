@@ -55,6 +55,31 @@ export const jobDuration = new client.Histogram({
   registers: [register],
 });
 
+/** GET /api/v1/tasks — полное время сборки списка (внутри listTasksForUser). */
+export const tasksListBuildSeconds = new client.Histogram({
+  name: "tasks_list_build_seconds",
+  help: "Duration of listTasksForUser (Redis + DB + DTO)",
+  labelNames: ["cache"] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [register],
+});
+
+export const tasksListCacheOutcome = new client.Counter({
+  name: "tasks_list_cache_total",
+  help: "Redis user task list cache hit/miss",
+  labelNames: ["result"] as const,
+  registers: [register],
+});
+
+/** Полный HTTP handler GET /tasks (после auth). */
+export const tasksHttpSeconds = new client.Histogram({
+  name: "tasks_http_seconds",
+  help: "GET /api/v1/tasks total time after auth",
+  labelNames: ["platform"] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [register],
+});
+
 function normalizeRoute(req: FastifyRequest): string {
   const ctx = req.routeOptions;
   if (ctx?.url) return ctx.url;

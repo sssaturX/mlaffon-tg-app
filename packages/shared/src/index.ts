@@ -152,6 +152,43 @@ export function mergeMeProfileAndEconomy(
   return { ...profile, ...economy };
 }
 
+/** Обратное к merge: для одного ответа `GET /api/v1/me` и записи в раздельные кэши profile/economy. */
+export function splitMeResponse(me: MeResponse): {
+  profile: MeProfileResponse;
+  economy: MeEconomyResponse;
+} {
+  const {
+    coins,
+    coinsTwitch,
+    coinsKick,
+    lifetimeEarned,
+    lifetimeTwitch,
+    lifetimeKick,
+    level,
+    rewardMultiplier,
+    streak,
+    streakTwitch,
+    streakKick,
+    ...profileRest
+  } = me;
+  return {
+    profile: profileRest as MeProfileResponse,
+    economy: {
+      coins,
+      coinsTwitch,
+      coinsKick,
+      lifetimeEarned,
+      lifetimeTwitch,
+      lifetimeKick,
+      level,
+      rewardMultiplier,
+      streak,
+      streakTwitch,
+      streakKick,
+    },
+  };
+}
+
 export interface HomeContentResponse {
   faq: { q: string; a: string }[];
 }

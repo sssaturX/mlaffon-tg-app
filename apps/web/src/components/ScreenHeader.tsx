@@ -16,10 +16,13 @@ function BalanceWithAnimation({ value }: { value: number }) {
 export function ScreenHeader({
   title,
   balance,
+  balanceLoading = false,
 }: {
   title: string;
   /** Баланс выбранной платформы; 0 — валидное значение. */
   balance: number;
+  /** Пока ждём `GET /api/v1/me` — плейсхолдер вместо числа. */
+  balanceLoading?: boolean;
 }) {
   const { activePlatform, setActivePlatform } = useActivePlatform();
   const { data: broadcast } = useQuery({
@@ -76,9 +79,17 @@ export function ScreenHeader({
             Kick
           </button>
         </div>
-        <div className="balance-pill" aria-label="Баланс выбранной платформы">
+        <div
+          className={`balance-pill${balanceLoading ? " balance-pill--loading" : ""}`}
+          aria-label="Баланс выбранной платформы"
+          aria-busy={balanceLoading}
+        >
           <Coins className="balance-pill__icon" size={18} strokeWidth={2.2} />
-          <BalanceWithAnimation key={activePlatform} value={balance} />
+          {balanceLoading ? (
+            <span className="balance-pill__skeleton skeleton" aria-hidden />
+          ) : (
+            <BalanceWithAnimation key={activePlatform} value={balance} />
+          )}
         </div>
       </div>
     </header>

@@ -5,6 +5,8 @@
 export const queryKeys = {
   me: {
     all: ["me"] as const,
+    /** Один `GET /api/v1/me` — bootstrap; кэши profile/economy заполняются из ответа. */
+    session: () => [...queryKeys.me.all, "session"] as const,
     profile: () => [...queryKeys.me.all, "profile"] as const,
     economy: () => [...queryKeys.me.all, "economy"] as const,
   },

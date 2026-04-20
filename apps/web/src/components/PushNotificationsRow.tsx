@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Bell } from "lucide-react";
 import {
-  getPushSubscriptionState,
+  getLocalPushSubscriptionState,
   subscribeToLivePush,
   supportsWebPushUi,
   unsubscribeFromLivePush,
@@ -12,12 +12,7 @@ import { useToast } from "../context/ToastContext";
 export function PushNotificationsRow() {
   const { showToast } = useToast();
   const [state, setState] = useState<
-    | "loading"
-    | "none"
-    | "subscribed"
-    | "server_off"
-    | "hidden"
-    | "unsupported"
+    "loading" | "none" | "subscribed" | "hidden" | "unsupported"
   >("loading");
   const [busy, setBusy] = useState(false);
 
@@ -31,7 +26,7 @@ export function PushNotificationsRow() {
       return;
     }
     try {
-      const s = await getPushSubscriptionState();
+      const s = await getLocalPushSubscriptionState();
       setState(s);
     } catch {
       setState("none");
@@ -62,14 +57,6 @@ export function PushNotificationsRow() {
 
   if (state === "loading") {
     return <p className="muted m-0">…</p>;
-  }
-
-  if (state === "server_off") {
-    return (
-      <p className="muted m-0 text-body">
-        Уведомления о старте эфира пока не настроены на сервере.
-      </p>
-    );
   }
 
   async function onEnable() {

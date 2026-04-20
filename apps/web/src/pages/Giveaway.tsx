@@ -116,10 +116,6 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     }
   }
 
-  if (!me) {
-    return <PageSkeleton />;
-  }
-
   if (isPending && !g) {
     return (
       <div className="giveaway-detail">
@@ -167,6 +163,7 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
 
   const joinDisabled =
     joining ||
+    !me ||
     !structurallyCanJoin ||
     !channelOk ||
     platformMismatch ||
@@ -185,7 +182,11 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
   }
 
   const balance =
-    activePlatform === "twitch" ? me.coinsTwitch : me.coinsKick;
+    me == null
+      ? null
+      : activePlatform === "twitch"
+        ? me.coinsTwitch
+        : me.coinsKick;
 
   return (
     <div className="giveaway-detail">
@@ -361,7 +362,10 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
       {g.ticketPriceCoins > 0 && structurallyCanJoin && (
         <p className="muted giveaway-balance-hint">
           Баланс {activePlatform === "twitch" ? "Twitch" : "Kick"}:{" "}
-          {balance.toLocaleString("ru-RU")} · переключите платформу в шапке.
+          {balance != null
+            ? balance.toLocaleString("ru-RU")
+            : "…"}{" "}
+          · переключите платформу в шапке.
         </p>
       )}
 

@@ -10,7 +10,6 @@ import { api, formatApiError, getToken } from "../api";
 import { refreshProfileOnly } from "../meDomain/meHydration";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
-import { PageSkeleton } from "../components/PageSkeleton";
 import { ResponsivePicture } from "../components/ResponsivePicture";
 import { UserPhotoAvatar } from "../components/UserPhotoAvatar";
 import { emailAvatarLetter } from "../utils/emailAvatarLetter";
@@ -312,31 +311,33 @@ export default function Home({ me }: { me: MeResponse | null }) {
     }
   }, [me, streakDisplay]);
 
-  if (!me) {
-    return <PageSkeleton />;
-  }
-
   /** В шапке главной всегда Telegram (имя и аватар из TG). Twitch/Kick — в профиле и стрике. */
-  const tgDisplayName =
-    me.firstName?.trim() ||
-    (me.username ? `@${me.username}` : null) ||
-    "Игрок";
+  const tgDisplayName = me
+    ? me.firstName?.trim() ||
+      (me.username ? `@${me.username}` : null) ||
+      "Игрок"
+    : "";
 
   /** Пока идёт эфир — стрик и UI по платформе эфира; иначе по переключателю в шапке. */
   const streakPlatform: "twitch" | "kick" = live?.active
     ? live.platform
     : activePlatform;
-  const streakForPlatform =
-    streakDisplay && streakDisplay.platform === streakPlatform
+  const streakForPlatform = !me
+    ? 0
+    : streakDisplay && streakDisplay.platform === streakPlatform
       ? streakDisplay.value
       : streakPlatform === "twitch"
         ? me.streakTwitch
         : me.streakKick;
   const streakPct = Math.min(100, (streakForPlatform / STREAK_TARGET) * 100);
 
-  const viewerFirstName = me.firstName?.trim() || "Друг";
+  const viewerFirstName = me?.firstName?.trim() || "Друг";
 
   async function watchLive() {
+    if (!me) {
+      showToast("Подождите, загружается профиль…", "info");
+      return;
+    }
     if (!live?.active) return;
     const url = live.streamUrl.trim();
     if (!url) {
@@ -675,23 +676,42 @@ export default function Home({ me }: { me: MeResponse | null }) {
         </div>
       ) : null}
 
-      <div className="home-hero">
-        <div className="home-hero__row">
-          <UserPhotoAvatar
-            src={me.photoUrl}
-            className="avatar avatar-ring"
-            fallbackLetter={emailAvatarLetter(me.photoUrl, me.email)}
-          />
-          <div>
-            <p className="home-hero__greet">Добро пожаловать,</p>
-            <p className="home-hero__name">{tgDisplayName}</p>
-            <p className="muted home-hero__sub">
-              Режим: {activePlatform === "twitch" ? "Twitch" : "Kick"} · уровень{" "}
-              {me.level}
-            </p>
+      {!me ? (
+        <div className="home-hero">
+          <div className="home-hero__row">
+            <div className="skeleton skeleton--avatar" aria-hidden />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                className="skeleton skeleton--line skeleton--short"
+                style={{ marginBottom: 8 }}
+              />
+              <div className="skeleton skeleton--line" style={{ width: "72%" }} />
+              <div
+                className="skeleton skeleton--line skeleton--short"
+                style={{ marginTop: 10, width: "58%" }}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="home-hero">
+          <div className="home-hero__row">
+            <UserPhotoAvatar
+              src={me.photoUrl}
+              className="avatar avatar-ring"
+              fallbackLetter={emailAvatarLetter(me.photoUrl, me.email)}
+            />
+            <div>
+              <p className="home-hero__greet">Добро пожаловать,</p>
+              <p className="home-hero__name">{tgDisplayName}</p>
+              <p className="muted home-hero__sub">
+                Режим: {activePlatform === "twitch" ? "Twitch" : "Kick"} · уровень{" "}
+                {me.level}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {live?.active ? (
         <LiveBroadcastCard
@@ -710,7 +730,9 @@ export default function Home({ me }: { me: MeResponse | null }) {
           <div>
             <p className="streak-card__title">Начни свой стрик!</p>
             <p className="muted streak-card__text">
-              {live?.active ? (
+              {!me ? (
+                "Загружаем прогресс и стрик…"
+              ) : live?.active ? (
                 <>
                   Эфир на {streakPlatform === "kick" ? "Kick" : "Twitch"}. Каждый
                   новый эфир в админке — отдельный засчёт: нажми «Смотреть стрим» (один

@@ -29,11 +29,13 @@ export async function getVapidPublicKey(): Promise<string | null> {
   return r.data.publicKey;
 }
 
-export async function getPushSubscriptionState(): Promise<
-  "none" | "subscribed" | "server_off"
+/**
+ * Без сети: только локальная подписка в браузере.
+ * VAPID и `GET /api/v1/push/vapid-public-key` — только в `subscribeToLivePush` по клику.
+ */
+export async function getLocalPushSubscriptionState(): Promise<
+  "none" | "subscribed"
 > {
-  const pub = await getVapidPublicKey();
-  if (!pub) return "server_off";
   const reg = await navigator.serviceWorker.getRegistration();
   const sub = await reg?.pushManager.getSubscription();
   return sub ? "subscribed" : "none";

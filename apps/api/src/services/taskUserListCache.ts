@@ -1,7 +1,8 @@
 import { getRedis } from "../lib/redis.js";
 import type { TaskDto } from "shared";
 
-const KEY_PREFIX = "mlaffon:tasks:userdto:v1:";
+/** Версия кэша: bump при смене семантики listTasksForUser (см. tasks.ts). */
+const KEY_PREFIX = "mlaffon:tasks:userdto:v2:";
 const TTL_SEC = 30;
 
 function cacheKey(userId: string): string {

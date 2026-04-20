@@ -1,7 +1,6 @@
 import { ChevronLeft } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import type { MeResponse } from "shared";
 import type { GiveawayListItemDto } from "../query/fetchers";
 import { useGiveawaysList } from "../hooks/queries/useGiveaways";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -27,7 +26,7 @@ function platformShort(p: GiveawayListItemDto["platform"]): string {
   return p === "twitch" ? "Twitch" : "Kick";
 }
 
-export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
+export default function GiveawaysPage() {
   const { data: items, isPending, isError, refetch, isFetching } =
     useGiveawaysList();
   const [tab, setTab] = useState<"active" | "done">("active");
@@ -41,10 +40,6 @@ export default function GiveawaysPage({ me }: { me: MeResponse | null }) {
     }
     return list.filter((g) => g.status === "completed");
   }, [items, tab]);
-
-  if (!me) {
-    return <PageSkeleton />;
-  }
 
   return (
     <div className="giveaways-list-page stack">

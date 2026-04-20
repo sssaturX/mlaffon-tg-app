@@ -8,14 +8,13 @@ import {
   fetchGiveawaysList,
   fetchHomeContent,
   fetchHomeGiveaways,
-  fetchReferrals,
   fetchTasks,
 } from "./fetchers";
 import {
   platformQueryParamTasks,
   TASKS_QUERY_STALE_MS,
 } from "../hooks/queries/useTasks";
-import { meEconomyQueryFn, meProfileQueryFn } from "./meQueryFns";
+import { meSessionQueryFn } from "./meQueryFns";
 import {
   fetchShopPage,
   SHOP_GC_TIME_MS,
@@ -66,35 +65,23 @@ export function navPrefetchHandlers(pathname: string): {
 }
 
 /**
- * Bootstrap prefetch: вызывается один раз после получения токена.
- * Загружает данные главной + tasks параллельно с me/profile + me/economy.
+ * После shell: только главная (контент + розыгрыши), без tasks/shop/fortune.
+ * В idle — чтобы не конкурировать с первым `GET /me` и первым кадром.
  */
 export function prefetchOnBootstrap(): void {
   if (!getToken()) return;
-  const platform = getStoredActivePlatform();
-  const taskPlatform = platformQueryParamTasks(platform);
-
-  void queryClient.prefetchQuery({
-    queryKey: queryKeys.home.content(),
-    queryFn: fetchHomeContent,
-    staleTime: 1000 * 60 * 30,
+  runWhenIdle(() => {
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.home.content(),
+      queryFn: fetchHomeContent,
+      staleTime: 1000 * 60 * 30,
+    });
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.home.giveaways(),
+      queryFn: fetchHomeGiveaways,
+      staleTime: 1000 * 60 * 5,
+    });
   });
-  void queryClient.prefetchQuery({
-    queryKey: queryKeys.home.giveaways(),
-    queryFn: fetchHomeGiveaways,
-    staleTime: 1000 * 60 * 5,
-  });
-  void queryClient.prefetchQuery({
-    queryKey: queryKeys.tasks.list(taskPlatform),
-    queryFn: () => fetchTasks(taskPlatform),
-    staleTime: TASKS_QUERY_STALE_MS,
-  });
-  void queryClient.prefetchQuery({
-    queryKey: queryKeys.fortune.config(),
-    queryFn: fetchFortuneConfig,
-    staleTime: 1000 * 60 * 60 * 24,
-  });
-  prefetchShopCatalog();
 }
 
 /** Prefetch по намерению навигации (hover по табам). */
@@ -142,18 +129,8 @@ export function prefetchRouteData(pathname: string): void {
 
   if (pathname.startsWith("/profile")) {
     void queryClient.prefetchQuery({
-      queryKey: queryKeys.me.profile(),
-      queryFn: meProfileQueryFn,
-      staleTime: 1000 * 60 * 5,
-    });
-    void queryClient.prefetchQuery({
-      queryKey: queryKeys.me.economy(),
-      queryFn: meEconomyQueryFn,
-      staleTime: 1000 * 60 * 10,
-    });
-    void queryClient.prefetchQuery({
-      queryKey: queryKeys.referrals.list(),
-      queryFn: fetchReferrals,
+      queryKey: queryKeys.me.session(),
+      queryFn: meSessionQueryFn,
       staleTime: 1000 * 60 * 5,
     });
     return;

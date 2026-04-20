@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Platform, TaskDto } from "shared";
+import { getToken } from "../../api";
 import { queryKeys } from "../../query/queryKeys";
 import { fetchTasks } from "../../query/fetchers";
 
@@ -24,16 +25,18 @@ function tasksNeedModerationPoll(list: TaskDto[] | undefined): boolean {
   );
 }
 
-/** SEMI_STATIC: задания с прогрессом пользователя; без лишних GET при навигации. */
+/** SEMI_STATIC: задания с прогрессом пользователя; только экран Tasks (см. prefetch). */
 export function useTasks(activePlatform: Platform) {
   const platform = platformQueryParamTasks(activePlatform);
+  const hasAuth = Boolean(getToken());
   return useQuery({
     queryKey: queryKeys.tasks.list(platform),
     queryFn: () => fetchTasks(platform),
+    enabled: hasAuth,
     staleTime: TASKS_QUERY_STALE_MS,
     gcTime: GC_TASKS,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchInterval: (q) => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") {

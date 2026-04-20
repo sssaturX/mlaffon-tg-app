@@ -1,9 +1,58 @@
-import type { MeEconomyResponse, MeProfileResponse } from "shared";
-import { fetchMeEconomy, fetchMeProfile, fetchMeProfileNoCache } from "./fetchers";
+import type { MeEconomyResponse, MeProfileResponse, MeResponse } from "shared";
+import { mergeMeProfileAndEconomy, splitMeResponse } from "shared";
+import {
+  fetchMe,
+  fetchMeEconomy,
+  fetchMeNoCache,
+  fetchMeProfile,
+  fetchMeProfileNoCache,
+} from "./fetchers";
 import { queryClient } from "./queryClient";
 import { queryKeys } from "./queryKeys";
 import { appEventBus } from "../events/appEventBus";
 import { getDomainVersion } from "../meDomain/domainVersion";
+
+/** Bootstrap: один `GET /api/v1/me` → кэши profile + economy + событие домена. */
+export async function meSessionQueryFn(): Promise<MeResponse> {
+  const profileV0 = getDomainVersion().profile;
+  const economyV0 = getDomainVersion().economy;
+  const full = await fetchMe();
+  const { profile, economy } = splitMeResponse(full);
+  appEventBus.emit("me:update", {
+    kind: "http_snapshot",
+    source: "http",
+    profile,
+    economy,
+    profileV0,
+    economyV0,
+  });
+  const p =
+    queryClient.getQueryData<MeProfileResponse>(queryKeys.me.profile()) ?? profile;
+  const e =
+    queryClient.getQueryData<MeEconomyResponse>(queryKeys.me.economy()) ?? economy;
+  return mergeMeProfileAndEconomy(p, e);
+}
+
+/** После OAuth в Telegram — тот же ответ, без кэша HTTP. */
+export async function meSessionQueryFnNoCache(): Promise<MeResponse> {
+  const profileV0 = getDomainVersion().profile;
+  const economyV0 = getDomainVersion().economy;
+  const full = await fetchMeNoCache();
+  const { profile, economy } = splitMeResponse(full);
+  appEventBus.emit("me:update", {
+    kind: "http_snapshot",
+    source: "http",
+    profile,
+    economy,
+    profileV0,
+    economyV0,
+  });
+  const p =
+    queryClient.getQueryData<MeProfileResponse>(queryKeys.me.profile()) ?? profile;
+  const e =
+    queryClient.getQueryData<MeEconomyResponse>(queryKeys.me.economy()) ?? economy;
+  return mergeMeProfileAndEconomy(p, e);
+}
 
 /** Профиль без «тяжёлого» объединённого `GET /me` — экономика отдельно и по WS. */
 export async function meProfileQueryFn(): Promise<MeProfileResponse> {
