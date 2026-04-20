@@ -20,6 +20,9 @@ export DEPLOY_HISTORY="${SHARED_DIR}/deploy-history.jsonl"
 export RELEASE_RETENTION=5
 export API_PORT="${API_PORT:-3001}"
 export API_URL="http://127.0.0.1:${API_PORT}"
+# API calls waitForDatabaseReady() before listen() (up to DB_WAIT_MAX_MS, default 120s) + seed/warmup.
+# 30s is too short on small VPS; override with API_READY_TIMEOUT_SEC if needed.
+export API_READY_TIMEOUT_SEC="${API_READY_TIMEOUT_SEC:-180}"
 
 # ── Colors ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then

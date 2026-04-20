@@ -82,7 +82,7 @@ fi
 # ── Health verification ──────────────────────────────────────────────────────
 step 4 "Health verification"
 log "Waiting for API readiness…"
-if wait_http "${API_URL}/health/ready" 30 2; then
+if wait_http "${API_URL}/health/ready" "${API_READY_TIMEOUT_SEC}" 2; then
   ok "API is healthy"
 else
   err "API health check failed after rollback!"

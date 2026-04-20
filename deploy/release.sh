@@ -63,7 +63,7 @@ auto_rollback() {
       $SUDO systemctl restart mlaffon-api mlaffon-worker mlaffon-worker-fraud 2>/dev/null || true
 
       log "Waiting for previous release health…"
-      if wait_http "${API_URL}/health/ready" 30 2; then
+      if wait_http "${API_URL}/health/ready" "${API_READY_TIMEOUT_SEC}" 2; then
         ok "Rollback successful — previous release is healthy"
         write_release_meta "$prev" "$(cat <<ENDJSON
 {"release":"$(release_id_from_path "$prev")","action":"rollback","timestamp":"$(date -Iseconds)","reason":"deploy_failure","exit_code":${exit_code}}
@@ -324,7 +324,7 @@ ok "systemd daemon-reload complete"
 step 14 "Restart API server"
 restart_service mlaffon-api
 log "Waiting for API readiness…"
-wait_http "${API_URL}/health/ready" 30 2 || die "API did not become ready within 30s"
+wait_http "${API_URL}/health/ready" "${API_READY_TIMEOUT_SEC}" 2 || die "API did not become ready within ${API_READY_TIMEOUT_SEC}s (set API_READY_TIMEOUT_SEC if startup is slower)"
 ok "API is ready"
 
 # ═══════════════════════════════════════════════════════════════════════════════
