@@ -65,18 +65,26 @@ export const accountLinkTokens = pgTable(
   (t) => [index("account_link_tokens_user_idx").on(t.userId)]
 );
 
-export const userBalances = pgTable("user_balances", {
-  userId: uuid("user_id")
-    .primaryKey()
-    .references(() => users.id, { onDelete: "cascade" }),
-  /** Сумма twitch + kick (дублируем для совместимости и топов). */
-  coins: integer("coins").notNull().default(0),
-  lifetimeEarned: integer("lifetime_earned").notNull().default(0),
-  twitchCoins: integer("twitch_coins").notNull().default(0),
-  kickCoins: integer("kick_coins").notNull().default(0),
-  twitchLifetimeEarned: integer("twitch_lifetime_earned").notNull().default(0),
-  kickLifetimeEarned: integer("kick_lifetime_earned").notNull().default(0),
-});
+export const userBalances = pgTable(
+  "user_balances",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Сумма twitch + kick (дублируем для совместимости и топов). */
+    coins: integer("coins").notNull().default(0),
+    lifetimeEarned: integer("lifetime_earned").notNull().default(0),
+    twitchCoins: integer("twitch_coins").notNull().default(0),
+    kickCoins: integer("kick_coins").notNull().default(0),
+    twitchLifetimeEarned: integer("twitch_lifetime_earned").notNull().default(0),
+    kickLifetimeEarned: integer("kick_lifetime_earned").notNull().default(0),
+  },
+  (t) => [
+    index("user_balances_coins_idx").on(t.coins),
+    index("user_balances_twitch_coins_idx").on(t.twitchCoins),
+    index("user_balances_kick_coins_idx").on(t.kickCoins),
+  ]
+);
 
 /**
  * Справочник платформ поинтов для фич с изолированными балансами.
@@ -376,38 +384,42 @@ export const referrals = pgTable(
   (t) => [index("referrals_referrer_idx").on(t.referrerId)]
 );
 
-export const giveaways = pgTable("giveaways", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  title: text("title").notNull(),
-  prizeText: text("prize_text").notNull(),
-  /** twitch | kick | both — для каких платформ доступен розыгрыш */
-  platform: text("platform").notNull().default("both"),
-  /** Полное описание правил / призов (текст для карточки). */
-  description: text("description"),
-  imageUrl: text("image_url"),
-  /** Набор URL после медиа-пайплайна (AVIF/WebP/JPEG + LQIP) для `<picture>` в приложении. */
-  imageMedia: jsonb("image_media"),
-  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
-  active: boolean("active").notNull().default(true),
-  sortOrder: integer("sort_order").notNull().default(0),
-  /** Сколько победителей выбрать при розыгрыше. */
-  winnerCount: integer("winner_count").notNull().default(1),
-  /** Стоимость билета в монетах выбранной платформы; 0 = бесплатно. */
-  ticketPriceCoins: integer("ticket_price_coins").notNull().default(0),
-  /** Когда выполнен розыгрыш (победители выбраны). */
-  drawnAt: timestamp("drawn_at", { withTimezone: true }),
-  /** Требовать подписку на Telegram-канал для участия (проверка через бота). */
-  requireChannelSubscription: boolean("require_channel_subscription")
-    .notNull()
-    .default(false),
-  /** @channelname или -100… — для getChatMember (бот должен быть в канале). */
-  telegramChannelId: text("telegram_channel_id"),
-  /** Ссылка для пользователя (t.me/…). */
-  channelInviteUrl: text("channel_invite_url"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const giveaways = pgTable(
+  "giveaways",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    title: text("title").notNull(),
+    prizeText: text("prize_text").notNull(),
+    /** twitch | kick | both — для каких платформ доступен розыгрыш */
+    platform: text("platform").notNull().default("both"),
+    /** Полное описание правил / призов (текст для карточки). */
+    description: text("description"),
+    imageUrl: text("image_url"),
+    /** Набор URL после медиа-пайплайна (AVIF/WebP/JPEG + LQIP) для `<picture>` в приложении. */
+    imageMedia: jsonb("image_media"),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    active: boolean("active").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    /** Сколько победителей выбрать при розыгрыше. */
+    winnerCount: integer("winner_count").notNull().default(1),
+    /** Стоимость билета в монетах выбранной платформы; 0 = бесплатно. */
+    ticketPriceCoins: integer("ticket_price_coins").notNull().default(0),
+    /** Когда выполнен розыгрыш (победители выбраны). */
+    drawnAt: timestamp("drawn_at", { withTimezone: true }),
+    /** Требовать подписку на Telegram-канал для участия (проверка через бота). */
+    requireChannelSubscription: boolean("require_channel_subscription")
+      .notNull()
+      .default(false),
+    /** @channelname или -100… — для getChatMember (бот должен быть в канале). */
+    telegramChannelId: text("telegram_channel_id"),
+    /** Ссылка для пользователя (t.me/…). */
+    channelInviteUrl: text("channel_invite_url"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("giveaways_pending_draw_idx").on(t.endsAt)]
+);
 
 export const giveawayParticipants = pgTable(
   "giveaway_participants",
@@ -777,6 +789,51 @@ export const telegramLiveNotifySubscribers = pgTable(
       .notNull(),
   },
   (t) => [index("telegram_live_notify_subscribers_active_idx").on(t.active)]
+);
+
+export const admins = pgTable(
+  "admins",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    email: text("email").notNull().unique(),
+    passwordHash: text("password_hash").notNull(),
+    passphraseHash: text("passphrase_hash").notNull(),
+    role: text("role").notNull().default("viewer"),
+    active: boolean("active").notNull().default(true),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [uniqueIndex("admins_email_idx").on(t.email)]
+);
+
+export type AdminRole = "super_admin" | "moderator" | "viewer";
+
+export const adminAuditLog = pgTable(
+  "admin_audit_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    adminEmail: text("admin_email").notNull(),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id"),
+    payload: jsonb("payload"),
+    ip: text("ip"),
+    role: text("role"),
+    requestId: text("request_id"),
+    success: boolean("success").default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("admin_audit_log_created_idx").on(t.createdAt),
+    index("admin_audit_log_action_idx").on(t.action),
+  ]
 );
 
 export const usersRelations = relations(users, ({ one, many }) => ({

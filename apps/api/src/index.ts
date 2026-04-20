@@ -1,4 +1,10 @@
 import "dotenv/config";
+import { validateEnv } from "./lib/envValidation.js";
+validateEnv();
+
+import { initSentry, captureException } from "./lib/sentry.js";
+initSentry();
+
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
@@ -6,14 +12,14 @@ import websocket from "@fastify/websocket";
 import multipart from "@fastify/multipart";
 import { z } from "zod";
 import { eq, and, sql } from "drizzle-orm";
-import { db, waitForDatabaseReady } from "./db/index.js";
+import { db, pool, waitForDatabaseReady } from "./db/index.js";
 import { platformAccounts } from "./db/schema.js";
 import {
   assertFreshAuth,
   parseInitData,
   verifyTelegramInitData,
 } from "./lib/telegram.js";
-import { signSession } from "./lib/jwt.js";
+import { signSession, verifySession } from "./lib/jwt.js";
 import {
   LinkTokenError,
   createTelegramLinkToken,
@@ -220,15 +226,10 @@ await app.register(rateLimit, {
     const auth = req.headers.authorization;
     if (auth?.startsWith("Bearer ")) {
       try {
-        const payload = auth.slice(7).split(".")[1];
-        if (payload) {
-          const decoded = JSON.parse(
-            Buffer.from(payload, "base64url").toString()
-          ) as { sub?: string };
-          if (decoded.sub) return `user:${decoded.sub}`;
-        }
+        const p = verifySession(auth.slice(7));
+        if (p.sub) return `user:${p.sub}`;
       } catch {
-        /* fall through to IP */
+        /* invalid/expired token — fall through to IP-based limiting */
       }
     }
     return req.ip;
@@ -274,9 +275,56 @@ await registerPushRoutes(app);
 await registerTelegramWebhookRoutes(app);
 await registerMediaRoutes(app);
 
-app.get("/health", async () => ({ ok: true }));
+import { registerMetricsHooks, registerMetricsEndpoint } from "./lib/metrics.js";
+registerMetricsHooks(app);
+registerMetricsEndpoint(app);
 
-app.get("/api/v1/home/public", async () => buildHomePublicResponse());
+app.get("/health", async () => {
+  const checks: Record<string, string> = {};
+  try {
+    await pool.query("SELECT 1");
+    checks.db = "ok";
+  } catch {
+    checks.db = "error";
+  }
+  try {
+    const { getRedis } = await import("./lib/redis.js");
+    await getRedis().ping();
+    checks.redis = "ok";
+  } catch {
+    checks.redis = "error";
+  }
+  const ok = checks.db === "ok" && checks.redis === "ok";
+  return { ok, checks };
+});
+
+app.get("/health/ready", async (_req, reply) => {
+  try {
+    await pool.query("SELECT 1");
+    const { getRedis } = await import("./lib/redis.js");
+    await getRedis().ping();
+    return { ready: true };
+  } catch {
+    return reply.status(503).send({ ready: false });
+  }
+});
+
+app.get("/version", async () => {
+  return {
+    commit: process.env.GIT_COMMIT ?? "unknown",
+    release: process.env.SENTRY_RELEASE ?? "unknown",
+    buildTime: process.env.BUILD_TIME ?? "unknown",
+    nodeEnv: process.env.NODE_ENV ?? "development",
+  };
+});
+
+app.get("/api/v1/home/public", async (_req, reply) => {
+  void reply.header(
+    "Cache-Control",
+    "public, max-age=300, stale-while-revalidate=3600"
+  );
+  return buildHomePublicResponse();
+});
 
 app.get("/api/v1/home/content", async (_req, reply) => {
   void reply.header(
@@ -947,36 +995,32 @@ app.get("/api/v1/referrals", async (req, reply) => {
   const userId = authUser(req, reply);
   if (!userId) return;
   const me = await buildMeProfileResponse(userId);
+
   const rows = await db
     .select({
       refereeId: referrals.refereeId,
       createdAt: referrals.createdAt,
       qualifiedAt: referrals.qualifiedAt,
+      username: users.username,
+      firstName: users.firstName,
+      telegramId: users.telegramId,
+      email: users.email,
     })
     .from(referrals)
+    .innerJoin(users, eq(referrals.refereeId, users.id))
     .where(eq(referrals.referrerId, userId));
 
-  const invited = [];
-  for (const r of rows) {
-    const [u] = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, r.refereeId))
-      .limit(1);
-    invited.push({
-      refereeId: r.refereeId,
-      displayName:
-        u?.username ??
-        u?.firstName ??
-        (u
-          ? u.telegramId != null
-            ? String(u.telegramId)
-            : (u.email ?? "?")
-          : "?"),
-      createdAt: r.createdAt?.toISOString() ?? "",
-      qualified: !!r.qualifiedAt,
-    });
-  }
+  const invited = rows.map((r) => ({
+    refereeId: r.refereeId,
+    displayName:
+      r.username ??
+      r.firstName ??
+      (r.telegramId != null
+        ? String(r.telegramId)
+        : (r.email ?? "?")),
+    createdAt: r.createdAt?.toISOString() ?? "",
+    qualified: !!r.qualifiedAt,
+  }));
 
   const qualifiedCount = invited.filter((i) => i.qualified).length;
 
@@ -1319,5 +1363,35 @@ try {
   });
 } catch (err) {
   app.log.error(err);
+  captureException(err, { context: "startup" });
   process.exit(1);
 }
+
+async function gracefulShutdown(signal: string) {
+  app.log.info({ signal }, "graceful_shutdown_start");
+  try {
+    await app.close();
+  } catch (e) {
+    app.log.error({ err: e }, "graceful_shutdown_error");
+  }
+  process.exit(0);
+}
+process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
+
+app.setErrorHandler((error, req, reply) => {
+  captureException(error, {
+    route: req.url,
+    method: req.method,
+    requestId: req.id,
+  });
+  req.log.error({ err: error, requestId: req.id }, "unhandled_error");
+  void reply.status(error.statusCode ?? 500).send({
+    error: {
+      code: "internal_error",
+      message: process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : error.message,
+    },
+  });
+});

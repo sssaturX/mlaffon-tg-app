@@ -1,7 +1,13 @@
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { shopItems, shopPurchases, userInventory } from "../db/schema.js";
-import { applyCredit, applyDebit, type EconomyPlatform } from "./economy.js";
+import {
+  shopItems,
+  shopPurchases,
+  transactions,
+  userBalances,
+  userInventory,
+} from "../db/schema.js";
+import { publishBalanceUpdate } from "./realtimePublish.js";
 import { getShopGlobalCopyForClient } from "./shopSettings.js";
 import { nanoid } from "nanoid";
 import type { MediaImageUploadResponse } from "shared";
@@ -13,8 +19,8 @@ import {
   setShopBundleCache,
 } from "./shopBundleCache.js";
 
-/** Платформа витрины магазина (совпадает с переключателем Twitch/Kick в приложении). */
 export type ShopClientPlatform = "twitch" | "kick";
+export type EconomyPlatform = "twitch" | "kick";
 
 export function shopItemVisibleForPlatform(
   meta: unknown,
@@ -35,7 +41,6 @@ export type ShopItemClientDto = {
   kind: string;
   priceCoins: number;
   meta: unknown;
-  /** null — без лимита; 0 — закончилось. */
   stockRemaining: number | null;
 };
 
@@ -113,6 +118,10 @@ export async function getShopClientBundle(platform: ShopClientPlatform): Promise
   });
 }
 
+/**
+ * Atomic purchase: debit + stock decrement + inventory + purchase record
+ * all happen inside a single DB transaction. No partial state possible.
+ */
 export async function purchaseItem(
   userId: string,
   itemId: string,
@@ -137,70 +146,105 @@ export async function purchaseItem(
   }
 
   const idem = `shop:${userId}:${itemId}:${nanoid()}`;
-  const debit = await applyDebit({
-    userId,
-    amount: item.priceCoins,
-    platform,
-    idempotencyKey: idem,
-    kind: "shop_purchase",
-    referenceType: "shop_item",
-    referenceId: itemId,
-  });
-  if (!debit.ok) {
-    if (debit.reason === "insufficient")
-      return { ok: false, error: "insufficient_coins" };
-    return { ok: false, error: "duplicate" };
-  }
 
-  const [stockRow] = await db
-    .update(shopItems)
-    .set({ stockSold: sql`${shopItems.stockSold} + 1` })
-    .where(
-      and(
-        eq(shopItems.id, itemId),
-        or(isNull(shopItems.stockTotal), lt(shopItems.stockSold, shopItems.stockTotal))
-      )
-    )
-    .returning({ id: shopItems.id });
+  const result = await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(eq(transactions.idempotencyKey, idem))
+      .limit(1);
+    if (existing) return { ok: false as const, error: "duplicate" };
 
-  if (!stockRow) {
-    await applyCredit({
-      userId,
-      amount: item.priceCoins,
-      idempotencyKey: `${idem}:refund_oos`,
-      kind: "admin",
-      platform,
-      referenceType: "shop_stock_race",
-      referenceId: itemId,
-    });
-    return { ok: false, error: "out_of_stock" };
-  }
-
-  if (item.kind === "extra_spin") {
-    const qty = (item.meta as { spins?: number } | null)?.spins ?? 1;
-    await db
-      .insert(userInventory)
-      .values({
-        userId,
-        itemId: item.id,
-        quantity: qty,
+    const platformCol = platform === "twitch" ? "twitchCoins" : "kickCoins";
+    const [bal] = await tx
+      .select({
+        coins: userBalances.coins,
+        twitchCoins: userBalances.twitchCoins,
+        kickCoins: userBalances.kickCoins,
       })
-      .onConflictDoUpdate({
-        target: [userInventory.userId, userInventory.itemId],
-        set: {
-          quantity: sql`${userInventory.quantity} + ${qty}`,
-          updatedAt: sql`now()`,
-        },
-      });
-  }
+      .from(userBalances)
+      .where(eq(userBalances.userId, userId))
+      .limit(1);
 
-  await db.insert(shopPurchases).values({
-    userId,
-    shopItemId: item.id,
-    priceCoins: item.priceCoins,
-    platform,
+    const platformBal = platform === "twitch" ? bal?.twitchCoins : bal?.kickCoins;
+    if (!bal || (platformBal ?? 0) < item.priceCoins)
+      return { ok: false as const, error: "insufficient_coins" };
+
+    await tx.insert(transactions).values({
+      userId,
+      amount: -item.priceCoins,
+      kind: "shop_purchase",
+      referenceType: "shop_item",
+      referenceId: itemId,
+      idempotencyKey: idem,
+      meta: { platform },
+    });
+
+    if (platform === "twitch") {
+      await tx
+        .update(userBalances)
+        .set({
+          twitchCoins: sql`${userBalances.twitchCoins} - ${item.priceCoins}`,
+          coins: sql`${userBalances.coins} - ${item.priceCoins}`,
+        })
+        .where(eq(userBalances.userId, userId));
+    } else {
+      await tx
+        .update(userBalances)
+        .set({
+          kickCoins: sql`${userBalances.kickCoins} - ${item.priceCoins}`,
+          coins: sql`${userBalances.coins} - ${item.priceCoins}`,
+        })
+        .where(eq(userBalances.userId, userId));
+    }
+
+    const [stockRow] = await tx
+      .update(shopItems)
+      .set({ stockSold: sql`${shopItems.stockSold} + 1` })
+      .where(
+        and(
+          eq(shopItems.id, itemId),
+          or(isNull(shopItems.stockTotal), lt(shopItems.stockSold, shopItems.stockTotal))
+        )
+      )
+      .returning({ id: shopItems.id });
+
+    if (!stockRow) {
+      throw new Error("out_of_stock_race");
+    }
+
+    if (item.kind === "extra_spin") {
+      const qty = (item.meta as { spins?: number } | null)?.spins ?? 1;
+      await tx
+        .insert(userInventory)
+        .values({ userId, itemId: item.id, quantity: qty })
+        .onConflictDoUpdate({
+          target: [userInventory.userId, userInventory.itemId],
+          set: {
+            quantity: sql`${userInventory.quantity} + ${qty}`,
+            updatedAt: sql`now()`,
+          },
+        });
+    }
+
+    await tx.insert(shopPurchases).values({
+      userId,
+      shopItemId: item.id,
+      priceCoins: item.priceCoins,
+      platform,
+    });
+
+    return { ok: true as const };
+  }).catch((e: Error) => {
+    if (e.message === "out_of_stock_race") {
+      return { ok: false as const, error: "out_of_stock" };
+    }
+    throw e;
   });
 
-  invalidateShopBundleCache();
-  return { ok: true };
+  if (result.ok) {
+    void publishBalanceUpdate(userId);
+    invalidateShopBundleCache();
+  }
+  return result;
 }

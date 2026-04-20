@@ -1,0 +1,71 @@
+name: Deploy
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or SHA to deploy (e.g. v1.2.3)"
+        required: true
+        type: string
+      skip_backup:
+        description: "Skip pre-deploy database backup"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+
+    steps:
+      - name: Determine deploy ref
+        id: ref
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "deploy_ref=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy_ref=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          command_timeout: 20m
+          script: |
+            export MLAFFON_BASE=/opt/mlaffon
+            export DEPLOY_SKIP_BACKUP=${{ inputs.skip_backup && '1' || '0' }}
+
+            cd /opt/mlaffon/repo
+            git fetch --all --tags --prune
+
+            /opt/mlaffon/current/deploy/release.sh "${{ steps.ref.outputs.deploy_ref }}"
+
+      - name: Post-deploy verification
+        if: success()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            /opt/mlaffon/current/deploy/verify-release.sh
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Deployment of ${{ steps.ref.outputs.deploy_ref }} failed!"
+          echo "Check server logs: ssh ${{ secrets.DEPLOY_HOST }} 'tail -100 /opt/mlaffon/shared/logs/deploy-*.log | tail -100'"

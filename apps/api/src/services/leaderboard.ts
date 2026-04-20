@@ -1,12 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import {
-  platformAccounts,
-  referrals,
-  userBalances,
-  userStreamStreaks,
-  users,
-} from "../db/schema.js";
+import { userBalances, userStreamStreaks } from "../db/schema.js";
+import { getRedis } from "../lib/redis.js";
 
 export type LeaderSort = "coins" | "streak" | "referrals";
 export type PlatformFilter = "all" | "twitch" | "kick";
@@ -18,6 +13,13 @@ type LeaderRow = {
   value: number;
 };
 
+const CACHE_PREFIX = "mlaffon:leaderboard:v1:";
+const CACHE_TTL_SEC = 60;
+
+function cacheKey(sort: LeaderSort, platform: PlatformFilter): string {
+  return `${CACHE_PREFIX}${sort}:${platform}`;
+}
+
 export async function getLeaderboard(params: {
   sort: LeaderSort;
   platform: PlatformFilter;
@@ -26,12 +28,47 @@ export async function getLeaderboard(params: {
   const limit = params.limit ?? 50;
   const { sort, platform } = params;
 
-  if (sort === "coins") {
-    return getLeaderboardByCoins(platform, limit);
+  const cached = await getLeaderboardFromCache(sort, platform);
+  if (cached) return cached.slice(0, limit);
+
+  const rows = await computeLeaderboard(sort, platform, limit);
+
+  void setLeaderboardCache(sort, platform, rows).catch(() => {});
+  return rows;
+}
+
+async function getLeaderboardFromCache(
+  sort: LeaderSort,
+  platform: PlatformFilter
+): Promise<LeaderRow[] | null> {
+  try {
+    const raw = await getRedis().get(cacheKey(sort, platform));
+    if (!raw) return null;
+    return JSON.parse(raw) as LeaderRow[];
+  } catch {
+    return null;
   }
-  if (sort === "streak") {
-    return getLeaderboardByStreak(platform, limit);
+}
+
+async function setLeaderboardCache(
+  sort: LeaderSort,
+  platform: PlatformFilter,
+  rows: LeaderRow[]
+): Promise<void> {
+  try {
+    await getRedis().setex(cacheKey(sort, platform), CACHE_TTL_SEC, JSON.stringify(rows));
+  } catch {
+    /* Redis unavailable */
   }
+}
+
+async function computeLeaderboard(
+  sort: LeaderSort,
+  platform: PlatformFilter,
+  limit: number
+): Promise<LeaderRow[]> {
+  if (sort === "coins") return getLeaderboardByCoins(platform, limit);
+  if (sort === "streak") return getLeaderboardByStreak(platform, limit);
   return getLeaderboardByReferrals(platform, limit);
 }
 
@@ -161,12 +198,8 @@ export async function rankOfUser(
   platform: PlatformFilter,
   userId: string
 ): Promise<{ rank: number; value: number } | null> {
-  if (sort === "coins") {
-    return rankOfUserByCoins(platform, userId);
-  }
-  if (sort === "streak") {
-    return rankOfUserByStreak(platform, userId);
-  }
+  if (sort === "coins") return rankOfUserByCoins(platform, userId);
+  if (sort === "streak") return rankOfUserByStreak(platform, userId);
   return rankOfUserByReferrals(platform, userId);
 }
 
@@ -265,4 +298,3 @@ async function rankOfUserByReferrals(
   ).rows;
   return { rank: Number(c) + 1, value: myVal };
 }
-

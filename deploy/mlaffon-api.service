@@ -1,16 +1,25 @@
 [Unit]
 Description=Mlaffon API
-After=network.target docker.service
+After=network.target postgresql.service redis.service
+Requires=network-online.target
+Wants=postgresql.service redis.service
 
 [Service]
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/opt/mlaffon/mlaffon-tg-app/apps/api
-EnvironmentFile=/opt/mlaffon/mlaffon-tg-app/apps/api/.env
+WorkingDirectory=/opt/mlaffon/current/apps/api
+EnvironmentFile=/opt/mlaffon/shared/env
 ExecStart=/usr/bin/node dist/index.js
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+MemoryMax=1G
+CPUQuota=200%
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mlaffon-api
 
 [Install]
 WantedBy=multi-user.target

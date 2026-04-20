@@ -115,8 +115,6 @@ export async function getGiveawayPublicDetail(
   giveawayId: string,
   userId: string | null
 ): Promise<GiveawayPublicDetail | null> {
-  await finalizeExpiredGiveaways();
-
   const [g] = await db
     .select()
     .from(giveaways)
@@ -406,12 +404,14 @@ export async function drawGiveawayWinners(giveawayId: string): Promise<
 
     if (!locked) return false;
 
-    for (let i = 0; i < picked.length; i++) {
-      await tx.insert(giveawayWinners).values({
-        giveawayId,
-        userId: picked[i]!,
-        rank: i + 1,
-      });
+    if (picked.length > 0) {
+      await tx.insert(giveawayWinners).values(
+        picked.map((uid, i) => ({
+          giveawayId,
+          userId: uid,
+          rank: i + 1,
+        }))
+      );
     }
     return true;
   });
@@ -462,8 +462,6 @@ export type GiveawayListItem = {
 };
 
 export async function listGiveawaysPublic(): Promise<GiveawayListItem[]> {
-  await finalizeExpiredGiveaways();
-
   const rows = await db
     .select()
     .from(giveaways)

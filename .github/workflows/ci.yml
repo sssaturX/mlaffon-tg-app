@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mlaffon
+          POSTGRES_PASSWORD: mlaffon
+          POSTGRES_DB: mlaffon
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U mlaffon"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check (API)
+        run: npx tsc --noEmit
+        working-directory: apps/api
+
+      - name: TypeScript check (Web)
+        run: npx tsc --noEmit
+        working-directory: apps/web
+
+      - name: TypeScript check (Admin)
+        run: npx tsc --noEmit
+        working-directory: apps/admin
+
+      - name: Run tests
+        run: npm test
+        env:
+          DATABASE_URL: postgres://mlaffon:mlaffon@localhost:5432/mlaffon
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: ci-test-secret-not-for-production-use
+          TELEGRAM_BOT_TOKEN: test-token
+          TOKENS_ENCRYPTION_KEY: dGVzdC1lbmNyeXB0aW9uLWtleS1mb3ItY2k=
+          NODE_ENV: test
+
+      - name: Build API
+        run: npm run build --workspace=apps/api
+
+      - name: Build Web
+        run: npm run build --workspace=apps/web
+
+      - name: Build Admin
+        run: npm run build --workspace=apps/admin
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high || true
+
+      - name: Check for secrets in code
+        run: |
+          if grep -r "AAGaDNN\|sd692vdy\|65281d83c32\|205b23bba536" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.json" apps/ packages/ ; then
+            echo "::error::Potential secrets found in source code!"
+            exit 1
+          fi
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all apps
+        run: npm run build
+        env:
+          GIT_COMMIT: ${{ github.sha }}
+          BUILD_TIME: ${{ github.event.head_commit.timestamp }}
+
+      - name: Create release tarball
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          tar czf "mlaffon-${TAG}.tar.gz" \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='*.map' \
+            apps/api/dist/ \
+            apps/web/dist/ \
+            apps/admin/dist/ \
+            apps/api/package.json \
+            apps/api/drizzle/ \
+            packages/ \
+            package.json \
+            package-lock.json \
+            deploy/
+          echo "TARBALL=mlaffon-${TAG}.tar.gz" >> "$GITHUB_ENV"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.TARBALL }}
+          generate_release_notes: true

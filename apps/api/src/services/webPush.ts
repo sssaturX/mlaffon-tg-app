@@ -1,5 +1,5 @@
 import webpush from "web-push";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { pushSubscriptions } from "../db/schema.js";
 
@@ -78,8 +78,13 @@ function isGoneStatus(statusCode?: number): boolean {
   return statusCode === 410 || statusCode === 404;
 }
 
+const BATCH_SIZE = 100;
+const CONCURRENCY = 10;
+
 /**
- * Рассылка при старте эфира из админки. Без VAPID — no-op.
+ * Batched push notification fan-out with bounded concurrency.
+ * Processes subscriptions in pages of BATCH_SIZE, with at most
+ * CONCURRENCY in-flight push sends per batch.
  */
 export async function notifyWebPushLiveStarted(log?: LogLike): Promise<void> {
   if (!getVapidPublicKey()) {
@@ -91,40 +96,73 @@ export async function notifyWebPushLiveStarted(log?: LogLike): Promise<void> {
     return;
   }
 
-  const rows = await db.select().from(pushSubscriptions);
-  if (rows.length === 0) return;
+  let offset = 0;
+  let sent = 0;
+  let removed = 0;
 
-  await Promise.all(
-    rows.map(async (row) => {
-      const sub = {
-        endpoint: row.endpoint,
-        keys: { p256dh: row.p256dh, auth: row.auth },
-      };
-      try {
-        await webpush.sendNotification(sub, LIVE_PAYLOAD, {
-          TTL: 3600,
-          urgency: "high",
-        });
-      } catch (e: unknown) {
-        const status =
-          e && typeof e === "object" && "statusCode" in e
-            ? (e as { statusCode?: number }).statusCode
-            : undefined;
-        if (isGoneStatus(status)) {
-          await db
-            .delete(pushSubscriptions)
-            .where(eq(pushSubscriptions.endpoint, row.endpoint));
-          log?.warn({ endpoint: row.endpoint.slice(0, 48) }, "web_push_sub_removed");
-          return;
+  while (true) {
+    const rows = await db
+      .select()
+      .from(pushSubscriptions)
+      .orderBy(pushSubscriptions.id)
+      .limit(BATCH_SIZE)
+      .offset(offset);
+
+    if (rows.length === 0) break;
+
+    const pending = [...rows];
+    const inFlight: Promise<void>[] = [];
+
+    for (const row of pending) {
+      const p = (async () => {
+        const sub = {
+          endpoint: row.endpoint,
+          keys: { p256dh: row.p256dh, auth: row.auth },
+        };
+        try {
+          await webpush.sendNotification(sub, LIVE_PAYLOAD, {
+            TTL: 3600,
+            urgency: "high",
+          });
+          sent++;
+        } catch (e: unknown) {
+          const status =
+            e && typeof e === "object" && "statusCode" in e
+              ? (e as { statusCode?: number }).statusCode
+              : undefined;
+          if (isGoneStatus(status)) {
+            await db
+              .delete(pushSubscriptions)
+              .where(eq(pushSubscriptions.endpoint, row.endpoint));
+            removed++;
+            log?.warn({ endpoint: row.endpoint.slice(0, 48) }, "web_push_sub_removed");
+            return;
+          }
+          log?.warn(
+            {
+              err: e instanceof Error ? e.message : String(e),
+              endpoint: row.endpoint.slice(0, 48),
+            },
+            "web_push_send_failed"
+          );
         }
-        log?.warn(
-          {
-            err: e instanceof Error ? e.message : String(e),
-            endpoint: row.endpoint.slice(0, 48),
-          },
-          "web_push_send_failed"
-        );
+      })();
+
+      inFlight.push(p);
+
+      if (inFlight.length >= CONCURRENCY) {
+        await Promise.all(inFlight);
+        inFlight.length = 0;
       }
-    })
-  );
+    }
+
+    if (inFlight.length > 0) await Promise.all(inFlight);
+
+    if (rows.length < BATCH_SIZE) break;
+    offset += BATCH_SIZE;
+  }
+
+  if (sent > 0 || removed > 0) {
+    log?.warn({ sent, removed }, "web_push_live_completed");
+  }
 }

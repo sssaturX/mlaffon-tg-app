@@ -9,7 +9,8 @@ function splitOrigins(raw: string): string[] {
 
 /**
  * Production: strict allowlist from `CORS_ORIGINS` and/or `PUBLIC_WEB_URL` / `PUBLIC_ADMIN_URL`.
- * Development: `CORS_ORIGINS` if set, otherwise reflect any origin (`true`).
+ * Development: `CORS_ORIGINS` if set, otherwise localhost:5173 + localhost:5174.
+ * Never reflects arbitrary origins — prevents credential theft on staging/preview deploys.
  */
 export function resolveCorsOrigin(): FastifyCorsOptions["origin"] {
   const isProd = process.env.NODE_ENV === "production";
@@ -17,7 +18,10 @@ export function resolveCorsOrigin(): FastifyCorsOptions["origin"] {
 
   if (!isProd) {
     if (corsOriginsRaw) return splitOrigins(corsOriginsRaw);
-    return true;
+    const devOrigins = ["http://localhost:5173", "http://localhost:5174"];
+    const pub = process.env.PUBLIC_WEB_URL?.trim().replace(/\/+$/, "");
+    if (pub && !devOrigins.includes(pub)) devOrigins.push(pub);
+    return devOrigins;
   }
 
   const list: string[] = [];

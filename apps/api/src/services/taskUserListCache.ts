@@ -29,7 +29,7 @@ export async function setCachedUserTaskDtoList(
   try {
     await getRedis().setex(cacheKey(userId), TTL_SEC, JSON.stringify(rows));
   } catch {
-    /* Redis недоступен */
+    /* Redis unavailable */
   }
 }
 
@@ -41,12 +41,25 @@ export function invalidateUserTaskDtoCache(userId: string): void {
     });
 }
 
-/** Сброс кэшей списков заданий у всех пользователей (каталог заданий изменился). */
+/**
+ * Flush all per-user task DTO caches using SCAN (non-blocking).
+ * Previous implementation used KEYS which blocks Redis event loop at scale.
+ */
 export async function flushAllUserTaskDtoCaches(): Promise<void> {
   try {
     const r = getRedis();
-    const keys = await r.keys(`${KEY_PREFIX}*`);
-    if (keys.length > 0) await r.del(...keys);
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await r.scan(
+        cursor,
+        "MATCH",
+        `${KEY_PREFIX}*`,
+        "COUNT",
+        200
+      );
+      cursor = nextCursor;
+      if (keys.length > 0) await r.del(...keys);
+    } while (cursor !== "0");
   } catch {
     /* ignore */
   }

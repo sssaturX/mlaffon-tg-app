@@ -81,6 +81,20 @@ import {
   adminListUserReferrals,
   adminUnlinkPlatform,
 } from "../services/adminUserActions.js";
+import { logAdminAction, listAuditLog } from "../services/adminAudit.js";
+import { parsePagination } from "../lib/pagination.js";
+import { hasPermission } from "../lib/adminRbac.js";
+import { getPermissionsForRole } from "../lib/adminRbac.js";
+import {
+  verifyAdminCredentials,
+  ensureSeedAdmin,
+  listAdmins,
+  createAdmin,
+  updateAdminRole,
+  deactivateAdmin,
+} from "../services/adminAccounts.js";
+import type { AdminRole } from "../db/schema.js";
+import type { AdminTokenPayload } from "../lib/adminJwt.js";
 
 function parseBearer(req: { headers: { authorization?: string } }): string | null {
   const h = req.headers.authorization;
@@ -88,23 +102,62 @@ function parseBearer(req: { headers: { authorization?: string } }): string | nul
   return h.slice(7);
 }
 
-function requireAdmin(req: FastifyRequest, reply: FastifyReply): string | null {
+type AdminContext = AdminTokenPayload;
+
+function requireAdmin(req: FastifyRequest, reply: FastifyReply): AdminContext | null {
   const token = parseBearer(req);
   if (!token) {
     reply.status(401).send({ error: { code: "unauthorized", message: "No token" } });
     return null;
   }
   try {
-    return verifyAdminToken(token).email;
+    return verifyAdminToken(token);
   } catch {
     reply.status(401).send({ error: { code: "unauthorized", message: "Invalid token" } });
     return null;
   }
 }
 
+function requirePermission(
+  admin: AdminContext,
+  perm: string,
+  reply: FastifyReply
+): boolean {
+  if (!hasPermission(admin.role, perm)) {
+    reply.status(403).send({
+      error: { code: "forbidden", message: `Missing permission: ${perm}` },
+    });
+    return false;
+  }
+  return true;
+}
+
+function audit(
+  admin: AdminContext,
+  req: FastifyRequest,
+  action: string,
+  entityType: string,
+  entityId?: string | null,
+  payload?: Record<string, unknown> | null,
+  success?: boolean
+) {
+  void logAdminAction({
+    adminEmail: admin.email,
+    action,
+    entityType,
+    entityId,
+    payload,
+    ip: req.ip,
+    role: admin.role,
+    requestId: req.id,
+    success,
+  });
+}
+
 export async function registerAdminRoutes(app: FastifyInstance) {
   app.post("/api/admin/media/images", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:upload_media", reply)) return;
     const part = await readMultipartImagePart(req);
     if (!part.ok) {
       return reply.status(part.status).send({
@@ -117,6 +170,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: result.code, message: result.message },
       });
     }
+    audit(admin, req, "upload_media", "media", null, { url: (result.data as Record<string, unknown>).url });
     return result.data;
   });
 
@@ -126,6 +180,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     passphrase: z.string().min(1),
   });
 
+  await ensureSeedAdmin();
+
   app.post("/api/admin/login", async (req, reply) => {
     const parsed = loginBody.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -134,24 +190,49 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       });
     }
     const { email, password, passphrase } = parsed.data;
-    const okEmail = process.env.ADMIN_EMAIL;
-    const okPass = process.env.ADMIN_PASSWORD;
-    const okPhrase = process.env.ADMIN_PASSPHRASE;
-    if (!okEmail || !okPass || !okPhrase) {
-      return reply.status(503).send({
-        error: { code: "admin_misconfigured", message: "Admin env not set" },
+    const result = await verifyAdminCredentials(email, password, passphrase);
+    if (!result.ok) {
+      void logAdminAction({
+        adminEmail: email,
+        action: "login_failed",
+        entityType: "admin_session",
+        ip: req.ip,
+        requestId: req.id,
+        success: false,
       });
-    }
-    if (email !== okEmail || password !== okPass || passphrase !== okPhrase) {
       return reply.status(401).send({
         error: { code: "unauthorized", message: "Invalid credentials" },
       });
     }
-    return { token: signAdminToken(email) };
+    const { admin } = result;
+    void logAdminAction({
+      adminEmail: admin.email,
+      action: "login",
+      entityType: "admin_session",
+      ip: req.ip,
+      role: admin.role,
+      requestId: req.id,
+    });
+    return {
+      token: signAdminToken(admin.email, admin.role as AdminRole, admin.id),
+      role: admin.role,
+      permissions: getPermissionsForRole(admin.role as AdminRole),
+    };
+  });
+
+  app.get("/api/admin/me", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
+    return {
+      email: admin.email,
+      role: admin.role,
+      permissions: getPermissionsForRole(admin.role),
+    };
   });
 
   app.get("/api/admin/stats", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const [{ usersCount }] = await db
       .select({ usersCount: sql<number>`count(*)::int` })
       .from(users);
@@ -176,7 +257,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/admin/users", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const q = req.query as { limit?: string; offset?: string; search?: string };
     const limit = Math.min(200, Math.max(1, Number.parseInt(q.limit ?? "50", 10) || 50));
     const offset = Math.max(0, Number.parseInt(q.offset ?? "0", 10) || 0);
@@ -331,7 +413,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/admin/users/:id", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:ban_user", reply)) return;
     const id = (req.params as { id: string }).id;
     const parsed = patchUserBody.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -361,11 +444,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Пользователь не найден" },
       });
     }
+    audit(admin, req, p.banned ? "ban_user" : "update_user", "user", id, parsed.data);
     return { ok: true };
   });
 
   app.delete("/api/admin/users/:id", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:delete_user", reply)) return;
     const id = (req.params as { id: string }).id;
     const [u] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
     if (!u) {
@@ -374,6 +459,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       });
     }
     await adminDeleteUser(id);
+    audit(admin, req, "delete_user", "user", id);
     return { ok: true };
   });
 
@@ -383,7 +469,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/admin/users/:id/balance", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:adjust_balance", reply)) return;
     const id = (req.params as { id: string }).id;
     const parsed = adjustBalanceBody.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -415,11 +502,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         },
       });
     }
+    audit(admin, req, "adjust_balance", "user", id, parsed.data);
     return { ok: true };
   });
 
   app.delete("/api/admin/users/:id/platforms/:platform", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:delete_user", reply)) return;
     const id = (req.params as { id: string }).id;
     const platform = (req.params as { platform: string }).platform;
     if (platform !== "twitch" && platform !== "kick") {
@@ -439,11 +528,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "platform_not_linked", message: "Платформа не была привязана" },
       });
     }
+    audit(admin, req, "unlink_platform", "user", id, { platform });
     return { ok: true };
   });
 
   app.get("/api/admin/users/:id/referrals", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const id = (req.params as { id: string }).id;
     const [u] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
     if (!u) {
@@ -456,13 +547,21 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/admin/giveaways", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
+    const { limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(giveaways);
     const rows = await db
       .select()
       .from(giveaways)
-      .orderBy(desc(giveaways.sortOrder), desc(giveaways.endsAt));
+      .orderBy(desc(giveaways.sortOrder), desc(giveaways.endsAt))
+      .limit(limit)
+      .offset(offset);
     const counts = await getParticipantCountsForGiveawayIds(rows.map((r) => r.id));
     return {
+      total,
+      limit,
+      offset,
       giveaways: rows.map((g) => ({
         id: g.id,
         title: g.title,
@@ -517,7 +616,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     );
 
   app.post("/api/admin/giveaways", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_giveaways", reply)) return;
     const parsed = createGw.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({
@@ -552,12 +652,14 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         channelInviteUrl: reqCh ? invUrl : null,
       })
       .returning({ id: giveaways.id });
+    audit(admin, req, "create_giveaway", "giveaway", ins!.id, { title: d.title });
     void publishGiveawaysRealtimeSnapshot();
     return { id: ins!.id };
   });
 
   app.get("/api/admin/giveaways/:id", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const id = (req.params as { id: string }).id;
     const [g] = await db.select().from(giveaways).where(eq(giveaways.id, id)).limit(1);
     if (!g) {
@@ -592,7 +694,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/admin/giveaways/:id", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_giveaways", reply)) return;
     const id = (req.params as { id: string }).id;
     const del = await db.delete(giveaways).where(eq(giveaways.id, id)).returning({ id: giveaways.id });
     if (del.length === 0) {
@@ -600,12 +703,14 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Розыгрыш не найден" },
       });
     }
+    audit(admin, req, "delete_giveaway", "giveaway", id);
     void publishGiveawaysRealtimeSnapshot();
     return { ok: true };
   });
 
   app.post("/api/admin/giveaways/:id/draw", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:draw_giveaway", reply)) return;
     const id = (req.params as { id: string }).id;
     const r = await drawGiveawayWinners(id);
     if (!r.ok) {
@@ -625,17 +730,26 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: r.code, message: messages[r.code] },
       });
     }
+    audit(admin, req, "draw_giveaway", "giveaway", id, { winnerCount: r.winners.length });
     void publishGiveawaysRealtimeSnapshot();
     return { ok: true, winners: r.winners };
   });
 
   app.get("/api/admin/promos", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
+    const { limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(promoCodes);
     const rows = await db
       .select()
       .from(promoCodes)
-      .orderBy(desc(promoCodes.createdAt));
+      .orderBy(desc(promoCodes.createdAt))
+      .limit(limit)
+      .offset(offset);
     return {
+      total,
+      limit,
+      offset,
       promos: rows.map((p) => ({
         id: p.id,
         displayName: p.displayName ?? null,
@@ -660,7 +774,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/admin/promos", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_promos", reply)) return;
     const parsed = createPromo.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({
@@ -682,6 +797,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           creditPlatform: parsed.data.creditPlatform ?? "split",
         })
         .returning({ id: promoCodes.id });
+      audit(admin, req, "create_promo", "promo", ins!.id, { code });
       return { id: ins!.id };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -695,7 +811,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/admin/drops/history", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const q = req.query as { limit?: string; offset?: string };
     const lim = Math.min(200, Math.max(1, Number.parseInt(q.limit ?? "40", 10) || 40));
     const off = Math.max(0, Number.parseInt(q.offset ?? "0", 10) || 0);
@@ -703,7 +820,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/admin/drops/:id/claimants", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const id = (req.params as { id: string }).id;
     const data = await getDropClaimantsAdmin(id);
     if (!data) {
@@ -715,7 +833,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/admin/drops", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     return getAdminDropStatus();
   });
 
@@ -734,7 +853,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     });
 
   app.post("/api/admin/drops/start", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_drops", reply)) return;
     const parsed = startDropBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({
@@ -766,6 +886,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         ...parsed.data,
         platform,
       });
+      audit(admin, req, "start_drop", "drop", id, { code: parsed.data.code, platform });
       return { ok: true, id };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -817,15 +938,20 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     );
 
   app.get("/api/admin/tasks", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const rows = await listTasksAdmin();
     return { tasks: rows };
   });
 
   app.get("/api/admin/tasks/evidence", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
-    const q = req.query as { status?: string };
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
+    const q = req.query as { status?: string; limit?: string; offset?: string };
     const status = (q.status ?? "").trim();
+    const { limit, offset } = parsePagination(q as Record<string, unknown>);
+    const cond = status ? eq(taskEvidence.status, status) : sql`true`;
+    const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(taskEvidence).where(cond);
     const rows = await db
       .select({
         id: taskEvidence.id,
@@ -842,9 +968,14 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       })
       .from(taskEvidence)
       .innerJoin(tasks, eq(taskEvidence.taskId, tasks.id))
-      .where(status ? eq(taskEvidence.status, status) : sql`true`)
-      .orderBy(desc(taskEvidence.createdAt));
+      .where(cond)
+      .orderBy(desc(taskEvidence.createdAt))
+      .limit(limit)
+      .offset(offset);
     return {
+      total,
+      limit,
+      offset,
       evidence: rows.map((r) => ({
         ...r,
         reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null,
@@ -859,8 +990,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/admin/tasks/evidence/:id", async (req, reply) => {
-    const adminEmail = requireAdmin(req, reply);
-    if (!adminEmail) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:review_evidence", reply)) return;
     const id = (req.params as { id: string }).id;
     const parsed = reviewEvidenceBody.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -873,7 +1004,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       .set({
         status: parsed.data.status,
         adminNote: parsed.data.adminNote?.trim() || null,
-        reviewedBy: adminEmail,
+        reviewedBy: admin.email,
         reviewedAt: sql`now()`,
         updatedAt: sql`now()`,
       })
@@ -884,12 +1015,14 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Evidence не найден" },
       });
     }
+    audit(admin, req, "review_evidence", "task_evidence", id, parsed.data);
     invalidateUserTaskDtoCache(u.userId);
     return { ok: true };
   });
 
   app.post("/api/admin/tasks", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_tasks", reply)) return;
     const parsed = taskCreateBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({
@@ -909,6 +1042,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         meta: (d.meta ?? null) as Record<string, unknown> | null,
         active: d.active ?? true,
       });
+      audit(admin, req, "create_task", "task", d.id, { title: d.title });
       return { ok: true };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -922,7 +1056,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.put("/api/admin/tasks/:id", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_tasks", reply)) return;
     const id = (req.params as { id: string }).id;
     const parsed = taskPatchBody.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -936,11 +1071,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Задание не найдено" },
       });
     }
+    audit(admin, req, "update_task", "task", id, parsed.data);
     return { ok: true };
   });
 
   app.delete("/api/admin/tasks/:id", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_tasks", reply)) return;
     const id = (req.params as { id: string }).id;
     const ok = await deleteTaskAdmin(id);
     if (!ok) {
@@ -948,11 +1085,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Задание не найдено" },
       });
     }
+    audit(admin, req, "delete_task", "task", id);
     return { ok: true };
   });
 
   app.patch("/api/admin/tasks/:id/toggle", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_tasks", reply)) return;
     const id = (req.params as { id: string }).id;
     const body = req.body as { active?: boolean } | undefined;
     const active = body?.active !== false;
@@ -962,6 +1101,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Задание не найдено" },
       });
     }
+    audit(admin, req, "toggle_task", "task", id, { active });
     return { ok: true, active };
   });
 
@@ -1017,13 +1157,15 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/admin/shop/items", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const items = await listShopItemsAdmin();
     return { items };
   });
 
   app.post("/api/admin/shop/items", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_shop", reply)) return;
     const parsed = shopCreateBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({
@@ -1051,6 +1193,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         active: d.active !== false,
         stockTotal: d.stockTotal === undefined ? null : d.stockTotal,
       });
+      audit(admin, req, "create_shop_item", "shop_item", d.id, { title: d.title });
       return { ok: true };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1064,7 +1207,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.put("/api/admin/shop/items/:id", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_shop", reply)) return;
     const id = (req.params as { id: string }).id;
     const parsed = shopPatchBody.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -1141,6 +1285,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           error: { code: "not_found", message: "Товар не найден" },
         });
       }
+      audit(admin, req, "update_shop_item", "shop_item", id, d);
       return { ok: true };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1157,7 +1302,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/admin/shop/items/:id", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_shop", reply)) return;
     const id = (req.params as { id: string }).id;
     const ok = await deleteShopItemAdmin(id);
     if (!ok) {
@@ -1165,11 +1311,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Товар не найден" },
       });
     }
+    audit(admin, req, "delete_shop_item", "shop_item", id);
     return { ok: true };
   });
 
   app.get("/api/admin/shop/purchases", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const q = req.query as { itemId?: string; limit?: string };
     const rawItem = q.itemId?.trim();
     const itemId = rawItem && rawItem.length > 0 ? rawItem : undefined;
@@ -1182,7 +1330,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/admin/shop/global-copy", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     return await getShopGlobalCopyForClient();
   });
 
@@ -1192,7 +1341,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.put("/api/admin/shop/global-copy", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_settings", reply)) return;
     const parsed = shopGlobalCopyPutBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({
@@ -1203,11 +1353,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       notice: parsed.data.notice.trim(),
       warning: parsed.data.warning.trim(),
     });
+    audit(admin, req, "update_shop_global_copy", "settings", null, parsed.data);
     return { ok: true };
   });
 
   app.get("/api/admin/ban-appeals", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     return { appeals: await listBanAppealsAdmin() };
   });
 
@@ -1216,7 +1368,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/admin/ban-appeals/:id", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:review_appeal", reply)) return;
     const id = (req.params as { id: string }).id;
     const parsed = patchAppealBody.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -1233,11 +1386,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         },
       });
     }
+    audit(admin, req, "review_ban_appeal", "ban_appeal", id, parsed.data);
     return { ok: true };
   });
 
   app.get("/api/admin/live-broadcast", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const b = await getActiveLiveBroadcast();
     if (!b) return { active: false as const };
     return {
@@ -1257,7 +1412,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/admin/live-broadcast/start", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_live", reply)) return;
     const parsed = liveStartBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({
@@ -1288,17 +1444,20 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     void notifyWebPushLiveStarted(req.log).catch((err) => {
       req.log.warn({ err }, "web_push_live_notify_failed");
     });
+    audit(admin, req, "start_live_broadcast", "live_broadcast", r.id, { platform: parsed.data.platform });
     return { ok: true, id: r.id };
   });
 
   app.post("/api/admin/live-broadcast/end", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_live", reply)) return;
     const r = await endLiveBroadcast();
     if (!r.ok) {
       return reply.status(400).send({
         error: { code: "not_live", message: "Нет активного эфира" },
       });
     }
+    audit(admin, req, "end_live_broadcast", "live_broadcast");
     return { ok: true };
   });
 
@@ -1313,7 +1472,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/admin/predictions/platforms", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const rows = await listPredictionPlatforms(true);
     return { platforms: rows };
   });
@@ -1323,7 +1483,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/admin/predictions/platforms/:type", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_predictions", reply)) return;
     const type = (req.params as { type: string }).type;
     const parsed = patchPredictionPlatformBody.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -1341,12 +1502,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Платформа не найдена" },
       });
     }
+    audit(admin, req, "toggle_prediction_platform", "prediction_platform", type, parsed.data);
     return { ok: true };
   });
 
   app.post("/api/admin/predictions", async (req, reply) => {
-    const adminEmail = requireAdmin(req, reply);
-    if (!adminEmail) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_predictions", reply)) return;
     const parsed = createPredictionBody.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.status(400).send({
@@ -1355,23 +1517,26 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     }
     const r = await createPrediction({
       ...parsed.data,
-      createdBy: adminEmail,
+      createdBy: admin.email,
     });
     if (!r.ok) {
       return reply.status(400).send({
         error: { code: r.code, message: "Выберите активную платформу." },
       });
     }
+    audit(admin, req, "create_prediction", "prediction", r.id, { title: parsed.data.title });
     return { id: r.id };
   });
 
   app.get("/api/admin/predictions", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     return { predictions: await listPredictionsAdmin() };
   });
 
   app.get("/api/admin/predictions/:id", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
     const id = (req.params as { id: string }).id;
     const prediction = await getPredictionById(id, null);
     if (!prediction) {
@@ -1383,7 +1548,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/admin/predictions/:id/start", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_predictions", reply)) return;
     const id = (req.params as { id: string }).id;
     const r = await startPrediction(id);
     if (!r.ok) {
@@ -1396,11 +1562,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
             : "Нельзя запустить из текущего статуса";
       return reply.status(status).send({ error: { code: r.code, message } });
     }
+    audit(admin, req, "start_prediction", "prediction", id);
     return { ok: true };
   });
 
   app.patch("/api/admin/predictions/:id/pause", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_predictions", reply)) return;
     const id = (req.params as { id: string }).id;
     const r = await pausePrediction(id);
     if (!r.ok) {
@@ -1408,11 +1576,13 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       const message = r.code === "not_found" ? "Предикт не найден" : "Пауза доступна только для активного предикта";
       return reply.status(status).send({ error: { code: r.code, message } });
     }
+    audit(admin, req, "pause_prediction", "prediction", id);
     return { ok: true };
   });
 
   app.patch("/api/admin/predictions/:id/close", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "mod:manage_predictions", reply)) return;
     const id = (req.params as { id: string }).id;
     const r = await closePrediction(id);
     if (!r.ok) {
@@ -1420,13 +1590,15 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       const message = r.code === "not_found" ? "Предикт не найден" : "Нельзя закрыть из текущего статуса";
       return reply.status(status).send({ error: { code: r.code, message } });
     }
+    audit(admin, req, "close_prediction", "prediction", id);
     return { ok: true };
   });
 
   const resolveBody = z.object({ winnerOption: z.enum(["A", "B"]) });
 
   app.patch("/api/admin/predictions/:id/resolve", async (req, reply) => {
-    if (!requireAdmin(req, reply)) return;
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:resolve_prediction", reply)) return;
     const id = (req.params as { id: string }).id;
     const parsed = resolveBody.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -1440,6 +1612,91 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       const message = r.code === "not_found" ? "Предикт не найден" : "Сначала закройте предикт";
       return reply.status(status).send({ error: { code: r.code, message } });
     }
+    audit(admin, req, "resolve_prediction", "prediction", id, parsed.data);
     return { ok: true };
+  });
+
+  // ── Admin management (super_admin only) ──────────────────────────
+
+  app.get("/api/admin/admins", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_admins", reply)) return;
+    const rows = await listAdmins();
+    return { admins: rows };
+  });
+
+  const createAdminBody = z.object({
+    email: z.string().email(),
+    password: z.string().min(8),
+    passphrase: z.string().min(4),
+    role: z.enum(["super_admin", "moderator", "viewer"]),
+  });
+
+  app.post("/api/admin/admins", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_admins", reply)) return;
+    const parsed = createAdminBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    try {
+      const result = await createAdmin(parsed.data);
+      audit(admin, req, "create_admin", "admin", result.id, { email: parsed.data.email, role: parsed.data.role });
+      return { ok: true, id: result.id };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/unique|duplicate/i.test(msg)) {
+        return reply.status(409).send({
+          error: { code: "admin_exists", message: "Admin with this email already exists" },
+        });
+      }
+      throw e;
+    }
+  });
+
+  app.patch("/api/admin/admins/:id/role", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_admins", reply)) return;
+    const targetId = (req.params as { id: string }).id;
+    const parsed = z.object({ role: z.enum(["super_admin", "moderator", "viewer"]) }).safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: { code: "bad_request", message: parsed.error.message } });
+    }
+    if (targetId === admin.adminId) {
+      return reply.status(400).send({
+        error: { code: "self_modify", message: "Cannot change your own role" },
+      });
+    }
+    const ok = await updateAdminRole(targetId, parsed.data.role as AdminRole);
+    if (!ok) return reply.status(404).send({ error: { code: "not_found", message: "Admin not found" } });
+    audit(admin, req, "update_admin_role", "admin", targetId, parsed.data);
+    return { ok: true };
+  });
+
+  app.delete("/api/admin/admins/:id", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_admins", reply)) return;
+    const targetId = (req.params as { id: string }).id;
+    if (targetId === admin.adminId) {
+      return reply.status(400).send({
+        error: { code: "self_modify", message: "Cannot deactivate yourself" },
+      });
+    }
+    const ok = await deactivateAdmin(targetId);
+    if (!ok) return reply.status(404).send({ error: { code: "not_found", message: "Admin not found" } });
+    audit(admin, req, "deactivate_admin", "admin", targetId);
+    return { ok: true };
+  });
+
+  // ── Audit log viewer ─────────────────────────────────────────────
+
+  app.get("/api/admin/audit-log", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "read:audit", reply)) return;
+    const { limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const result = await listAuditLog({ limit, offset });
+    return { total: result.total, limit, offset, items: result.items };
   });
 }

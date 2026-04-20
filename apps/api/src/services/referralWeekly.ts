@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, notInArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, notInArray, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { referrals, transactions, users } from "../db/schema.js";
 import { applyCreditSplit } from "./economy.js";
@@ -14,7 +14,6 @@ const EXCLUDED_FROM_WEEKLY_BASE = [
   "admin",
 ] as const;
 
-/** Прошлая полная неделя UTC: с понедельника 00:00 до воскресенья (конец исключительно). */
 export function getLastCompletedWeekUtc(): { start: Date; endExclusive: Date; weekKey: string } {
   const now = new Date();
   const d = new Date(
@@ -34,9 +33,8 @@ export function getLastCompletedWeekUtc(): { start: Date; endExclusive: Date; we
 }
 
 /**
- * Начисление % реферерам за прошлую неделю (запуск по cron в понедельник).
- * L1: 2% от суммы положительных начислений реферала (без реф- и промо-транзакций).
- * L2: 0.5% — реферер реферера (дед по цепочке приглашения).
+ * Weekly referral payout — batch-optimized version.
+ * Pre-loads all referral relationships and user data in bulk to avoid N+1.
  */
 export async function runWeeklyReferralPayout(): Promise<{
   weekKey: string;
@@ -61,17 +59,38 @@ export async function runWeeklyReferralPayout(): Promise<{
     )
     .groupBy(transactions.userId);
 
+  if (sums.length === 0) return { weekKey, payouts: 0 };
+
+  const userIds = sums.filter((s) => (s.total ?? 0) > 0).map((s) => s.userId);
+  if (userIds.length === 0) return { weekKey, payouts: 0 };
+
+  const refs = await db
+    .select()
+    .from(referrals)
+    .where(inArray(referrals.refereeId, userIds));
+  const refByReferee = new Map(refs.map((r) => [r.refereeId, r]));
+
+  const eligibleReferrerIds = refs
+    .filter((r) => r.eligibleForPercentAt != null)
+    .map((r) => r.referrerId);
+
+  const uniqueReferrerIds = [...new Set(eligibleReferrerIds)];
+  const referrerUsers =
+    uniqueReferrerIds.length > 0
+      ? await db
+          .select({ id: users.id, referredById: users.referredById })
+          .from(users)
+          .where(inArray(users.id, uniqueReferrerIds))
+      : [];
+  const referrerById = new Map(referrerUsers.map((u) => [u.id, u]));
+
   let payouts = 0;
 
   for (const row of sums) {
     const weeklySum = row.total ?? 0;
     if (weeklySum <= 0) continue;
 
-    const [ref] = await db
-      .select()
-      .from(referrals)
-      .where(eq(referrals.refereeId, row.userId))
-      .limit(1);
+    const ref = refByReferee.get(row.userId);
     if (!ref?.eligibleForPercentAt) continue;
 
     const l1 = Math.floor(weeklySum * weeklyPercentL1);
@@ -92,12 +111,8 @@ export async function runWeeklyReferralPayout(): Promise<{
     const l2Amount = Math.floor(weeklySum * weeklyPercentL2);
     if (l2Amount <= 0) continue;
 
-    const [directReferrer] = await db
-      .select({ referredById: users.referredById })
-      .from(users)
-      .where(eq(users.id, ref.referrerId))
-      .limit(1);
-    const grandReferrerId = directReferrer?.referredById ?? null;
+    const referrerUser = referrerById.get(ref.referrerId);
+    const grandReferrerId = referrerUser?.referredById ?? null;
     if (!grandReferrerId) continue;
 
     const idem2 = `referral_weekly_l2:${weekKey}:${row.userId}`;

@@ -1,82 +1,138 @@
-# Статика: напрямую из apps/web/dist (без копирования в /var/www).
+# ==============================================================================
+# Production Caddyfile — mlaffon.fun
+# ==============================================================================
+# Caddy handles TLS (Let's Encrypt), reverse proxy, static file serving,
+# security headers, compression, and asset caching.
 #
-# TLS: Caddy сам получает и обновляет сертификат (Let's Encrypt / ACME).
-# Перед первым запуском: A-запись mlaffon.fun → IP этого VPS; порты 80 и 443 свободны для caddy;
-# ничего не должно занимать :80 (иначе остановите nginx и т.п.).
+# CDN Strategy:
+#   A CDN (Yandex Cloud CDN, Cloudflare, or none) sits in front of this origin.
+#   Caddy sets proper Cache-Control + Vary headers; CDN respects them.
+#   CDN provider is configured via CDN_PROVIDER env var in the deploy pipeline.
 #
-# Раскомментируйте email — Let's Encrypt пришлёт уведомления о сроке (рекомендуется).
+# trusted_proxies:
+#   - Cloudflare: uncomment the Cloudflare IP ranges block below.
+#   - Yandex CDN: no published edge IP ranges; omit trusted_proxies or use
+#     private_ranges if origin is behind an internal LB.
+#   - none: omit trusted_proxies entirely.
+#   See docs/cdn-edge.md for details on each provider.
+#
+# Setup: sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+#        sudo caddy fmt --overwrite /etc/caddy/Caddyfile
+#        sudo caddy validate --config /etc/caddy/Caddyfile
+#        sudo systemctl reload caddy
+# ==============================================================================
+
 {
-	 email itoly569@gmail.com
+	email itoly569@gmail.com
+
+	# Uncomment ONE of the trusted_proxies blocks below based on your CDN provider.
+
+	# -- Cloudflare --
+	# servers {
+	# 	trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22
+	# }
+
+	# -- Yandex CDN / none (no trusted_proxies) --
+	# Yandex CDN does not publish stable edge IP ranges.
+	# X-Forwarded-For / X-Real-IP from the CDN are forwarded but {remote_host}
+	# will be the CDN edge IP. This is acceptable for logging; application-level
+	# client IP extraction uses X-Forwarded-For headers.
 }
 
-# Если сертификат УЖЕ выдан вручную (certbot / регистратор) — используйте
-# deploy/Caddyfile.manual-certs вместо этого файла.
-#
-# Скопируйте: sudo cp /opt/mlaffon/mlaffon-tg-app/deploy/Caddyfile /etc/caddy/Caddyfile
-# Формат: sudo caddy fmt --overwrite /etc/caddy/Caddyfile
-#
-# Ошибка: listen tcp :80: address already in use — порт 80 занят (часто Nginx):
-#   sudo ss -tlnp | grep ':80'
-#   sudo systemctl stop nginx && sudo systemctl disable nginx
-#   затем: sudo systemctl enable --now caddy
-#
-# Статика: apps/web/dist после npm run build. При 403 на файлы:
-#   sudo chmod -R o+rX /opt/mlaffon/mlaffon-tg-app/apps/web/dist
-#
-# Поддомен admin.* — не второй Caddy: тот же файл, после pull + npm run build:
-#   DNS: A (или CNAME) admin.mlaffon.fun → тот же IP, что и основной домен
-#   sudo chmod -R o+rX /opt/mlaffon/mlaffon-tg-app/apps/admin/dist
-#   sudo cp .../deploy/Caddyfile /etc/caddy/Caddyfile && sudo caddy fmt --overwrite /etc/caddy/Caddyfile
-#   sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
-# TLS для admin выдаст Let's Encrypt автоматически (как для основного сайта).
-
-mlaffon.fun {
-	root * /opt/mlaffon/mlaffon-tg-app/apps/web/dist
-	encode gzip
-
-	# Security headers (CSP: Telegram Mini App — frame-ancestors, без X-Frame-Options DENY)
+(security_headers) {
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+	}
+}
+
+(compression) {
+	encode zstd gzip
+}
+
+# ==============================================================================
+# Main web app (Telegram Mini App)
+# ==============================================================================
+mlaffon.fun {
+	import compression
+	import security_headers
+
+	# CSP: Telegram Mini App requires frame-ancestors for web.telegram.org
+	header {
 		Content-Security-Policy "default-src 'self'; frame-ancestors 'self' https://web.telegram.org https://telegram.org; connect-src 'self' https://mlaffon.fun wss://mlaffon.fun; img-src 'self' data: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; base-uri 'self'; form-action 'self'"
 	}
 
+	# Hashed static assets: long-lived immutable cache
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		header Vary "Accept-Encoding"
+		root * /opt/mlaffon/current/apps/web/dist
+		file_server
+	}
+
+	# Service worker must not be cached long-term
+	handle /sw.js {
+		header Cache-Control "public, max-age=0, must-revalidate"
+		root * /opt/mlaffon/current/apps/web/dist
+		file_server
+	}
+
+	# API reverse proxy
 	handle /api/* {
 		reverse_proxy 127.0.0.1:3001 {
 			flush_interval -1
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
 		}
 	}
 
+	# SPA fallback
 	handle {
+		root * /opt/mlaffon/current/apps/web/dist
 		try_files {path} /index.html
+		header Cache-Control "public, max-age=60, stale-while-revalidate=300"
+		header Vary "Accept-Encoding"
 		file_server
 	}
 }
 
-# Админка: отдельный поддомен, тот же API по /api/*
+# ==============================================================================
+# Admin panel — separate subdomain
+# ==============================================================================
 admin.mlaffon.fun {
-	root * /opt/mlaffon/mlaffon-tg-app/apps/admin/dist
-	encode gzip
+	import compression
+	import security_headers
 
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
-		Referrer-Policy "strict-origin-when-cross-origin"
-		Permissions-Policy "geolocation=(), microphone=(), camera=()"
 		Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; connect-src 'self' https://admin.mlaffon.fun https://mlaffon.fun wss://admin.mlaffon.fun wss://mlaffon.fun; img-src 'self' data: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; base-uri 'self'; form-action 'self'"
 	}
 
+	# Hashed static assets
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		header Vary "Accept-Encoding"
+		root * /opt/mlaffon/current/apps/admin/dist
+		file_server
+	}
+
+	# API reverse proxy
 	handle /api/* {
 		reverse_proxy 127.0.0.1:3001 {
 			flush_interval -1
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
 		}
 	}
 
+	# SPA fallback
 	handle {
+		root * /opt/mlaffon/current/apps/admin/dist
 		try_files {path} /index.html
+		header Cache-Control "public, max-age=60, stale-while-revalidate=300"
+		header Vary "Accept-Encoding"
 		file_server
 	}
 }

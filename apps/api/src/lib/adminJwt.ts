@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import type { AdminRole } from "../db/schema.js";
 
 function secret(): string {
   const s =
@@ -9,14 +10,34 @@ function secret(): string {
   return s;
 }
 
-export function signAdminToken(email: string): string {
-  return jwt.sign({ sub: email, role: "admin" }, secret(), {
+export interface AdminTokenPayload {
+  email: string;
+  role: AdminRole;
+  adminId: string;
+}
+
+export function signAdminToken(
+  email: string,
+  role: AdminRole,
+  adminId: string
+): string {
+  return jwt.sign({ sub: email, role, adminId }, secret(), {
     expiresIn: "8h",
   });
 }
 
-export function verifyAdminToken(token: string): { email: string } {
-  const p = jwt.verify(token, secret()) as { sub: string; role?: string };
-  if (p.role !== "admin") throw new Error("forbidden");
-  return { email: p.sub };
+export function verifyAdminToken(token: string): AdminTokenPayload {
+  const p = jwt.verify(token, secret()) as {
+    sub: string;
+    role?: string;
+    adminId?: string;
+  };
+  const validRoles: AdminRole[] = ["super_admin", "moderator", "viewer"];
+  const role = (p.role ?? "viewer") as AdminRole;
+  if (!validRoles.includes(role)) throw new Error("invalid_role");
+  return {
+    email: p.sub,
+    role,
+    adminId: p.adminId ?? "",
+  };
 }

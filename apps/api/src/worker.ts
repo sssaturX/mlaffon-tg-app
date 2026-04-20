@@ -1,4 +1,7 @@
 import "dotenv/config";
+import { initSentry, captureException } from "./lib/sentry.js";
+initSentry();
+
 import type { Job } from "bullmq";
 import { Worker } from "bullmq";
 import { getBullConnection, getCronQueue } from "./queue/bullmq.js";
@@ -12,10 +15,16 @@ import {
 } from "./services/liveBroadcast.js";
 import { flushOutboxBatch } from "./services/outboxFlush.js";
 import { rehydratePredictionAutoCloseJobs } from "./services/predictionWorkerBootstrap.js";
+import { finalizeExpiredGiveaways } from "./services/giveaways.js";
+import { cleanupOldOutboxEvents } from "./services/outboxCleanup.js";
 
 const taskConn = getBullConnection().duplicate();
 const cronConn = getBullConnection().duplicate();
 const domainTimersConn = getBullConnection().duplicate();
+
+import { jobDuration } from "./lib/metrics.js";
+
+const jobStartTimes = new Map<string, number>();
 
 function jobLog(
   queue: string,
@@ -23,12 +32,28 @@ function jobLog(
   phase: "start" | "completed" | "failed",
   extra?: Record<string, unknown>
 ) {
+  const jobKey = `${queue}:${job.id}`;
+
+  if (phase === "start") {
+    jobStartTimes.set(jobKey, Date.now());
+  }
+
+  if (phase === "completed" || phase === "failed") {
+    const start = jobStartTimes.get(jobKey);
+    if (start) {
+      const durationSec = (Date.now() - start) / 1000;
+      jobDuration.observe({ queue, job_name: job.name }, durationSec);
+      jobStartTimes.delete(jobKey);
+    }
+  }
+
   const line = {
     ts: new Date().toISOString(),
     queue,
     jobName: job.name,
     jobId: job.id,
     phase,
+    attempt: job.attemptsMade,
     ...extra,
   };
   if (phase === "failed") console.error(JSON.stringify(line));
@@ -57,6 +82,7 @@ taskWorker.on("failed", (job, err) => {
     jobLog("task-verify", job, "failed", {
       err: err instanceof Error ? err.message : String(err),
     });
+    captureException(err, { queue: "task-verify", jobName: job.name, jobId: job.id });
   }
 });
 
@@ -76,6 +102,17 @@ const cronWorker = new Worker(
       jobLog("cron", job, "completed", { sent: n });
       return;
     }
+    if (job.name === "giveaway-finalize") {
+      await finalizeExpiredGiveaways();
+      jobLog("cron", job, "completed");
+      return;
+    }
+    if (job.name === "outbox-cleanup") {
+      const deleted = await cleanupOldOutboxEvents();
+      if (deleted > 0) console.info("outbox-cleanup: removed", deleted);
+      jobLog("cron", job, "completed", { deleted });
+      return;
+    }
     jobLog("cron", job, "completed");
   },
   {
@@ -90,6 +127,7 @@ cronWorker.on("failed", (job, err) => {
     jobLog("cron", job, "failed", {
       err: err instanceof Error ? err.message : String(err),
     });
+    captureException(err, { queue: "cron", jobName: job.name, jobId: job.id });
   }
 });
 
@@ -134,6 +172,7 @@ domainTimersWorker.on("failed", (job, err) => {
     jobLog("domain-timers", job, "failed", {
       err: err instanceof Error ? err.message : String(err),
     });
+    captureException(err, { queue: "domain-timers", jobName: job.name, jobId: job.id });
   }
 });
 
@@ -153,6 +192,22 @@ async function registerRepeatableJobs() {
     {
       repeat: { every: 500 },
       jobId: "outbox-flush-repeat",
+    }
+  );
+  await q.add(
+    "giveaway-finalize",
+    {},
+    {
+      repeat: { every: 30_000 },
+      jobId: "giveaway-finalize-repeat",
+    }
+  );
+  await q.add(
+    "outbox-cleanup",
+    {},
+    {
+      repeat: { pattern: "0 3 * * *" },
+      jobId: "outbox-cleanup-repeat",
     }
   );
 }
