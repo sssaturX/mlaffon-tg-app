@@ -8,6 +8,8 @@ export function getRedis(): Redis {
     client = new Redis(url, {
       maxRetriesPerRequest: null,
       connectTimeout: 10_000,
+      /** Не блокировать запросы (кэш витрины, ws-ticket) при зависшем Redis. */
+      commandTimeout: 5000,
     });
   }
   return client;

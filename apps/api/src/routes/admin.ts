@@ -1305,8 +1305,17 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     const admin = requireAdmin(req, reply);
     if (!admin || !requirePermission(admin, "admin:manage_shop", reply)) return;
     const id = (req.params as { id: string }).id;
-    const ok = await deleteShopItemAdmin(id);
-    if (!ok) {
+    const del = await deleteShopItemAdmin(id);
+    if (!del.ok) {
+      if (del.reason === "has_purchases") {
+        return reply.status(409).send({
+          error: {
+            code: "shop_has_purchases",
+            message:
+              "Нельзя удалить товар: есть записи о покупках. Снимите с витрины (выключите активность) или оставьте товар в базе.",
+          },
+        });
+      }
       return reply.status(404).send({
         error: { code: "not_found", message: "Товар не найден" },
       });
