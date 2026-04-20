@@ -53,7 +53,8 @@ check_json() {
   local body
   body=$(curl -s --max-time 10 "$url" 2>/dev/null || echo "{}")
   local val
-  val=$(echo "$body" | grep -o "\"$key\"" | head -1)
+  # pipefail + grep "no match" exits 1 — must not abort the script under set -e
+  val=$(echo "$body" | grep -o "\"$key\"" | head -1 || true)
 
   if [ -n "$val" ]; then
     (( JSON_MODE )) || echo "  ✓ $name (key '$key' present)"
@@ -97,7 +98,7 @@ check "Metrics endpoint" "$BASE/metrics"
 
 (( JSON_MODE )) || echo ""
 (( JSON_MODE )) || echo "--- Cache headers ---"
-CACHE_HEADER=$(curl -s -I --max-time 10 "$BASE/api/v1/home/public" 2>/dev/null | grep -i "cache-control" | head -1)
+CACHE_HEADER=$(curl -s -I --max-time 10 "$BASE/api/v1/home/public" 2>/dev/null | grep -i "cache-control" | head -1 || true)
 if echo "$CACHE_HEADER" | grep -qi "public"; then
   (( JSON_MODE )) || echo "  ✓ Public cache header on /home/public"
   PASS=$((PASS + 1))
@@ -108,7 +109,7 @@ else
   _add_json "Cache-Control public" "fail" "public" "missing"
 fi
 
-PRIVATE_HEADER=$(curl -s -I --max-time 10 -H "Authorization: Bearer fake" "$BASE/api/v1/me" 2>/dev/null | grep -i "cache-control" | head -1)
+PRIVATE_HEADER=$(curl -s -I --max-time 10 -H "Authorization: Bearer fake" "$BASE/api/v1/me" 2>/dev/null | grep -i "cache-control" | head -1 || true)
 if echo "$PRIVATE_HEADER" | grep -qi "private\|no-store"; then
   (( JSON_MODE )) || echo "  ✓ Private/no-store on /me"
   PASS=$((PASS + 1))
@@ -142,7 +143,7 @@ fi
 (( JSON_MODE )) || echo "--- CORS ---"
 CORS_RESP=$(curl -s -I --max-time 5 \
   -H "Origin: https://evil.example.com" \
-  "$BASE/api/v1/home/public" 2>/dev/null | grep -i "access-control-allow-origin" | head -1)
+  "$BASE/api/v1/home/public" 2>/dev/null | grep -i "access-control-allow-origin" | head -1 || true)
 if echo "$CORS_RESP" | grep -qi "evil.example.com"; then
   (( JSON_MODE )) || echo "  ✗ CORS reflects arbitrary origin (SECURITY ISSUE)"
   FAIL=$((FAIL + 1))

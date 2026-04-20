@@ -108,9 +108,12 @@ export function authUser(
   reply: FastifyReply
 ): string | undefined {
   if (!req.userId) {
-    void reply.status(401).send({
-      error: { code: "unauthorized", message: "Войдите снова." },
-    });
+    void reply
+      .header("Cache-Control", "private, no-store, no-cache, must-revalidate")
+      .status(401)
+      .send({
+        error: { code: "unauthorized", message: "Войдите снова." },
+      });
     return undefined;
   }
   return req.userId;
