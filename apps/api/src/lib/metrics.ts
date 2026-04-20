@@ -80,6 +80,40 @@ export const tasksHttpSeconds = new client.Histogram({
   registers: [register],
 });
 
+/** Фазы внутри listTasksForUser: каталог Redis/БД, user list Redis, revoke, compute. */
+export const tasksListPhaseSeconds = new client.Histogram({
+  name: "tasks_list_phase_seconds",
+  help: "Phases inside listTasksForUser (catalog, caches, revoke, compute)",
+  labelNames: ["phase"] as const,
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [register],
+});
+
+/** GET /api/v1/shop/items: время handler после preHandler (authUser + bundle). */
+export const shopItemsHttpSeconds = new client.Histogram({
+  name: "shop_items_http_seconds",
+  help: "GET /api/v1/shop/items handler time (after auth preHandler)",
+  labelNames: ["platform"] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [register],
+});
+
+export const shopBundleCacheTotal = new client.Counter({
+  name: "shop_bundle_cache_total",
+  help: "Shop per-platform Redis bundle hit/miss",
+  labelNames: ["result", "platform"] as const,
+  registers: [register],
+});
+
+/** Фазы getShopClientBundle: redis_read, rebuild (DB parallel), cache_write, total_inner. */
+export const shopBundlePhaseSeconds = new client.Histogram({
+  name: "shop_bundle_phase_seconds",
+  help: "Shop bundle build phases (Redis read, DB rebuild, cache set)",
+  labelNames: ["platform", "phase"] as const,
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+  registers: [register],
+});
+
 function normalizeRoute(req: FastifyRequest): string {
   const ctx = req.routeOptions;
   if (ctx?.url) return ctx.url;

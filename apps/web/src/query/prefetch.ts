@@ -21,12 +21,47 @@ import {
   SHOP_STALE_TIME_MS,
   type ShopClientPlatform,
 } from "./shopQueryFns";
+import { markUserNavActivation } from "../perf/routeTransitionPerf";
 
 function runWhenIdle(cb: () => void): void {
   if (typeof requestIdleCallback === "function") {
     requestIdleCallback(() => cb(), { timeout: 2500 });
   } else {
     window.setTimeout(cb, 250);
+  }
+}
+
+/**
+ * Прогрев JS chunk для lazy-страниц (см. `App.tsx` lazy()).
+ * Уменьшает gap между кликом по табу и стартом `useQuery`: иначе сначала грузится chunk,
+ * потом монтируется страница (анимация см. `RouteTransition` — `popLayout`).
+ * Вызывать только из nav intent (hover / pointerdown), не из global bootstrap.
+ */
+export function prefetchRoutePageChunk(pathname: string): void {
+  const p = pathname.split("?")[0] || "";
+  if (p === "/tasks" || p.startsWith("/tasks/")) {
+    void import("../pages/Tasks");
+    return;
+  }
+  if (p === "/games" || p.startsWith("/games/")) {
+    void import("../pages/Games");
+    return;
+  }
+  if (p === "/shop" || p.startsWith("/shop/")) {
+    void import("../pages/Shop");
+    return;
+  }
+  if (p === "/profile" || p.startsWith("/profile/")) {
+    void import("../pages/Profile");
+    return;
+  }
+  if (p.startsWith("/giveaway/")) {
+    void import("../pages/Giveaway");
+    return;
+  }
+  if (p === "/giveaways") {
+    void import("../pages/Giveaways");
+    return;
   }
 }
 
@@ -53,16 +88,38 @@ export function prefetchShopCatalog(): void {
   runWhenIdle(() => prefetchShopPlatform(secondary));
 }
 
-/** Hover / touch-down на табах — дедупликация в TanStack Query. */
+function prefetchHoverIntent(pathname: string): void {
+  prefetchRoutePageChunk(pathname);
+  prefetchRouteData(pathname);
+}
+
+/** pointerdown/touchstart/click: chunk + data + DEV measure (TanStack Query дедуплицирует повторы). */
+function prefetchActivationIntent(pathname: string): void {
+  prefetchHoverIntent(pathname);
+  markUserNavActivation(pathname);
+}
+
+/**
+ * Табы навигации и аналогичные ссылки:
+ * - pointerenter — только prefetch (hover desktop), без perf-mark;
+ * - pointerdown / touchstart / click — prefetch + mark (mobile tap, мышь, Enter по фокусу).
+ */
 export function navPrefetchHandlers(pathname: string): {
   onPointerEnter: () => void;
   onPointerDown: () => void;
+  onTouchStart: () => void;
+  onClick: () => void;
 } {
-  const run = (): void => {
-    prefetchRouteData(pathname);
+  return {
+    onPointerEnter: () => prefetchHoverIntent(pathname),
+    onPointerDown: () => prefetchActivationIntent(pathname),
+    onTouchStart: () => prefetchActivationIntent(pathname),
+    onClick: () => prefetchActivationIntent(pathname),
   };
-  return { onPointerEnter: run, onPointerDown: run };
 }
+
+/** То же поведение, что `navPrefetchHandlers`, для `<Link>` (розыгрыши и т.д.). */
+export const linkPrefetchHandlers = navPrefetchHandlers;
 
 /**
  * После shell: только главная (контент + розыгрыши), без tasks/shop/fortune.
@@ -86,8 +143,26 @@ export function prefetchOnBootstrap(): void {
 
 /** Prefetch по намерению навигации (hover по табам). */
 export function prefetchRouteData(pathname: string): void {
-  if (!getToken()) return;
   const platform = getStoredActivePlatform();
+
+  /** Публичный GET /api/v1/games/fortune/config — не требует JWT. */
+  if (pathname.startsWith("/games")) {
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.fortune.config(),
+      queryFn: fetchFortuneConfig,
+      staleTime: 1000 * 60 * 60 * 24,
+    });
+    if (getToken()) {
+      void queryClient.prefetchQuery({
+        queryKey: queryKeys.fortune.state(),
+        queryFn: fetchFortuneState,
+        staleTime: 0,
+      });
+    }
+    return;
+  }
+
+  if (!getToken()) return;
 
   if (pathname === "/" || pathname === "") {
     void queryClient.prefetchQuery({
@@ -109,20 +184,6 @@ export function prefetchRouteData(pathname: string): void {
       queryKey: queryKeys.tasks.list(taskPlatform),
       queryFn: () => fetchTasks(taskPlatform),
       staleTime: TASKS_QUERY_STALE_MS,
-    });
-    return;
-  }
-
-  if (pathname.startsWith("/games")) {
-    void queryClient.prefetchQuery({
-      queryKey: queryKeys.fortune.config(),
-      queryFn: fetchFortuneConfig,
-      staleTime: 1000 * 60 * 60 * 24,
-    });
-    void queryClient.prefetchQuery({
-      queryKey: queryKeys.fortune.state(),
-      queryFn: fetchFortuneState,
-      staleTime: 0,
     });
     return;
   }

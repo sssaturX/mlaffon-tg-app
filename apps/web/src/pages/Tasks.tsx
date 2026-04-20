@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Coins, HelpCircle, Lightbulb } from "lucide-react";
-import type { Platform, TaskDto } from "shared";
+import { Lightbulb } from "lucide-react";
+import type { TaskDto } from "shared";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { HelpSheetModal } from "../components/HelpSheetModal";
 import { TaskDetailModal } from "../components/TaskDetailModal";
-import { ResponsivePicture } from "../components/ResponsivePicture";
 import { useRefetchTasks, useTasks } from "../hooks/queries/useTasks";
 import {
   markTaskEvidenceSubmitted,
   replaceTasksListFromClaim,
 } from "../query/tasksCache";
 import { ApiQueryError } from "../query/apiQueryError";
+import { TaskVirtualFeed } from "../components/tasks/TaskVirtualFeed";
+
 const SECTION_ORDER = [
   "black_russia",
   "stream_tasks",
@@ -21,56 +22,10 @@ const SECTION_ORDER = [
   "other",
 ] as const;
 
-function platformPillClass(p: Platform): string {
-  if (p === "twitch") return "pill pill--twitch";
-  if (p === "kick") return "pill pill--kick";
-  if (p === "telegram") return "pill pill--telegram";
-  return "pill pill--global";
-}
-
-function platformLabel(p: Platform): string {
-  if (p === "global") return "Global";
-  if (p === "telegram") return "Telegram";
-  return p[0]!.toUpperCase() + p.slice(1);
-}
-
-function sectionHeading(section: string, activePlatform: Platform): string {
-  if (section === "black_russia") return "BLACK RUSSIA";
-  if (section === "stream_tasks")
-    return activePlatform === "kick" ? "KICK" : "TWITCH";
-  if (section === "telegram") return "TELEGRAM";
-  if (section === "global") return "ОБЩЕЕ";
-  return "ЗАДАНИЯ";
-}
-
-function defaultActionLabel(platform: Platform): string {
-  if (platform === "kick") return "Подписаться на Kick";
-  if (platform === "twitch") return "Подписаться на Twitch";
-  if (platform === "telegram") return "Подписаться в Telegram";
-  return "Перейти";
-}
-
 /** В TWA часто пустой `type`; iPhone — HEIC. */
 function fileLooksLikeEvidenceImage(f: File): boolean {
   if (f.type && /^image\//i.test(f.type)) return true;
   return /\.(jpe?g|png|webp|gif|heic|heif|bmp)$/i.test(f.name);
-}
-
-function streamPreviewThemeClass(
-  section: string,
-  activePlatform: Platform
-): string {
-  if (section !== "stream_tasks") return "";
-  return activePlatform === "kick"
-    ? "task-card-preview--kick-stream"
-    : "task-card-preview--twitch-stream";
-}
-
-function sectionHeadingClass(section: string, activePlatform: Platform): string {
-  if (section !== "stream_tasks") return "";
-  return activePlatform === "kick"
-    ? "task-stream__heading--kick"
-    : "task-stream__heading--twitch";
 }
 
 function TaskListSkeleton() {
@@ -84,12 +39,6 @@ function TaskListSkeleton() {
       ))}
     </div>
   );
-}
-
-function taskKindPill(t: TaskDto): { label: string; variant: "sub" | "project" | "neutral" } {
-  if (t.requiresEvidence) return { label: "Проект", variant: "project" };
-  if (t.validationType === "api") return { label: "Подписка", variant: "sub" };
-  return { label: "Задание", variant: "neutral" };
 }
 
 export default function Tasks() {
@@ -107,6 +56,9 @@ export default function Tasks() {
   const [detailTask, setDetailTask] = useState<TaskDto | null>(null);
 
   const loading = tasksQ.isPending;
+
+  const onOpenDetail = useCallback((t: TaskDto) => setDetailTask(t), []);
+  const onOpenHelp = useCallback((t: TaskDto) => setHelpTask(t), []);
 
   useEffect(() => {
     if (tasksQ.isError) {
@@ -133,17 +85,12 @@ export default function Tasks() {
     tasksQ.error,
   ]);
 
-  /** Модалка: всегда подмешиваем актуальное задание из списка (тексты, обложка, награда после админки). */
   useEffect(() => {
     setDetailTask((prev) => {
       if (!prev) return prev;
       const next = tasks.find((x) => x.id === prev.id);
       return next ?? prev;
     });
-  }, [tasks]);
-
-  /** Справка в sheet — то же, что и для деталки (админ мог поменять help). */
-  useEffect(() => {
     setHelpTask((prev) => {
       if (!prev) return prev;
       const next = tasks.find((x) => x.id === prev.id);
@@ -336,111 +283,6 @@ export default function Tasks() {
     return false;
   }
 
-  /** Справка на превью-карточке: для API-подписок Twitch/Kick не показываем (кнопка ломала сетку рядом с наградой). */
-  function showHelpOnTaskCard(t: TaskDto): boolean {
-    if (!t.help) return false;
-    if (
-      t.validationType === "api" &&
-      (t.platform === "twitch" || t.platform === "kick")
-    ) {
-      return false;
-    }
-    return true;
-  }
-
-  function renderTaskCard(t: TaskDto, section: string) {
-    const done = t.userStatus === "completed";
-    const streamTheme = streamPreviewThemeClass(section, activePlatform);
-    const kind = taskKindPill(t);
-    const cardHelp = showHelpOnTaskCard(t);
-    const kindClass =
-      kind.variant === "sub"
-        ? "pill pill--task-sub"
-        : kind.variant === "project"
-          ? "pill pill--task-project"
-          : "pill";
-
-    return (
-      <article
-        key={t.id}
-        className={`task-card-preview fade-in-soft ${streamTheme} ${t.validationType === "api" ? "task-card-preview--accent" : ""} ${done ? "task-card-preview--done" : ""}${t.coverImageUrl || t.coverImageMedia ? " task-card-preview--has-cover" : ""}`}
-      >
-        {t.coverImageMedia ? (
-          <ResponsivePicture
-            image={t.coverImageMedia}
-            alt=""
-            sizes="(max-width: 640px) 100vw, 420px"
-            layout="fill"
-            className="task-card-preview__cover"
-          />
-        ) : t.coverImageUrl ? (
-          <div
-            className="task-card-preview__cover"
-            style={{ backgroundImage: `url(${JSON.stringify(t.coverImageUrl)})` }}
-            aria-hidden
-          />
-        ) : null}
-        <button
-          type="button"
-          className={`task-card-preview__main ${cardHelp ? "task-card-preview__main--with-help" : ""}`}
-          onClick={() => setDetailTask(t)}
-        >
-          <div className="task-card-preview__row">
-            <div className="task-card-preview__tags">
-              <span className={kindClass}>{kind.label}</span>
-              <span className={platformPillClass(t.platform)}>
-                {platformLabel(t.platform)}
-              </span>
-              <span className="pill pill--compact">
-                {t.type === "daily" ? "Ежедневно" : "Разово"}
-              </span>
-              {t.validationType === "api" ? (
-                <span className="pill pill--accent pill--compact">С проверкой</span>
-              ) : null}
-              {done ? (
-                <span className="pill pill--accent pill--compact">Готово</span>
-              ) : null}
-              {!done &&
-              t.requiresEvidence &&
-              t.evidenceStageStatus === "submitted" ? (
-                <span className="pill pill--task-pending pill--compact">
-                  На рассмотрении
-                </span>
-              ) : null}
-              {!done &&
-              t.validationType === "api" &&
-              t.userStatus === "pending" ? (
-                <span className="pill pill--task-pending pill--compact">
-                  Проверка…
-                </span>
-              ) : null}
-            </div>
-            <div className="task-card-preview__reward">
-              <Coins size={18} strokeWidth={2.2} aria-hidden />
-              <span>{t.reward.toLocaleString("ru-RU")}</span>
-            </div>
-          </div>
-          <h3 className="task-card-preview__title">{t.title}</h3>
-          <p className="task-card-preview__snippet">{t.description}</p>
-          <div className="task-card-preview__footer">
-            <span className="task-card-preview__hint muted">Подробности и действия</span>
-            <ChevronRight className="task-card-preview__arrow" size={20} strokeWidth={2} aria-hidden />
-          </div>
-        </button>
-        {cardHelp ? (
-          <button
-            type="button"
-            className="task-card-preview__help"
-            aria-label="Справка по заданию"
-            onClick={() => setHelpTask(t)}
-          >
-            <HelpCircle size={18} strokeWidth={2.2} />
-          </button>
-        ) : null}
-      </article>
-    );
-  }
-
   return (
     <div>
       <div className="task-hint task-hint--stream" role="note">
@@ -465,22 +307,13 @@ export default function Tasks() {
           </p>
         </div>
       ) : (
-        <div className="task-stream">
-          {sectionKeys.map((section) => (
-            <section key={section} className="task-stream__section">
-              <h2
-                className={`task-stream__heading ${sectionHeadingClass(section, activePlatform)}`}
-              >
-                {sectionHeading(section, activePlatform)}
-              </h2>
-              <div className="stack task-stack">
-                {(grouped.get(section) ?? []).map((t) =>
-                  renderTaskCard(t, section)
-                )}
-              </div>
-            </section>
-          ))}
-        </div>
+        <TaskVirtualFeed
+          sectionKeys={sectionKeys}
+          grouped={grouped}
+          activePlatform={activePlatform}
+          onOpenDetail={onOpenDetail}
+          onOpenHelp={onOpenHelp}
+        />
       )}
 
       {helpTask?.help ? (

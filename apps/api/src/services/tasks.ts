@@ -40,6 +40,7 @@ import {
 import {
   tasksListBuildSeconds,
   tasksListCacheOutcome,
+  tasksListPhaseSeconds,
 } from "../lib/metrics.js";
 
 function periodKeyForTask(task: { type: string }): string {
@@ -627,28 +628,56 @@ async function computeUserTaskDtoList(
  * Отзыв по-прежнему выполняется на cold path (cache miss) и при инвалидации кэша.
  */
 export async function listTasksForUser(userId: string): Promise<TaskDto[]> {
-  const t0 = Date.now();
+  const t0 = performance.now();
+  const tCat0 = performance.now();
   const all = await getActiveTasksCached();
+  tasksListPhaseSeconds.observe(
+    { phase: "catalog_load" },
+    (performance.now() - tCat0) / 1000
+  );
+  const tUser0 = performance.now();
   const cachedList = await getCachedUserTaskDtoList(userId);
+  tasksListPhaseSeconds.observe(
+    { phase: "user_list_redis" },
+    (performance.now() - tUser0) / 1000
+  );
   if (cachedList) {
     tasksListCacheOutcome.inc({ result: "hit" });
-    const sec = (Date.now() - t0) / 1000;
+    const sec = (performance.now() - t0) / 1000;
     tasksListBuildSeconds.observe({ cache: "hit" }, sec);
+    tasksListPhaseSeconds.observe({ phase: "total_inner" }, sec);
     return cachedList;
   }
   tasksListCacheOutcome.inc({ result: "miss" });
+  const tRev0 = performance.now();
   await runRevocationChecksBatched(userId, all);
+  tasksListPhaseSeconds.observe(
+    { phase: "revoke_external" },
+    (performance.now() - tRev0) / 1000
+  );
+  const tAfter0 = performance.now();
   const afterRevoke = await getCachedUserTaskDtoList(userId);
+  tasksListPhaseSeconds.observe(
+    { phase: "user_list_after_revoke" },
+    (performance.now() - tAfter0) / 1000
+  );
   if (afterRevoke) {
-    const sec = (Date.now() - t0) / 1000;
+    const sec = (performance.now() - t0) / 1000;
     tasksListBuildSeconds.observe({ cache: "miss_revoke_warmed" }, sec);
+    tasksListPhaseSeconds.observe({ phase: "total_inner" }, sec);
     return afterRevoke;
   }
+  const tComp0 = performance.now();
   const out = await singleFlight(`tasks:userdto:${userId}`, () =>
     computeUserTaskDtoList(userId, all)
   );
-  const sec = (Date.now() - t0) / 1000;
+  tasksListPhaseSeconds.observe(
+    { phase: "compute" },
+    (performance.now() - tComp0) / 1000
+  );
+  const sec = (performance.now() - t0) / 1000;
   tasksListBuildSeconds.observe({ cache: "miss_compute" }, sec);
+  tasksListPhaseSeconds.observe({ phase: "total_inner" }, sec);
   if (sec > 1) {
     console.warn(
       `[tasks] slow listTasksForUser user=${userId} ${(sec * 1000).toFixed(0)}ms`

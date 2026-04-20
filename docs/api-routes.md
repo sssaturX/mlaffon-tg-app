@@ -86,7 +86,7 @@ Query **`platform`**: `twitch` | `kick` | `all` — фильтр списка п
 | Метод | Путь | Назначение | Когда вызывается |
 |-------|------|------------|------------------|
 | GET | `/api/v1/games/fortune` | Краткий статус фортуны | Опционально; в web основной поток — `config` + `state` |
-| GET | `/api/v1/games/fortune/config` | Конфиг колеса (сектора) | Экран «Игры», префетч (`useFortuneConfig`, `prefetch.ts`) |
+| GET | `/api/v1/games/fortune/config` | Конфиг колеса (сектора); **без JWT** (публичный ответ из `gameConfig`) | Экран «Игры», префетч (`useFortuneConfig`, `prefetch.ts`) |
 | GET | `/api/v1/games/fortune/state` | Состояние на сейчас (спины, лимиты) | Экран «Игры» (`useFortuneState`) |
 | POST | `/api/v1/games/fortune/spin` | Вращение: `platform`, `mode` free/paid | Нажатие «Крутить» на колесе (`Games.tsx`) |
 

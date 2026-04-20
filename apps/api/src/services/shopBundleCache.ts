@@ -1,8 +1,9 @@
 import { getRedis } from "../lib/redis.js";
 import type { ShopGlobalCopyDto } from "./shopSettings.js";
 
-const PREFIX = "mlaffon:shop:bundle:v1:";
-const TTL_SEC = 25;
+const PREFIX = "mlaffon:shop:bundle:v2:";
+/** Инвалидация при покупке/админке; длинный TTL снижает холодные промахи при стабильной витрине. */
+const TTL_SEC = 180;
 
 export type ShopClientBundleCached = {
   items: unknown[];

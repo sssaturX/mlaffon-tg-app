@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type ImgHTMLAttributes } from "react";
-import { ArrowRight, Coins, Package, ShoppingBag, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Coins, Package, ShoppingBag, X } from "lucide-react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api, formatApiError, getToken } from "../api";
 import { TextWithTelegramMentions } from "../components/TextWithTelegramMentions";
 import { ResponsivePicture } from "../components/ResponsivePicture";
+import { ShopShowcaseItem } from "../components/shop/ShopShowcaseItem";
 import { queryKeys } from "../query/queryKeys";
 import {
   fetchShopPage,
@@ -62,6 +63,11 @@ export default function Shop() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [buying, setBuying] = useState(false);
   const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
+
+  const onSelectItem = useCallback((id: string) => {
+    setPurchaseErr(null);
+    setSelectedId(id);
+  }, []);
 
   useEffect(() => {
     setSelectedId(null);
@@ -151,72 +157,14 @@ export default function Shop() {
             isFetching && isPlaceholderData ? " shop-showcase--platform-switch" : ""
           }`}
         >
-          {items.map((item, index) => {
-            const meta = item.meta;
-            const soldOut = item.stockRemaining === 0;
-            const priorityImage = index < 2 && Boolean(item.imageUrl || item.imageMedia);
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={`shop-showcase-card ${soldOut ? "shop-showcase-card--sold-out" : ""}`}
-                onClick={() => {
-                  setPurchaseErr(null);
-                  setSelectedId(item.id);
-                }}
-              >
-                <div className="shop-showcase-card__media">
-                  {item.imageMedia ? (
-                    <ResponsivePicture
-                      image={item.imageMedia}
-                      alt=""
-                      sizes="(max-width: 640px) 50vw, 240px"
-                      hero={priorityImage}
-                      layout="fill"
-                    />
-                  ) : item.imageUrl ? (
-                    <img
-                      src={item.imageUrl}
-                      alt=""
-                      loading={priorityImage ? "eager" : "lazy"}
-                      decoding="async"
-                      {...(priorityImage
-                        ? ({ fetchPriority: "high" } as ImgHTMLAttributes<HTMLImageElement>)
-                        : {})}
-                    />
-                  ) : (
-                    <Package size={38} strokeWidth={1.5} />
-                  )}
-                  {meta?.badgeText ? (
-                    <span className="shop-showcase-card__badge">{meta.badgeText}</span>
-                  ) : null}
-                  {item.stockRemaining != null && (
-                    <span className="shop-showcase-card__stock">
-                      {soldOut ? "Нет в наличии" : `${item.stockRemaining} шт.`}
-                    </span>
-                  )}
-                </div>
-                <div className="shop-showcase-card__body">
-                  <p className="shop-showcase-card__title">{item.title}</p>
-                  {meta?.subtitle ? (
-                    <p className="shop-showcase-card__subtitle">{meta.subtitle}</p>
-                  ) : item.description ? (
-                    <p className="shop-showcase-card__subtitle">{item.description}</p>
-                  ) : null}
-                  <div className="shop-showcase-card__row">
-                    <div className="shop-showcase-card__price">
-                      <Coins size={14} strokeWidth={2} />
-                      <span>{item.priceCoins.toLocaleString("ru-RU")}</span>
-                    </div>
-                    <span className="shop-showcase-card__cta">
-                      {soldOut ? "Нет в наличии" : meta?.buttonLabel ?? "Открыть"}
-                      <ArrowRight size={14} strokeWidth={2} />
-                    </span>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+          {items.map((item, index) => (
+            <ShopShowcaseItem
+              key={item.id}
+              item={item}
+              index={index}
+              onSelect={onSelectItem}
+            />
+          ))}
         </div>
       ) : (
         <div className="shop-empty fade-in-soft">

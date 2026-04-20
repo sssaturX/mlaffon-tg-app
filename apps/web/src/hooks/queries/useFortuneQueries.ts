@@ -10,7 +10,7 @@ export function useFortuneConfig() {
   return useQuery({
     queryKey: queryKeys.fortune.config(),
     queryFn: fetchFortuneConfig,
-    enabled: Boolean(getToken()),
+    /** Сервер: GET /api/v1/games/fortune/config без JWT — параллельно с /me, не ждём токен. */
     staleTime: STALE_FORTUNE_CONFIG,
   });
 }

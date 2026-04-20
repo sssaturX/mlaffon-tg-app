@@ -278,6 +278,7 @@ await registerMediaRoutes(app);
 import {
   registerMetricsHooks,
   registerMetricsEndpoint,
+  shopItemsHttpSeconds,
   tasksHttpSeconds,
 } from "./lib/metrics.js";
 registerMetricsHooks(app);
@@ -1104,9 +1105,7 @@ app.get("/api/v1/games/fortune", async (req, reply) => {
   return getFortuneStatus(userId);
 });
 
-app.get("/api/v1/games/fortune/config", async (req, reply) => {
-  const userId = authUser(req, reply);
-  if (!userId) return;
+app.get("/api/v1/games/fortune/config", async (_req, reply) => {
   void reply.header(
     "Cache-Control",
     "public, max-age=3600, stale-while-revalidate=86400"
@@ -1168,6 +1167,7 @@ app.post(
 );
 
 app.get("/api/v1/shop/items", async (req, reply) => {
+  const t0 = performance.now();
   const userId = authUser(req, reply);
   if (!userId) return;
   const pq = String(
@@ -1178,7 +1178,12 @@ app.get("/api/v1/shop/items", async (req, reply) => {
     "Cache-Control",
     "private, max-age=300, stale-while-revalidate=1800"
   );
-  return await getShopClientBundle(shopPlatform);
+  const bundle = await getShopClientBundle(shopPlatform);
+  shopItemsHttpSeconds.observe(
+    { platform: shopPlatform },
+    (performance.now() - t0) / 1000
+  );
+  return bundle;
 });
 
 const shopPurchaseBody = z.object({

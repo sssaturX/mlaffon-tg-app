@@ -25,6 +25,9 @@ export async function registerAuth(app: FastifyInstance) {
     if (path === "/api/v1/oauth/twitch/callback") return;
     if (path === "/api/v1/oauth/kick/callback") return;
 
+    /** Публичный статический конфиг колеса — без JWT и без DB lookup в preHandler (иначе TTFB ~ сетевой + users SELECT). */
+    if (path === "/api/v1/games/fortune/config") return;
+
     if (!path.startsWith("/api/v1")) return;
 
     const auth = req.headers.authorization;

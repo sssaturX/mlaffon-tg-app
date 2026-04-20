@@ -37,6 +37,7 @@ export function TaskEvidenceExamples({
                 src={ex.src}
                 alt={ex.caption ?? `Пример ${i + 1}`}
                 loading="lazy"
+                decoding="async"
               />
               {ex.caption ? (
                 <span className="task-evidence-examples__caption">

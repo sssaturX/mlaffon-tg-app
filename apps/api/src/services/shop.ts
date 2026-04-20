@@ -14,6 +14,10 @@ import type { MediaImageUploadResponse } from "shared";
 import { parseStoredMediaImage } from "../lib/mediaImageJson.js";
 import { singleFlight } from "../lib/singleFlight.js";
 import {
+  shopBundleCacheTotal,
+  shopBundlePhaseSeconds,
+} from "../lib/metrics.js";
+import {
   getShopBundleFromCache,
   invalidateShopBundleCache,
   setShopBundleCache,
@@ -86,36 +90,81 @@ export async function listShopItemsForClient(
   });
 }
 
+function observeShopBundleTotalInner(
+  platform: ShopClientPlatform,
+  tInner: number
+): void {
+  const sec = (performance.now() - tInner) / 1000;
+  shopBundlePhaseSeconds.observe({ platform, phase: "total_inner" }, sec);
+  if (sec > 0.5) {
+    console.warn(
+      `[shop] slow getShopClientBundle platform=${platform} ${(sec * 1000).toFixed(0)}ms`
+    );
+  }
+}
+
 export async function getShopClientBundle(platform: ShopClientPlatform): Promise<{
   items: ShopItemClientDto[];
   globalCopy: Awaited<ReturnType<typeof getShopGlobalCopyForClient>>;
 }> {
+  const tInner = performance.now();
+  const tRedis0 = performance.now();
   const cached = await getShopBundleFromCache(platform);
+  shopBundlePhaseSeconds.observe(
+    { platform, phase: "redis_read" },
+    (performance.now() - tRedis0) / 1000
+  );
   if (cached) {
+    shopBundleCacheTotal.inc({ result: "hit", platform });
+    observeShopBundleTotalInner(platform, tInner);
     return {
       items: cached.items as ShopItemClientDto[],
       globalCopy: cached.globalCopy,
     };
   }
-  return singleFlight(`shop:bundle:load:${platform}`, async () => {
+  shopBundleCacheTotal.inc({ result: "miss", platform });
+  const bundle = await singleFlight(`shop:bundle:load:${platform}`, async () => {
+    const tInFlight = performance.now();
+    const again0 = performance.now();
     const again = await getShopBundleFromCache(platform);
+    shopBundlePhaseSeconds.observe(
+      { platform, phase: "redis_read" },
+      (performance.now() - again0) / 1000
+    );
     if (again) {
+      shopBundleCacheTotal.inc({ result: "hit", platform });
       return {
         items: again.items as ShopItemClientDto[],
         globalCopy: again.globalCopy,
       };
     }
+    const tDb0 = performance.now();
     const [items, globalCopy] = await Promise.all([
       listShopItemsForClient(platform),
       getShopGlobalCopyForClient(),
     ]);
-    const bundle = { items, globalCopy };
+    shopBundlePhaseSeconds.observe(
+      { platform, phase: "rebuild_db_parallel" },
+      (performance.now() - tDb0) / 1000
+    );
+    const built = { items, globalCopy };
+    const tSet0 = performance.now();
     await setShopBundleCache(platform, {
-      items: bundle.items as unknown[],
-      globalCopy: bundle.globalCopy,
+      items: built.items as unknown[],
+      globalCopy: built.globalCopy,
     });
-    return bundle;
+    shopBundlePhaseSeconds.observe(
+      { platform, phase: "cache_write" },
+      (performance.now() - tSet0) / 1000
+    );
+    shopBundlePhaseSeconds.observe(
+      { platform, phase: "singleflight_worker" },
+      (performance.now() - tInFlight) / 1000
+    );
+    return built;
   });
+  observeShopBundleTotalInner(platform, tInner);
+  return bundle;
 }
 
 /**

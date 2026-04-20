@@ -1475,6 +1475,7 @@ select:focus-visible {
 .app-main {
   flex: 1;
   min-height: 0;
+  position: relative;
   padding: var(--space-3) var(--space-4) var(--space-4);
   /* Фон как у body — без вспышки при cross-fade между страницами */
   background: var(--bg);

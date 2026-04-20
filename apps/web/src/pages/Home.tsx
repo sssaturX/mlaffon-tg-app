@@ -22,7 +22,7 @@ import {
 } from "../utils/streakNotifications";
 import { useMeEconomySync } from "../context/MeEconomySyncContext";
 import { queryKeys } from "../query/queryKeys";
-import { prefetchRouteData } from "../query/prefetch";
+import { linkPrefetchHandlers } from "../query/prefetch";
 import type { PredictionStatePayload } from "../hooks/useRealtimeWebSocket";
 import {
   applyPredictionStateToQuery,
@@ -787,8 +787,7 @@ export default function Home({ me }: { me: MeResponse | null }) {
             <Link
               to="/giveaways"
               className="muted home-giveaways-all"
-              onPointerEnter={() => prefetchRouteData("/giveaways")}
-              onPointerDown={() => prefetchRouteData("/giveaways")}
+              {...linkPrefetchHandlers("/giveaways")}
             >
               Все
             </Link>
@@ -799,8 +798,7 @@ export default function Home({ me }: { me: MeResponse | null }) {
                 key={g.id}
                 to={`/giveaway/${g.id}`}
                 className="card giveaway-card giveaway-card--link"
-                onPointerEnter={() => prefetchRouteData(`/giveaway/${g.id}`)}
-                onPointerDown={() => prefetchRouteData(`/giveaway/${g.id}`)}
+                {...linkPrefetchHandlers(`/giveaway/${g.id}`)}
               >
                 {g.imageMedia ? (
                   <div className="giveaway-card__picture-wrap">

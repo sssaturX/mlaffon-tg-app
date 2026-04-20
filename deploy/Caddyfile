@@ -79,7 +79,7 @@ mlaffon.fun {
 		file_server
 	}
 
-	# API reverse proxy
+	# API: browser→Caddy HTTP/2 multiplex; Caddy→Node reverse_proxy uses connection pool + keep-alive by default
 	handle /api/* {
 		reverse_proxy 127.0.0.1:3001 {
 			flush_interval -1

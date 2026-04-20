@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
+    "@tanstack/react-virtual": "^3.13.24",
     "@twa-dev/sdk": "^8.0.2",
     "framer-motion": "^11.18.2",
     "lucide-react": "^1.7.0",
