@@ -1343,6 +1343,24 @@ app.post("/api/v1/account/delete", async (req, reply) => {
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 
+app.setErrorHandler((err: Error, req, reply) => {
+  const statusCode = "statusCode" in err && typeof err.statusCode === "number" ? err.statusCode : 500;
+  captureException(err, {
+    route: req.url,
+    method: req.method,
+    requestId: req.id,
+  });
+  req.log.error({ err, requestId: req.id }, "unhandled_error");
+  void reply.status(statusCode).send({
+    error: {
+      code: "internal_error",
+      message: process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : err.message,
+    },
+  });
+});
+
 try {
   await waitForDatabaseReady();
   await seedDefaultPointPlatforms();
@@ -1378,21 +1396,3 @@ async function gracefulShutdown(signal: string) {
 }
 process.on("SIGTERM", () => void gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => void gracefulShutdown("SIGINT"));
-
-app.setErrorHandler((err: Error, req, reply) => {
-  const statusCode = "statusCode" in err && typeof err.statusCode === "number" ? err.statusCode : 500;
-  captureException(err, {
-    route: req.url,
-    method: req.method,
-    requestId: req.id,
-  });
-  req.log.error({ err, requestId: req.id }, "unhandled_error");
-  void reply.status(statusCode).send({
-    error: {
-      code: "internal_error",
-      message: process.env.NODE_ENV === "production"
-        ? "Internal server error"
-        : err.message,
-    },
-  });
-});
