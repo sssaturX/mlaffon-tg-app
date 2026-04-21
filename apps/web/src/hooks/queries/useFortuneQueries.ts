@@ -5,6 +5,13 @@ import { fetchFortuneConfig, fetchFortuneState } from "../../query/fetchers";
 
 const STALE_FORTUNE_CONFIG = 1000 * 60 * 60 * 24;
 
+/**
+ * Не 0: иначе каждый второй prefetch (pointerdown + click, двойной intent) и
+ * бэк-ту-бэк prefetch+mount дают лишний network при том же queryKey.
+ * После спина по-прежнему инвалидируем `fortune.state`.
+ */
+export const FORTUNE_STATE_STALE_MS = 1000 * 30;
+
 /** STATIC: сегменты колеса и стоимость (из game config). */
 export function useFortuneConfig() {
   return useQuery({
@@ -21,7 +28,7 @@ export function useFortuneState() {
     queryKey: queryKeys.fortune.state(),
     queryFn: fetchFortuneState,
     enabled: Boolean(getToken()),
-    staleTime: 0,
+    staleTime: FORTUNE_STATE_STALE_MS,
     gcTime: 1000 * 60 * 15,
   });
 }

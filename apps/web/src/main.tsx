@@ -6,10 +6,12 @@ import { ToastProvider } from "./context/ToastContext";
 import { PlatformProvider } from "./context/PlatformContext";
 import { registerMeDomain } from "./meDomain/registerMeDomain";
 import { queryClient } from "./query/queryClient";
+import { registerQueryDevInstrumentation } from "./query/queryDevInstrumentation";
 import App from "./App";
 import "./styles.css";
 
 registerMeDomain();
+registerQueryDevInstrumentation();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

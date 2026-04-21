@@ -11,6 +11,9 @@ import {
   fetchTasks,
 } from "./fetchers";
 import {
+  FORTUNE_STATE_STALE_MS,
+} from "../hooks/queries/useFortuneQueries";
+import {
   platformQueryParamTasks,
   TASKS_QUERY_STALE_MS,
 } from "../hooks/queries/useTasks";
@@ -29,6 +32,30 @@ function runWhenIdle(cb: () => void): void {
   } else {
     window.setTimeout(cb, 250);
   }
+}
+
+/**
+ * Один жест навигации даёт pointerdown + click (и иногда touchstart + click).
+ * Два вызова `prefetchRouteData` подряд с `staleTime: 0` (раньше — fortune state)
+ * или просто двойной конкурирующий prefetch не нужны — TanStack не дедуплицирует
+ * второй старт, если первый уже завершился и данные снова «stale».
+ */
+const PREFETCH_ROUTE_DATA_DEDUPE_MS = 450;
+let lastRouteDataPrefetchPath: string | null = null;
+let lastRouteDataPrefetchAt = 0;
+
+function shouldSkipRapidPrefetchRouteData(pathname: string): boolean {
+  const p = (pathname.split("?")[0] || "").trim() || "/";
+  const now = Date.now();
+  if (
+    lastRouteDataPrefetchPath === p &&
+    now - lastRouteDataPrefetchAt < PREFETCH_ROUTE_DATA_DEDUPE_MS
+  ) {
+    return true;
+  }
+  lastRouteDataPrefetchPath = p;
+  lastRouteDataPrefetchAt = now;
+  return false;
 }
 
 /**
@@ -77,15 +104,13 @@ export function prefetchShopPlatform(platform: ShopClientPlatform): void {
 }
 
 /**
- * Витрина для обеих платформ: сначала активная из localStorage (меньше конкуренции с другими prefetch),
- * вторая — в idle, чтобы не забивать канал на старте.
+ * Только активная платформа из localStorage (совпадает с `useActivePlatform` до эфира).
+ * Вторая платформа не префетчится: экран Shop и так сделает один `useQuery` при переключении
+ * тумблера — иначе каждый hover/клик по «Магазин» билит и Twitch, и Kick без UX-причины.
  */
 export function prefetchShopCatalog(): void {
   if (!getToken()) return;
-  const primary = getStoredActivePlatform();
-  const secondary: ShopClientPlatform = primary === "kick" ? "twitch" : "kick";
-  prefetchShopPlatform(primary);
-  runWhenIdle(() => prefetchShopPlatform(secondary));
+  prefetchShopPlatform(getStoredActivePlatform());
 }
 
 function prefetchHoverIntent(pathname: string): void {
@@ -143,6 +168,9 @@ export function prefetchOnBootstrap(): void {
 
 /** Prefetch по намерению навигации (hover по табам). */
 export function prefetchRouteData(pathname: string): void {
+  if (shouldSkipRapidPrefetchRouteData(pathname)) {
+    return;
+  }
   const platform = getStoredActivePlatform();
 
   /** Публичный GET /api/v1/games/fortune/config — не требует JWT. */
@@ -156,7 +184,7 @@ export function prefetchRouteData(pathname: string): void {
       void queryClient.prefetchQuery({
         queryKey: queryKeys.fortune.state(),
         queryFn: fetchFortuneState,
-        staleTime: 0,
+        staleTime: FORTUNE_STATE_STALE_MS,
       });
     }
     return;
