@@ -1,9 +1,17 @@
 import { S3Client } from "@aws-sdk/client-s3";
 
 export const MAX_ORIGINAL_IMAGE_BYTES = 10 * 1024 * 1024;
-/** Целевой потолок на один вариант (AVIF/WebP/JPEG для данной ширины). */
-export const MAX_VARIANT_BYTES = 300 * 1024;
-export const IMAGE_WIDTHS = [320, 640, 1280, 1920] as const;
+/**
+ * Потолок на один вариант (AVIF/WebP/JPEG для данной ширины).
+ * ~24 KiB — ориентир «ультра-лёгкие» картинки для быстрой отдачи по CDN.
+ */
+export const MAX_VARIANT_BYTES = 24 * 1024;
+/** Варианты по ширине (px). Без 1920 — меньше пикселей и размер файла. */
+export const IMAGE_WIDTHS = [320, 640, 960, 1280] as const;
+/**
+ * Перед генерацией вариантов уменьшаем сторону до этого значения (быстрее CPU и меньше вес).
+ */
+export const MAX_PROCESSING_EDGE_PX = 1600;
 export type ImageWidth = (typeof IMAGE_WIDTHS)[number];
 
 export const MEDIA_CACHE_CONTROL = "public, max-age=31536000, immutable";

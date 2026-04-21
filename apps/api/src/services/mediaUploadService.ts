@@ -66,7 +66,7 @@ export async function runMediaImageUpload(
   }
 
   const processMs = Math.round(performance.now() - started);
-  if (processMs > 2000) {
+  if (processMs > 5000) {
     log.warn({ ms: processMs, hash: processed.contentHash }, "media_process_slow");
   }
 

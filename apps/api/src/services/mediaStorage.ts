@@ -81,7 +81,8 @@ export function buildMediaImageResponse(hash: string): {
     webp: widths.map((w) => `${base}/${w}w.webp ${w}w`).join(", "),
     jpeg: widths.map((w) => `${base}/${w}w.jpg ${w}w`).join(", "),
   };
-  const fallbackSrc = `${base}/1280w.jpg`;
+  const fallbackW = widths[widths.length - 1]!;
+  const fallbackSrc = `${base}/${fallbackW}w.jpg`;
   return {
     hash,
     basePath: base,
