@@ -2286,11 +2286,8 @@ export function App() {
                   title: shopFormTitle,
                   description: shopFormDescription.trim() || null,
                   imageUrl: shopImgTrim || null,
-                  ...(shopFormImageMedia
-                    ? { imageMedia: shopFormImageMedia }
-                    : shopImgTrim
-                      ? {}
-                      : { imageMedia: null }),
+                  /** Явно null при «только URL»: иначе в meta остаётся старый imageMedia и витрина игнорирует новый imageUrl. */
+                  imageMedia: shopFormImageMedia ?? null,
                   kind: shopFormKind,
                   priceCoins: shopFormPrice,
                   subtitle: shopFormSubtitle.trim() || null,
