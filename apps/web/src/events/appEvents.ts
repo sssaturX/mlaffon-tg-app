@@ -39,6 +39,8 @@ export type MeUpdateEvent =
 
 export type AppEventMap = {
   "me:update": MeUpdateEvent;
+  /** JWT недействителен (например 401 на /me); показать веб-вход, если он разрешён. */
+  "auth:web_login_required": Record<string, never>;
   /** Полная гидратация me по HTTP (bootstrap, retry, OAuth); только эмитит `me:update`. */
   "app:me:hydrate": {
     showToast?: (

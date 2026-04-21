@@ -1,5 +1,6 @@
 import type { MeEconomyResponse, MeProfileResponse, MeResponse } from "shared";
 import { mergeMeProfileAndEconomy, splitMeResponse } from "shared";
+import { setToken } from "../api";
 import {
   fetchMe,
   fetchMeEconomy,
@@ -7,16 +8,41 @@ import {
   fetchMeProfile,
   fetchMeProfileNoCache,
 } from "./fetchers";
+import { ApiQueryError } from "./apiQueryError";
 import { queryClient } from "./queryClient";
 import { queryKeys } from "./queryKeys";
 import { appEventBus } from "../events/appEventBus";
 import { getDomainVersion } from "../meDomain/domainVersion";
+import { looksLikeTelegramMiniApp } from "../utils/waitForTelegramInitData";
+
+function reactToMeUnauthorized(): void {
+  setToken(null);
+  appEventBus.emit("me:update", { kind: "clear", reason: "auth_error" });
+  queryClient.removeQueries({ queryKey: queryKeys.me.all });
+  if (
+    import.meta.env.VITE_ALLOW_WEB_AUTH !== "0" &&
+    !looksLikeTelegramMiniApp()
+  ) {
+    appEventBus.emit("auth:web_login_required", {});
+  }
+}
+
+async function guardMeUnauthorized<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof ApiQueryError && e.apiErr.status === 401) {
+      reactToMeUnauthorized();
+    }
+    throw e;
+  }
+}
 
 /** Bootstrap: один `GET /api/v1/me` → кэши profile + economy + событие домена. */
 export async function meSessionQueryFn(): Promise<MeResponse> {
   const profileV0 = getDomainVersion().profile;
   const economyV0 = getDomainVersion().economy;
-  const full = await fetchMe();
+  const full = await guardMeUnauthorized(() => fetchMe());
   const { profile, economy } = splitMeResponse(full);
   appEventBus.emit("me:update", {
     kind: "http_snapshot",
@@ -37,7 +63,7 @@ export async function meSessionQueryFn(): Promise<MeResponse> {
 export async function meSessionQueryFnNoCache(): Promise<MeResponse> {
   const profileV0 = getDomainVersion().profile;
   const economyV0 = getDomainVersion().economy;
-  const full = await fetchMeNoCache();
+  const full = await guardMeUnauthorized(() => fetchMeNoCache());
   const { profile, economy } = splitMeResponse(full);
   appEventBus.emit("me:update", {
     kind: "http_snapshot",
@@ -58,7 +84,7 @@ export async function meSessionQueryFnNoCache(): Promise<MeResponse> {
 export async function meProfileQueryFn(): Promise<MeProfileResponse> {
   const profileV0 = getDomainVersion().profile;
   const economyV0 = getDomainVersion().economy;
-  const profile = await fetchMeProfile();
+  const profile = await guardMeUnauthorized(() => fetchMeProfile());
   appEventBus.emit("me:update", {
     kind: "http_snapshot",
     source: "http",
@@ -79,7 +105,7 @@ export async function meProfileQueryFn(): Promise<MeProfileResponse> {
 export async function meProfileQueryFnNoCache(): Promise<MeProfileResponse> {
   const profileV0 = getDomainVersion().profile;
   const economyV0 = getDomainVersion().economy;
-  const profile = await fetchMeProfileNoCache();
+  const profile = await guardMeUnauthorized(() => fetchMeProfileNoCache());
   appEventBus.emit("me:update", {
     kind: "http_snapshot",
     source: "http",
@@ -100,7 +126,7 @@ export async function meEconomyQueryFn(): Promise<MeEconomyResponse> {
 
   const profileV0 = getDomainVersion().profile;
   const economyV0 = getDomainVersion().economy;
-  const economy = await fetchMeEconomy();
+  const economy = await guardMeUnauthorized(() => fetchMeEconomy());
   appEventBus.emit("me:update", {
     kind: "http_snapshot",
     source: "http",

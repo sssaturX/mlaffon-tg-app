@@ -1449,6 +1449,33 @@ select:focus-visible {
   color: var(--muted);
 }
 
+/** Веб: bootstrap сессии — спиннер по центру экрана (не баннером). */
+.auth-init-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: grid;
+  place-items: center;
+  background: var(--bg, #0c0e12);
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0)
+    env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+}
+
+.auth-init-overlay__spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid color-mix(in oklab, var(--text, #e8eaf0) 18%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: auth-init-spin 0.75s linear infinite;
+}
+
+@keyframes auth-init-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .me-error-banner {
   padding: 10px var(--space-4);
   background: rgba(220, 80, 80, 0.12);

@@ -61,7 +61,7 @@ mlaffon.fun {
 
 	# CSP: Telegram Mini App requires frame-ancestors for web.telegram.org
 	header {
-		Content-Security-Policy "default-src 'self'; frame-ancestors 'self' https://web.telegram.org https://telegram.org; connect-src 'self' https://mlaffon.fun wss://mlaffon.fun; img-src 'self' data: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; base-uri 'self'; form-action 'self'"
+		Content-Security-Policy "default-src 'self'; frame-ancestors 'self' https://web.telegram.org https://telegram.org; connect-src 'self' https://mlaffon.fun wss://mlaffon.fun; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; base-uri 'self'; form-action 'self'"
 	}
 
 	# Hashed static assets: long-lived immutable cache

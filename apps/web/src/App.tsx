@@ -52,6 +52,7 @@ import { navPrefetchHandlers, prefetchOnBootstrap } from "./query/prefetch";
 import { meSessionQueryFn, meSessionQueryFnNoCache } from "./query/meQueryFns";
 import { appEventBus } from "./events/appEventBus";
 import { emitAppBootstrap } from "./meDomain/bootstrapOrchestrator";
+import { appEventBus } from "./events/appEventBus";
 import { queryClient } from "./query/queryClient";
 import { queryKeys } from "./query/queryKeys";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
@@ -100,10 +101,8 @@ export default function App() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { showToast } = useToast();
-  /** В TMA ждём initData/auth; в браузере — сразу можно грузить /me при наличии JWT. */
-  const [sessionBootstrapReady, setSessionBootstrapReady] = useState(
-    () => typeof window !== "undefined" && !looksLikeTelegramMiniApp()
-  );
+  /** Пока false — не запускаем /me (и не отдаём ранний prefetch с протухшим JWT в вебе). */
+  const [sessionBootstrapReady, setSessionBootstrapReady] = useState(false);
   const [webLogin, setWebLogin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { me, sessionQ } = useMergedMe(sessionBootstrapReady);
@@ -141,6 +140,12 @@ export default function App() {
       window.removeEventListener("online", on);
       window.removeEventListener("offline", off);
     };
+  }, []);
+
+  useEffect(() => {
+    return appEventBus.subscribe("auth:web_login_required", () => {
+      setWebLogin(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -200,10 +205,14 @@ export default function App() {
       }
 
       if (existing && !isTelegramAccountLink) {
-        void queryClient.prefetchQuery({
-          queryKey: queryKeys.me.session(),
-          queryFn: meSessionQueryFn,
-        });
+        try {
+          await queryClient.fetchQuery({
+            queryKey: queryKeys.me.session(),
+            queryFn: meSessionQueryFn,
+          });
+        } catch {
+          /* 401: токен сброшен в meSessionQueryFn, при веб-входе — auth:web_login_required */
+        }
         if (cancelled) return;
         setSessionBootstrapReady(true);
         return;
@@ -631,9 +640,20 @@ function AppShell({
       ) : null}
 
       {authInitializing && !needsPlatformLink ? (
-        <div className="auth-init-banner" role="status">
-          Подключение к Telegram…
-        </div>
+        looksLikeTelegramMiniApp() ? (
+          <div className="auth-init-banner" role="status">
+            Подключение к Telegram…
+          </div>
+        ) : (
+          <div
+            className="auth-init-overlay"
+            role="status"
+            aria-busy="true"
+            aria-label="Загрузка"
+          >
+            <span className="auth-init-overlay__spinner" aria-hidden />
+          </div>
+        )
       ) : null}
 
       {meSessionError && !needsPlatformLink ? (
