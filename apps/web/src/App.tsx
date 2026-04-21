@@ -52,7 +52,6 @@ import { navPrefetchHandlers, prefetchOnBootstrap } from "./query/prefetch";
 import { meSessionQueryFn, meSessionQueryFnNoCache } from "./query/meQueryFns";
 import { appEventBus } from "./events/appEventBus";
 import { emitAppBootstrap } from "./meDomain/bootstrapOrchestrator";
-import { appEventBus } from "./events/appEventBus";
 import { queryClient } from "./query/queryClient";
 import { queryKeys } from "./query/queryKeys";
 import { DropOverlay, type DropSnapshot } from "./components/DropOverlay";
