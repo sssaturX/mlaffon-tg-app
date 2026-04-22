@@ -21,6 +21,14 @@ function normalizeWsHomeGiveaways(home: HomeGiveawaysResponse): HomeGiveawaysRes
   };
 }
 
+/** Снимок WS не содержит полный detail (победители, счётчик) — перезапрашиваем открытые карточки. */
+function invalidateActiveGiveawayDetails(): void {
+  void queryClient.invalidateQueries({
+    queryKey: [...queryKeys.giveaways.all, "detail"],
+    refetchType: "active",
+  });
+}
+
 /** Фиксирует смещение клиент↔сервер в момент применения WS (см. useSyncedCountdownMs). */
 function withDropCountdownOffset<
   T extends {
@@ -151,6 +159,7 @@ export function applyGiveawaysSnapshotToQueries(
     queryKeys.giveaways.list(),
     data.list.map((g) => withParsedGiveawayImageMedia(g))
   );
+  invalidateActiveGiveawayDetails();
 }
 
 /** Apply giveaways from `initial_state` only when cache is empty (HTTP hasn't populated it yet). */
@@ -163,18 +172,22 @@ export function applyGiveawaysIfMissing(
   const listCache = queryClient.getQueryData<GiveawayListItemDto[]>(
     queryKeys.giveaways.list()
   );
+  let wrote = false;
   if (!homeCache) {
     queryClient.setQueryData<HomeGiveawaysResponse>(
       queryKeys.home.giveaways(),
       normalizeWsHomeGiveaways(data.home)
     );
+    wrote = true;
   }
   if (!listCache) {
     queryClient.setQueryData<GiveawayListItemDto[]>(
       queryKeys.giveaways.list(),
       data.list.map((g) => withParsedGiveawayImageMedia(g))
     );
+    wrote = true;
   }
+  if (wrote) invalidateActiveGiveawayDetails();
 }
 
 /**
