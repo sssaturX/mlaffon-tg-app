@@ -317,7 +317,10 @@ export interface HomeGiveawayPublic {
 }
 
 export interface HomeGiveawaysResponse {
+  /** Активные и ещё не разыгранные (как раньше). */
   giveaways: HomeGiveawayPublic[];
+  /** Недавно завершённые для блока на главной и вкладки «История». */
+  completedGiveaways: HomeGiveawayPublic[];
 }
 
 export interface FortuneConfigResponse {

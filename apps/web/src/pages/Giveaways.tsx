@@ -1,6 +1,6 @@
 import { ChevronLeft } from "lucide-react";
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import type { GiveawayListItemDto } from "../query/fetchers";
 import { useGiveawaysList } from "../hooks/queries/useGiveaways";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -29,7 +29,14 @@ function platformShort(p: GiveawayListItemDto["platform"]): string {
 export default function GiveawaysPage() {
   const { data: items, isPending, isError, refetch, isFetching } =
     useGiveawaysList();
+  const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<"active" | "done">("active");
+
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t === "done") setTab("done");
+    else if (t === "active") setTab("active");
+  }, [searchParams]);
 
   const filtered = useMemo(() => {
     const list = items ?? [];

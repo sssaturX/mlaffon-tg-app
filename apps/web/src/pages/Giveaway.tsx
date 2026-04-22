@@ -76,9 +76,26 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
       showToast(formatApiError(r), "error");
       return;
     }
+    const joinedAt = r.data.joinedAt ?? new Date().toISOString();
     showToast("Вы участвуете в розыгрыше", "success");
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.giveaways.detail(id),
+    queryClient.setQueryData(queryKeys.giveaways.detail(id), (prev) => {
+      if (!prev || prev.id !== id) return prev;
+      return {
+        ...prev,
+        isParticipant: true,
+        joinedAt,
+        participantCount: prev.participantCount + 1,
+      };
+    });
+    queryClient.setQueryData(queryKeys.home.giveaways(), (prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        giveaways: prev.giveaways.map((x) =>
+          x.id === id ? { ...x, participantCount: x.participantCount + 1 } : x
+        ),
+        completedGiveaways: prev.completedGiveaways ?? [],
+      };
     });
     void queryClient.invalidateQueries({
       queryKey: queryKeys.giveaways.list(),
@@ -151,11 +168,12 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
 
   const ended = new Date(g.endsAt) <= new Date();
   const completed = Boolean(g.drawnAt);
+  const participationOpen = g.active && !g.drawnAt && !ended;
   const channelOk =
     !g.requireChannelSubscription ||
     g.channelSubscriptionOk === true;
   const structurallyCanJoin =
-    g.active && !g.drawnAt && !ended && !g.isParticipant;
+    participationOpen && !g.isParticipant;
 
   const platformMismatch =
     (g.platform === "twitch" && activePlatform !== "twitch") ||
@@ -346,7 +364,17 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
           </div>
         )}
 
-      {structurallyCanJoin && (
+      {participationOpen && g.isParticipant ? (
+        <button
+          type="button"
+          className="primary giveaway-detail__cta"
+          disabled
+        >
+          <Ticket size={20} aria-hidden />
+          Вы участвуете
+        </button>
+      ) : null}
+      {participationOpen && !g.isParticipant ? (
         <button
           type="button"
           className="primary giveaway-detail__cta"
@@ -360,7 +388,7 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
                 activePlatform === "twitch" ? "Twitch" : "Kick"
               } мон.`}
         </button>
-      )}
+      ) : null}
 
       {g.ticketPriceCoins > 0 && structurallyCanJoin && (
         <p className="muted giveaway-balance-hint">

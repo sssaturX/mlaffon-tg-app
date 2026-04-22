@@ -1,4 +1,4 @@
-import { and, eq, isNull, desc } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { appSettings, giveaways } from "../db/schema.js";
 import { parseStoredMediaImage } from "../lib/mediaImageJson.js";
@@ -25,20 +25,28 @@ export async function buildHomeContentResponse(): Promise<{
   return { faq };
 }
 
+function mapHomeGiveawayRow(
+  x: (typeof giveaways)["$inferSelect"],
+  counts: Map<string, number>
+) {
+  return {
+    id: x.id,
+    title: x.title,
+    prizeText: x.prizeText,
+    description: x.description ?? null,
+    imageUrl: x.imageUrl,
+    imageMedia: parseStoredMediaImage(x.imageMedia),
+    endsAt: x.endsAt.toISOString(),
+    winnerCount: x.winnerCount,
+    ticketPriceCoins: x.ticketPriceCoins,
+    participantCount: counts.get(x.id) ?? 0,
+    drawnAt: x.drawnAt ? x.drawnAt.toISOString() : null,
+  };
+}
+
 export async function buildHomeGiveawaysResponse(): Promise<{
-  giveaways: {
-    id: string;
-    title: string;
-    prizeText: string;
-    description: string | null;
-    imageUrl: string | null;
-    imageMedia: ReturnType<typeof parseStoredMediaImage>;
-    endsAt: string;
-    winnerCount: number;
-    ticketPriceCoins: number;
-    participantCount: number;
-    drawnAt: string | null;
-  }[];
+  giveaways: ReturnType<typeof mapHomeGiveawayRow>[];
+  completedGiveaways: ReturnType<typeof mapHomeGiveawayRow>[];
 }> {
   const g = await db
     .select()
@@ -47,44 +55,35 @@ export async function buildHomeGiveawaysResponse(): Promise<{
     .orderBy(desc(giveaways.sortOrder), desc(giveaways.endsAt))
     .limit(10);
 
-  const counts = await getParticipantCountsForGiveawayIds(g.map((x) => x.id));
+  const completedRows = await db
+    .select()
+    .from(giveaways)
+    .where(isNotNull(giveaways.drawnAt))
+    .orderBy(desc(giveaways.drawnAt))
+    .limit(8);
+
+  const ids = [...g.map((x) => x.id), ...completedRows.map((x) => x.id)];
+  const uniqIds = [...new Set(ids)];
+  const counts = await getParticipantCountsForGiveawayIds(uniqIds);
 
   return {
-    giveaways: g.map((x) => ({
-      id: x.id,
-      title: x.title,
-      prizeText: x.prizeText,
-      description: x.description ?? null,
-      imageUrl: x.imageUrl,
-      imageMedia: parseStoredMediaImage(x.imageMedia),
-      endsAt: x.endsAt.toISOString(),
-      winnerCount: x.winnerCount,
-      ticketPriceCoins: x.ticketPriceCoins,
-      participantCount: counts.get(x.id) ?? 0,
-      drawnAt: x.drawnAt ? x.drawnAt.toISOString() : null,
-    })),
+    giveaways: g.map((x) => mapHomeGiveawayRow(x, counts)),
+    completedGiveaways: completedRows.map((x) => mapHomeGiveawayRow(x, counts)),
   };
 }
 
 export async function buildHomePublicResponse(): Promise<{
-  giveaways: {
-    id: string;
-    title: string;
-    prizeText: string;
-    description: string | null;
-    imageUrl: string | null;
-    imageMedia: ReturnType<typeof parseStoredMediaImage>;
-    endsAt: string;
-    winnerCount: number;
-    ticketPriceCoins: number;
-    participantCount: number;
-    drawnAt: string | null;
-  }[];
+  giveaways: Awaited<ReturnType<typeof buildHomeGiveawaysResponse>>["giveaways"];
+  completedGiveaways: Awaited<ReturnType<typeof buildHomeGiveawaysResponse>>["completedGiveaways"];
   faq: { q: string; a: string }[];
 }> {
-  const [content, { giveaways }] = await Promise.all([
+  const [content, homeGw] = await Promise.all([
     buildHomeContentResponse(),
     buildHomeGiveawaysResponse(),
   ]);
-  return { ...content, giveaways };
+  return {
+    ...content,
+    giveaways: homeGw.giveaways,
+    completedGiveaways: homeGw.completedGiveaways,
+  };
 }

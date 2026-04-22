@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Flame, Gift, HelpCircle } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown, Flame, Gift, HelpCircle, Trophy } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHomeContent, useHomeGiveaways } from "../hooks/queries/useHomeQueries";
 import { flushSync } from "react-dom";
 import WebApp from "@twa-dev/sdk";
@@ -34,20 +34,23 @@ import {
 
 const STREAK_TARGET = 7;
 
+type HomeGiveawayCard = {
+  id: string;
+  title: string;
+  prizeText: string;
+  description: string | null;
+  imageUrl: string | null;
+  imageMedia?: MediaImageUploadResponse | null;
+  endsAt: string;
+  winnerCount: number;
+  ticketPriceCoins: number;
+  participantCount: number;
+  drawnAt: string | null;
+};
+
 type HomePublic = {
-  giveaways: {
-    id: string;
-    title: string;
-    prizeText: string;
-    description: string | null;
-    imageUrl: string | null;
-    imageMedia?: MediaImageUploadResponse | null;
-    endsAt: string;
-    winnerCount: number;
-    ticketPriceCoins: number;
-    participantCount: number;
-    drawnAt: string | null;
-  }[];
+  giveaways: HomeGiveawayCard[];
+  completedGiveaways: HomeGiveawayCard[];
   faq: { q: string; a: string }[];
 };
 
@@ -163,8 +166,27 @@ export default function Home({ me }: { me: MeResponse | null }) {
       ? {
           faq: contentQ.data.faq,
           giveaways: giveawaysQ.data.giveaways,
+          completedGiveaways: giveawaysQ.data.completedGiveaways,
         }
       : null;
+  const [homeGiveawayTab, setHomeGiveawayTab] = useState<"active" | "done">(
+    "active"
+  );
+  const [homeGiveawayTimeTick, setHomeGiveawayTimeTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(
+      () => setHomeGiveawayTimeTick((n) => n + 1),
+      30_000
+    );
+    return () => window.clearInterval(id);
+  }, []);
+
+  const liveRunningGiveaways = useMemo(() => {
+    void homeGiveawayTimeTick;
+    if (!pub) return [];
+    const now = Date.now();
+    return pub.giveaways.filter((g) => new Date(g.endsAt).getTime() > now);
+  }, [pub, homeGiveawayTimeTick]);
   const [promo, setPromo] = useState("");
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
   const { data: prediction } = useQuery({
@@ -780,10 +802,10 @@ export default function Home({ me }: { me: MeResponse | null }) {
         </div>
       </div>
 
-      {pub && pub.giveaways.length > 0 && (
-        <div className="stack section-stack-top">
+      {pub ? (
+        <div className="stack section-stack-top home-giveaways-hub">
           <div className="row section-head">
-            <h2>Активные розыгрыши</h2>
+            <h2>Розыгрыши</h2>
             <Link
               to="/giveaways"
               className="muted home-giveaways-all"
@@ -792,33 +814,137 @@ export default function Home({ me }: { me: MeResponse | null }) {
               Все
             </Link>
           </div>
-          <div className="giveaways-grid">
-            {pub.giveaways.map((g) => (
-              <Link
-                key={g.id}
-                to={`/giveaway/${g.id}`}
-                className="card giveaway-card giveaway-card--link"
-                {...linkPrefetchHandlers(`/giveaway/${g.id}`)}
-              >
-                <GiveawayCardMedia imageUrl={g.imageUrl} imageMedia={g.imageMedia} />
-                <div className="giveaway-card__body">
-                  <p className="giveaway-card__headline">{g.prizeText}</p>
-                  <p className="giveaway-card__meta muted">
-                    {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
-                    {g.winnerCount} победител{g.winnerCount === 1 ? "ь" : g.winnerCount < 5 ? "я" : "ей"}
-                    {g.ticketPriceCoins > 0
-                      ? ` · билет ${g.ticketPriceCoins} мон.`
-                      : " · бесплатно"}
-                  </p>
-                  <div className="giveaway-card__timer">
-                    {formatCountdown(g.endsAt)}
-                  </div>
-                </div>
-              </Link>
-            ))}
+          <div
+            className="segment home-giveaways-hub__tabs"
+            role="tablist"
+            aria-label="Розыгрыши"
+          >
+            <button
+              type="button"
+              className={homeGiveawayTab === "active" ? "on" : ""}
+              role="tab"
+              aria-selected={homeGiveawayTab === "active"}
+              onClick={() => setHomeGiveawayTab("active")}
+            >
+              <Gift size={16} strokeWidth={2} aria-hidden />
+              Активные
+            </button>
+            <button
+              type="button"
+              className={homeGiveawayTab === "done" ? "on" : ""}
+              role="tab"
+              aria-selected={homeGiveawayTab === "done"}
+              onClick={() => setHomeGiveawayTab("done")}
+            >
+              <Trophy size={16} strokeWidth={2} aria-hidden />
+              Завершённые
+            </button>
           </div>
+          {homeGiveawayTab === "active" ? (
+            liveRunningGiveaways.length > 0 ? (
+              <div
+                className={
+                  liveRunningGiveaways.length === 1
+                    ? "giveaways-grid giveaways-grid--single"
+                    : "giveaways-grid"
+                }
+              >
+                {liveRunningGiveaways.map((g) => (
+                  <Link
+                    key={g.id}
+                    to={`/giveaway/${g.id}`}
+                    className="card giveaway-card giveaway-card--link"
+                    {...linkPrefetchHandlers(`/giveaway/${g.id}`)}
+                  >
+                    <GiveawayCardMedia
+                      imageUrl={g.imageUrl}
+                      imageMedia={g.imageMedia}
+                    />
+                    <div className="giveaway-card__body">
+                      <p className="giveaway-card__headline">{g.prizeText}</p>
+                      <p className="giveaway-card__meta muted">
+                        {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
+                        {g.winnerCount} победител
+                        {g.winnerCount === 1
+                          ? "ь"
+                          : g.winnerCount < 5
+                            ? "я"
+                            : "ей"}
+                        {g.ticketPriceCoins > 0
+                          ? ` · билет ${g.ticketPriceCoins} мон.`
+                          : " · бесплатно"}
+                      </p>
+                      <div className="giveaway-card__timer">
+                        {formatCountdown(g.endsAt)}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="card home-giveaways-empty">
+                <Gift size={40} strokeWidth={1.5} className="home-giveaways-empty__icon" aria-hidden />
+                <p className="home-giveaways-empty__title">Нет активных розыгрышей</p>
+                <p className="muted home-giveaways-empty__sub">
+                  Загляните в завершённые или следите за анонсами
+                </p>
+                <Link
+                  to="/giveaways?tab=done"
+                  className="secondary home-giveaways-empty__cta"
+                  {...linkPrefetchHandlers("/giveaways")}
+                >
+                  Посмотреть историю
+                </Link>
+              </div>
+            )
+          ) : (pub.completedGiveaways?.length ?? 0) > 0 ? (
+            <div
+              className={
+                (pub.completedGiveaways?.length ?? 0) === 1
+                  ? "giveaways-grid giveaways-grid--single"
+                  : "giveaways-grid"
+              }
+            >
+              {(pub.completedGiveaways ?? []).map((g) => (
+                <Link
+                  key={g.id}
+                  to={`/giveaway/${g.id}`}
+                  className="card giveaway-card giveaway-card--link"
+                  {...linkPrefetchHandlers(`/giveaway/${g.id}`)}
+                >
+                  <GiveawayCardMedia
+                    imageUrl={g.imageUrl}
+                    imageMedia={g.imageMedia}
+                  />
+                  <div className="giveaway-card__body">
+                    <p className="giveaway-card__headline">{g.prizeText}</p>
+                    <p className="giveaway-card__meta muted">
+                      {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
+                      {g.winnerCount} победител
+                      {g.winnerCount === 1
+                        ? "ь"
+                        : g.winnerCount < 5
+                          ? "я"
+                          : "ей"}
+                    </p>
+                    <div className="giveaway-card__timer giveaway-card__timer--done">
+                      Завершён
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="muted home-giveaways-hub__empty-done">
+              Недавних завершённых розыгрышей нет. Откройте{" "}
+              <Link to="/giveaways" {...linkPrefetchHandlers("/giveaways")}>
+                полный список
+              </Link>
+              .
+            </p>
+          )}
         </div>
-      )}
+      ) : null}
 
       {pub && pub.faq.length > 0 && (
         <section className="faq-section stack faq-section--top">

@@ -14,8 +14,10 @@ import { queryClient } from "../query/queryClient";
 import { queryKeys } from "../query/queryKeys";
 
 function normalizeWsHomeGiveaways(home: HomeGiveawaysResponse): HomeGiveawaysResponse {
+  const completed = home.completedGiveaways ?? [];
   return {
     giveaways: home.giveaways.map((g) => withParsedGiveawayImageMedia(g)),
+    completedGiveaways: completed.map((g) => withParsedGiveawayImageMedia(g)),
   };
 }
 

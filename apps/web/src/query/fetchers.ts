@@ -29,8 +29,11 @@ export async function fetchHomeGiveaways(): Promise<HomeGiveawaysResponse> {
     httpCache: "default",
   });
   throwIfApiErr(r);
+  const rawList = r.data.giveaways ?? [];
+  const completed = r.data.completedGiveaways ?? [];
   return {
-    giveaways: r.data.giveaways.map((g) => withParsedGiveawayImageMedia(g)),
+    giveaways: rawList.map((g) => withParsedGiveawayImageMedia(g)),
+    completedGiveaways: completed.map((g) => withParsedGiveawayImageMedia(g)),
   };
 }
 
