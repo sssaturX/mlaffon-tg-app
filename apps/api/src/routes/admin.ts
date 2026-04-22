@@ -642,6 +642,26 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           path: ["predeterminedWinnerUserIds"],
         });
       }
+    })
+    .superRefine((d, ctx) => {
+      const endMs = new Date(d.endsAt).getTime();
+      if (!Number.isFinite(endMs)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Некорректная дата окончания",
+          path: ["endsAt"],
+        });
+        return;
+      }
+      /* Небольшой запас: часы клиента/сервера и задержка запроса. */
+      if (endMs <= Date.now() + 2_000) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Дата окончания должна быть в будущем (по времени сервера). Если только что выставляли конец «через 5 минут», проверьте дату и часовой пояс в поле ниже.",
+          path: ["endsAt"],
+        });
+      }
     });
 
   app.post("/api/admin/giveaways", async (req, reply) => {

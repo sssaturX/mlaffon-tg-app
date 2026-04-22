@@ -40,6 +40,16 @@ function apiBase(): string {
   return env;
 }
 
+/**
+ * `<input type="datetime-local">` — без часового пояса; нужны локальные компоненты даты/времени.
+ * Раньше использовали `toISOString().slice(0, 16)` (UTC), браузер читал те же цифры как локальные —
+ * окончание уезжало на смещение пояса и могло оказаться в прошлом; воркер сразу закрывал розыгрыш.
+ */
+function formatDatetimeLocalValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 type AdminStats = {
   usersCount: number;
   coinsEarnedTotal: number;
@@ -374,7 +384,7 @@ export function App() {
   const [gwEnds, setGwEnds] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 14);
-    return d.toISOString().slice(0, 16);
+    return formatDatetimeLocalValue(d);
   });
   const [gwImage, setGwImage] = useState("");
   const [gwImageMedia, setGwImageMedia] = useState<MediaImageUploadResponse | null>(null);
@@ -1367,6 +1377,11 @@ export function App() {
       setGwPredeterminedIdsText("");
       setGwPresetUserSearchDraft("");
       setGwPresetUserSearchResults(null);
+      {
+        const d = new Date();
+        d.setDate(d.getDate() + 14);
+        setGwEnds(formatDatetimeLocalValue(d));
+      }
       await loadGiveaways();
       await loadStats();
     } catch {
@@ -1873,7 +1888,7 @@ export function App() {
           </div>
         </div>
         <div>
-          <label htmlFor="gends">Окончание (локальное время)</label>
+          <label htmlFor="gends">Окончание (локальное время браузера)</label>
           <input
             id="gends"
             type="datetime-local"
@@ -1881,6 +1896,10 @@ export function App() {
             onChange={(e) => setGwEnds(e.target.value)}
             required
           />
+          <p className="muted admin-hint-sm admin-m-0">
+            Если время окончания уже прошло на сервере, розыгрыш через ~30 с закроется автоматически и
+            в приложении будет «завершён» без участников.
+          </p>
         </div>
         <div>
           <label htmlFor="gimg">Картинка: URL или файл (файл — CDN AVIF/WebP)</label>
