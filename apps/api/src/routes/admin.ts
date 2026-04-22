@@ -580,6 +580,12 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         telegramChannelId: g.telegramChannelId ?? null,
         channelInviteUrl: g.channelInviteUrl ?? null,
         platform: g.platform ?? "both",
+        winnerPickMode: (g.winnerPickMode ?? "random") as "random" | "predetermined",
+        predeterminedWinnerUserIds: Array.isArray(g.predeterminedWinnerUserIds)
+          ? g.predeterminedWinnerUserIds.filter(
+              (x): x is string => typeof x === "string"
+            )
+          : null,
       })),
     };
   });
@@ -603,6 +609,8 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       requireChannelSubscription: z.boolean().optional(),
       telegramChannelId: z.string().optional().nullable(),
       channelInviteUrl: z.string().optional().nullable(),
+      winnerPickMode: z.enum(["random", "predetermined"]).optional(),
+      predeterminedWinnerUserIds: z.array(z.string().uuid()).max(100).optional(),
     })
     .refine(
       (d) =>
@@ -613,7 +621,28 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           "При условии «подписка на канал» укажите ID канала (@username или -100…) и ссылку для пользователя",
         path: ["telegramChannelId"],
       }
-    );
+    )
+    .superRefine((d, ctx) => {
+      const wc = d.winnerCount ?? 1;
+      if (d.winnerPickMode !== "predetermined") return;
+      const ids = d.predeterminedWinnerUserIds;
+      if (!ids?.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "В режиме «заданные победители» укажите хотя бы один UUID пользователя",
+          path: ["predeterminedWinnerUserIds"],
+        });
+        return;
+      }
+      if (ids.length > wc) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Не больше ${wc} UUID — совпадает с числом победителей`,
+          path: ["predeterminedWinnerUserIds"],
+        });
+      }
+    });
 
   app.post("/api/admin/giveaways", async (req, reply) => {
     const admin = requireAdmin(req, reply);
@@ -633,6 +662,18 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     }
     const imgUrl =
       d.imageUrl && d.imageUrl.trim().length > 0 ? d.imageUrl.trim() : null;
+    const pickMode = d.winnerPickMode ?? "random";
+    const presetRaw = d.predeterminedWinnerUserIds;
+    const presetDeduped =
+      pickMode === "predetermined" && presetRaw?.length
+        ? [...new Set(presetRaw)]
+        : null;
+    const winnerPickMode =
+      pickMode === "predetermined" && presetDeduped?.length
+        ? "predetermined"
+        : "random";
+    const predeterminedWinnerUserIds =
+      winnerPickMode === "predetermined" ? presetDeduped : null;
     const [ins] = await db
       .insert(giveaways)
       .values({
@@ -650,9 +691,15 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         requireChannelSubscription: reqCh,
         telegramChannelId: reqCh ? chId : null,
         channelInviteUrl: reqCh ? invUrl : null,
+        winnerPickMode,
+        predeterminedWinnerUserIds,
       })
       .returning({ id: giveaways.id });
-    audit(admin, req, "create_giveaway", "giveaway", ins!.id, { title: d.title });
+    audit(admin, req, "create_giveaway", "giveaway", ins!.id, {
+      title: d.title,
+      winnerPickMode,
+      predeterminedCount: predeterminedWinnerUserIds?.length ?? 0,
+    });
     void publishGiveawaysRealtimeSnapshot();
     return { id: ins!.id };
   });
@@ -687,6 +734,12 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         telegramChannelId: g.telegramChannelId ?? null,
         channelInviteUrl: g.channelInviteUrl ?? null,
         platform: g.platform ?? "both",
+        winnerPickMode: (g.winnerPickMode ?? "random") as "random" | "predetermined",
+        predeterminedWinnerUserIds: Array.isArray(g.predeterminedWinnerUserIds)
+          ? g.predeterminedWinnerUserIds.filter(
+              (x): x is string => typeof x === "string"
+            )
+          : null,
       },
       participants,
       publicSnapshot: detail,

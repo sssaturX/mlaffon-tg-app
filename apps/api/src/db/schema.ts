@@ -402,6 +402,16 @@ export const giveaways = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
     /** Сколько победителей выбрать при розыгрыше. */
     winnerCount: integer("winner_count").notNull().default(1),
+    /**
+     * random — честный выбор среди участников;
+     * predetermined — сначала фиксированный список user id (только те, кто реально участвовал),
+     * недостающие места добираются случайно из остальных участников.
+     */
+    winnerPickMode: text("winner_pick_mode").notNull().default("random"),
+    /** UUID пользователей в желаемом порядке мест (1..n); не публикуется до drawnAt. */
+    predeterminedWinnerUserIds: jsonb("predetermined_winner_user_ids").$type<
+      string[] | null
+    >(),
     /** Стоимость билета в монетах выбранной платформы; 0 = бесплатно. */
     ticketPriceCoins: integer("ticket_price_coins").notNull().default(0),
     /** Когда выполнен розыгрыш (победители выбраны). */

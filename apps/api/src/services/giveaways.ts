@@ -1,4 +1,3 @@
-import { randomInt } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
@@ -11,6 +10,10 @@ import {
 import { parseStoredMediaImage } from "../lib/mediaImageJson.js";
 import { applyDebit } from "./economy.js";
 import { checkTelegramChannelMembership } from "./telegramChannel.js";
+import {
+  pickPredeterminedThenRandom,
+  pickRandomFromParticipants,
+} from "./giveawayPick.js";
 import type { MediaImageUploadResponse } from "shared";
 
 export function displayUsername(u: {
@@ -316,40 +319,6 @@ export async function joinGiveaway(params: {
   return { ok: true, joinedAt: ins!.createdAt.toISOString() };
 }
 
-function shuffleUserIds(ids: string[]): string[] {
-  const a = [...ids];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = randomInt(0, i + 1);
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-function weightedPickUnique(
-  weighted: { userId: string; weight: number }[],
-  count: number
-): string[] {
-  const pool = weighted
-    .map((x) => ({ ...x, weight: Math.max(0, x.weight) }))
-    .filter((x) => x.weight > 0);
-  const out: string[] = [];
-  while (out.length < count && pool.length > 0) {
-    const total = pool.reduce((s, x) => s + x.weight, 0);
-    if (total <= 0) break;
-    let r = Math.random() * total;
-    let idx = 0;
-    for (; idx < pool.length; idx++) {
-      r -= pool[idx]!.weight;
-      if (r <= 0) break;
-    }
-    const picked = pool[Math.min(idx, pool.length - 1)]!;
-    out.push(picked.userId);
-    const removeIdx = pool.findIndex((x) => x.userId === picked.userId);
-    if (removeIdx >= 0) pool.splice(removeIdx, 1);
-  }
-  return out;
-}
-
 export async function drawGiveawayWinners(giveawayId: string): Promise<
   | {
       ok: true;
@@ -384,15 +353,19 @@ export async function drawGiveawayWinners(giveawayId: string): Promise<
   }
 
   const pickCount = Math.min(need, parts.length);
-
-  const weighted = parts.map((p) => ({ userId: p.userId, weight: 1 }));
-  let picked = weightedPickUnique(weighted, pickCount);
-  if (picked.length < pickCount) {
-    const fallback = shuffleUserIds(parts.map((p) => p.userId)).filter(
-      (id) => !picked.includes(id)
-    );
-    picked = [...picked, ...fallback.slice(0, pickCount - picked.length)];
-  }
+  const partUserIds = parts.map((p) => p.userId);
+  const mode =
+    (g.winnerPickMode ?? "random") === "predetermined"
+      ? "predetermined"
+      : "random";
+  const picked =
+    mode === "predetermined"
+      ? pickPredeterminedThenRandom(
+          partUserIds,
+          pickCount,
+          g.predeterminedWinnerUserIds
+        )
+      : pickRandomFromParticipants(partUserIds, pickCount);
 
   const drawnAt = new Date();
   const committed = await db.transaction(async (tx) => {
