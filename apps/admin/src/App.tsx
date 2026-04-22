@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MediaImageUploadResponse } from "shared";
+import { parseMediaImageUploadResponse, resolveAdminImageForPreview } from "shared";
+import { AdminImagePreview } from "./components/AdminImagePreview";
 
 const ADMIN_NAV_ITEMS = [
   { id: "giveaways" as const, label: "Розыгрыши" },
@@ -30,14 +32,6 @@ const ADMIN_STATS_AUTO_REFRESH_MIN_MS = 45_000;
  * На поддомене admin.* всегда используем тот же origin (`/api/...` → Caddy → 127.0.0.1:3001),
  * даже если в билде случайно задан VITE_API_ORIGIN на другой хост — иначе логин ломается.
  */
-function parseMediaImageFromMeta(v: unknown): MediaImageUploadResponse | null {
-  if (!v || typeof v !== "object") return null;
-  const o = v as Record<string, unknown>;
-  if (typeof o.fallbackSrc !== "string" || typeof o.hash !== "string") return null;
-  if (!o.srcset || typeof o.srcset !== "object") return null;
-  return v as MediaImageUploadResponse;
-}
-
 function apiBase(): string {
   const env = (import.meta.env.VITE_API_ORIGIN ?? "").trim().replace(/\/$/, "");
   if (typeof window !== "undefined" && window.location.hostname.startsWith("admin.")) {
@@ -71,6 +65,8 @@ type GiveawayRow = {
   requireChannelSubscription: boolean;
   telegramChannelId: string | null;
   channelInviteUrl: string | null;
+  winnerPickMode?: "random" | "predetermined";
+  predeterminedWinnerUserIds?: string[] | null;
 };
 
 type PromoRow = {
@@ -131,6 +127,17 @@ type GiveawayParticipant = {
   joinedAt: string;
 };
 
+function parseGiveawayUuidLines(raw: string): string[] {
+  return [
+    ...new Set(
+      raw
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    ),
+  ];
+}
+
 type GiveawayDetailResponse = {
   giveaway: {
     id: string;
@@ -148,6 +155,9 @@ type GiveawayDetailResponse = {
     requireChannelSubscription: boolean;
     telegramChannelId: string | null;
     channelInviteUrl: string | null;
+    platform?: string;
+    winnerPickMode?: "random" | "predetermined";
+    predeterminedWinnerUserIds?: string[] | null;
   };
   participants: GiveawayParticipant[];
   publicSnapshot: {
@@ -372,6 +382,10 @@ export function App() {
   const [gwTelegramChannelId, setGwTelegramChannelId] = useState("");
   const [gwChannelInviteUrl, setGwChannelInviteUrl] = useState("");
   const [gwPlatform, setGwPlatform] = useState<"twitch" | "kick" | "both">("both");
+  const [gwWinnerPickMode, setGwWinnerPickMode] = useState<"random" | "predetermined">(
+    "random"
+  );
+  const [gwPredeterminedIdsText, setGwPredeterminedIdsText] = useState("");
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<GiveawayDetailResponse | null>(null);
@@ -1270,6 +1284,14 @@ export function App() {
         body.telegramChannelId = gwTelegramChannelId.trim();
         body.channelInviteUrl = gwChannelInviteUrl.trim();
       }
+      if (gwWinnerPickMode === "predetermined") {
+        body.winnerPickMode = "predetermined";
+        body.predeterminedWinnerUserIds = parseGiveawayUuidLines(
+          gwPredeterminedIdsText
+        );
+      } else {
+        body.winnerPickMode = "random";
+      }
       const r = await fetch(`${apiBase()}/api/admin/giveaways`, {
         method: "POST",
         headers: authHeaders(true),
@@ -1285,6 +1307,8 @@ export function App() {
       setGwDescription("");
       setGwImage("");
       setGwImageMedia(null);
+      setGwWinnerPickMode("random");
+      setGwPredeterminedIdsText("");
       await loadGiveaways();
       await loadStats();
     } catch {
@@ -1651,6 +1675,52 @@ export function App() {
             />
           </div>
         </div>
+        <div className="admin-field-full">
+          <span className="admin-field-label">Выбор победителей</span>
+          <p className="muted admin-hint-sm admin-m-0">
+            Пользователям не показывается до завершения розыгрыша. В заданном режиме учитываются
+            только те UUID, кто реально участвовал; пустые места добираются случайно из остальных.
+          </p>
+          <label className="admin-checkbox-row admin-mt-3">
+            <input
+              type="radio"
+              name="gw-winner-pick"
+              checked={gwWinnerPickMode === "random"}
+              onChange={() => setGwWinnerPickMode("random")}
+            />
+            <span className="admin-checkbox-row__text">
+              Случайно среди участников (честный розыгрыш)
+            </span>
+          </label>
+          <label className="admin-checkbox-row">
+            <input
+              type="radio"
+              name="gw-winner-pick"
+              checked={gwWinnerPickMode === "predetermined"}
+              onChange={() => setGwWinnerPickMode("predetermined")}
+            />
+            <span className="admin-checkbox-row__text">
+              Задать победителей заранее (UUID по одному на строку, порядок строк = приоритет мест)
+            </span>
+          </label>
+          {gwWinnerPickMode === "predetermined" ? (
+            <div className="admin-mt-3">
+              <label htmlFor="gwpreset">UUID пользователей</label>
+              <textarea
+                id="gwpreset"
+                value={gwPredeterminedIdsText}
+                onChange={(e) => setGwPredeterminedIdsText(e.target.value)}
+                rows={5}
+                placeholder={"550e8400-e29b-41d4-a716-446655440000\n…"}
+                className="mono"
+              />
+              <p className="muted admin-hint-sm">
+                Строк с UUID не больше числа победителей ({gwWinnerCount}). Скопировать UUID можно из
+                списка участников после старта или из раздела «Пользователи».
+              </p>
+            </div>
+          ) : null}
+        </div>
         <div>
           <label htmlFor="gends">Окончание (локальное время)</label>
           <input
@@ -1759,6 +1829,9 @@ export function App() {
                     {g.winnerCount}
                     {g.ticketPriceCoins > 0 ? ` · билет ${g.ticketPriceCoins} мон.` : " · бесплатно"}
                     {g.requireChannelSubscription ? " · подписка на канал" : ""}
+                    {g.winnerPickMode === "predetermined" && !g.drawnAt
+                      ? " · победители заданы заранее"
+                      : ""}
                     {g.drawnAt ? ` · розыгрыш ${new Date(g.drawnAt).toLocaleString("ru-RU")}` : ""}
                   </div>
                   {!g.drawnAt &&
@@ -1799,6 +1872,21 @@ export function App() {
                     <AdminSkeletonRows rows={2} />
                   ) : detail && detail.giveaway.id === g.id ? (
                     <>
+                      {!detail.giveaway.drawnAt ? (
+                        <p className="muted admin-mt-0">
+                          Режим:{" "}
+                          {detail.giveaway.winnerPickMode === "predetermined"
+                            ? "заданные победители (публично скрыто до розыгрыша)"
+                            : "случайный среди участников"}
+                          {detail.giveaway.winnerPickMode === "predetermined" &&
+                          detail.giveaway.predeterminedWinnerUserIds?.length ? (
+                            <span className="mono" style={{ display: "block", marginTop: 6 }}>
+                              Зарезервировано UUID:{" "}
+                              {detail.giveaway.predeterminedWinnerUserIds.join(", ")}
+                            </span>
+                          ) : null}
+                        </p>
+                      ) : null}
                       <p className="muted admin-mt-0">
                         Участники ({detail.participants.length})
                       </p>
@@ -1810,6 +1898,15 @@ export function App() {
                             <li key={p.userId}>
                               <strong>{p.username}</strong>
                               <span className="muted"> · {new Date(p.joinedAt).toLocaleString("ru-RU")}</span>
+                              <button
+                                type="button"
+                                className="secondary"
+                                style={{ marginLeft: 8, fontSize: 12, padding: "2px 8px" }}
+                                title="Скопировать user id"
+                                onClick={() => void navigator.clipboard.writeText(p.userId)}
+                              >
+                                UUID
+                              </button>
                             </li>
                           ))
                         )}
@@ -2431,9 +2528,13 @@ export function App() {
                     />
                   </div>
                 </div>
-                {shopFormImageUrl.trim() ? (
+                {shopFormImageUrl.trim() || shopFormImageMedia ? (
                   <div className="admin-shop-preview admin-shop-preview--img admin-mt-3">
-                    <img src={shopFormImageUrl.trim()} alt="Предпросмотр товара" />
+                    <AdminImagePreview
+                      imageUrl={shopFormImageUrl}
+                      imageMedia={shopFormImageMedia}
+                      alt="Предпросмотр товара"
+                    />
                   </div>
                 ) : null}
               </div>
@@ -2636,15 +2737,23 @@ export function App() {
                     {adminShopItems.map((row) => (
                       <tr key={row.id}>
                         <td>
-                          {row.imageUrl ? (
-                            <img
-                              src={row.imageUrl}
-                              alt=""
-                              className="admin-shop-table__thumb"
-                            />
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
+                          {(() => {
+                            const metaRec =
+                              row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
+                                ? (row.meta as Record<string, unknown>)
+                                : null;
+                            return resolveAdminImageForPreview(row.imageUrl, metaRec?.imageMedia) ? (
+                              <AdminImagePreview
+                                imageUrl={row.imageUrl}
+                                imageMedia={metaRec?.imageMedia}
+                                alt=""
+                                imgClassName="admin-shop-table__thumb"
+                                sizes="42px"
+                              />
+                            ) : (
+                              <span className="muted">—</span>
+                            );
+                          })()}
                         </td>
                         <td className="mono">{row.id}</td>
                         <td style={{ fontSize: 13 }}>
@@ -2703,7 +2812,7 @@ export function App() {
                               setShopFormDescription(row.description ?? "");
                               setShopFormImageUrl(row.imageUrl ?? "");
                               setShopFormImageMedia(
-                                parseMediaImageFromMeta(
+                                parseMediaImageUploadResponse(
                                   (row.meta as Record<string, unknown> | null)?.imageMedia
                                 )
                               );
@@ -3336,9 +3445,13 @@ export function App() {
                   />
                 </div>
               </div>
-              {taskFormCoverImageUrl.trim() ? (
+              {taskFormCoverImageUrl.trim() || taskFormCoverMedia ? (
                 <div className="admin-shop-preview admin-shop-preview--img admin-mt-3">
-                  <img src={taskFormCoverImageUrl.trim()} alt="Предпросмотр обложки задания" />
+                  <AdminImagePreview
+                    imageUrl={taskFormCoverImageUrl}
+                    imageMedia={taskFormCoverMedia}
+                    alt="Предпросмотр обложки задания"
+                  />
                 </div>
               ) : null}
             </div>
@@ -3473,7 +3586,7 @@ export function App() {
                           setTaskFormCoverImageUrl(
                             typeof m.coverImageUrl === "string" ? m.coverImageUrl : ""
                           );
-                          setTaskFormCoverMedia(parseMediaImageFromMeta(m.coverImageMedia));
+                          setTaskFormCoverMedia(parseMediaImageUploadResponse(m.coverImageMedia));
                         }}
                       >
                         Править
@@ -3616,21 +3729,24 @@ export function App() {
                               <div key={idx} className="admin-evidence-card">
                                 {canInline ? (
                                   <>
-                                    <img
-                                      src={img}
+                                    <AdminImagePreview
+                                      imageUrl={img}
+                                      imageMedia={null}
                                       alt={`Скриншот ${idx + 1} · ${ev.taskTitle}`}
-                                      className="admin-evidence-thumb"
-                                      loading="lazy"
+                                      imgClassName="admin-evidence-thumb"
+                                      sizes="160px"
                                     />
                                     <details className="admin-evidence-details">
                                       <summary className="admin-evidence-details__summary">
                                         Крупнее
                                       </summary>
                                       <div className="admin-evidence-full-wrap">
-                                        <img
-                                          src={img}
+                                        <AdminImagePreview
+                                          imageUrl={img}
+                                          imageMedia={null}
                                           alt=""
-                                          className="admin-evidence-full"
+                                          imgClassName="admin-evidence-full"
+                                          sizes="min(96vw, 720px)"
                                         />
                                       </div>
                                     </details>

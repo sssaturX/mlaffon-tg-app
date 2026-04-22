@@ -269,6 +269,16 @@ else
     warn "Expected file missing: apps/api/drizzle/0006_shop_purchases_item_snapshot_fk.sql — skip SQL step"
   fi
 
+  GW_PICK_SQL="${RELEASE_DIR}/apps/api/drizzle/0007_giveaway_winner_pick.sql"
+  if [[ -f "$GW_PICK_SQL" ]]; then
+    log "Applying idempotent SQL: $(basename "$GW_PICK_SQL") (giveaways winner_pick_mode / predetermined ids)"
+    run_retry 3 5 psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$GW_PICK_SQL" 2>&1 ||
+      die "SQL migration failed: 0007_giveaway_winner_pick.sql"
+    ok "Giveaway winner-pick SQL applied"
+  else
+    warn "Expected file missing: apps/api/drizzle/0007_giveaway_winner_pick.sql — skip (drizzle push may still add columns)"
+  fi
+
   DRIZZLE_ARGS=""
   if [[ "${DEPLOY_ALLOW_DESTRUCTIVE:-0}" == "1" ]]; then
     DRIZZLE_ARGS="--force"

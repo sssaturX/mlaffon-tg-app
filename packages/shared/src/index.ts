@@ -35,6 +35,114 @@ export interface MediaImageUploadResponse {
   processMs: number;
 }
 
+/** Совпадает с `IMAGE_WIDTHS` в apps/api — не рассинхронить. */
+export const MEDIA_PIPELINE_WIDTHS = [320, 640, 960, 1280] as const;
+
+const ADMIN_MEDIA_LQIP_PLACEHOLDER =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
+/**
+ * Из полного URL CDN (base `.../images/<hash>`, `.../images/<hash>/` или файл `.../640w.jpg`)
+ * получает канонический base без завершающего слэша. Иначе null.
+ */
+export function extractCdnImageBasePath(raw: string): string | null {
+  const s = raw.trim();
+  if (!s || /^data:image\//i.test(s)) return null;
+  let u: URL;
+  try {
+    u = new URL(s);
+  } catch {
+    return null;
+  }
+  let path = u.pathname.replace(/\/$/, "");
+  if (/\/\d+w\.(avif|webp|jpe?g)$/i.test(path)) {
+    path = path.replace(/\/\d+w\.(avif|webp|jpe?g)$/i, "");
+  }
+  const parts = path.split("/").filter(Boolean);
+  const imagesIdx = parts.lastIndexOf("images");
+  if (imagesIdx < 0 || imagesIdx + 1 >= parts.length) return null;
+  const hash = parts[imagesIdx + 1]!;
+  if (!/^[a-f0-9]{64}$/i.test(hash)) return null;
+  u.pathname = "/" + parts.slice(0, imagesIdx + 2).join("/");
+  u.search = "";
+  u.hash = "";
+  return u.toString().replace(/\/$/, "");
+}
+
+/** Полный объект как после upload — для превью в админке по base path CDN. */
+export function buildMediaImageFromCdnBasePath(basePath: string): MediaImageUploadResponse {
+  const base = basePath.trim().replace(/\/+$/, "");
+  const segments = base.split("/").filter(Boolean);
+  const hash = segments[segments.length - 1] ?? "";
+  const widths = [...MEDIA_PIPELINE_WIDTHS];
+  const urlsByWidth: Record<string, MediaImageUrlsByWidth> = {};
+  for (const w of widths) {
+    urlsByWidth[String(w)] = {
+      avif: `${base}/${w}w.avif`,
+      webp: `${base}/${w}w.webp`,
+      jpeg: `${base}/${w}w.jpg`,
+    };
+  }
+  const srcset = {
+    avif: widths.map((w) => `${base}/${w}w.avif ${w}w`).join(", "),
+    webp: widths.map((w) => `${base}/${w}w.webp ${w}w`).join(", "),
+    jpeg: widths.map((w) => `${base}/${w}w.jpg ${w}w`).join(", "),
+  };
+  const fallbackW = widths[widths.length - 1]!;
+  return {
+    hash,
+    basePath: base,
+    widths,
+    urlsByWidth,
+    srcset,
+    fallbackSrc: `${base}/${fallbackW}w.jpg`,
+    lqipDataUrl: ADMIN_MEDIA_LQIP_PLACEHOLDER,
+    processMs: 0,
+  };
+}
+
+export function tryBuildMediaImageFromImageUrl(
+  url: string | null | undefined
+): MediaImageUploadResponse | null {
+  const b = url?.trim() ? extractCdnImageBasePath(url) : null;
+  return b ? buildMediaImageFromCdnBasePath(b) : null;
+}
+
+export function parseMediaImageUploadResponse(v: unknown): MediaImageUploadResponse | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.fallbackSrc !== "string" || typeof o.hash !== "string") return null;
+  if (!o.srcset || typeof o.srcset !== "object") return null;
+  const ss = o.srcset as Record<string, unknown>;
+  if (typeof ss.avif !== "string" || typeof ss.webp !== "string" || typeof ss.jpeg !== "string") {
+    return null;
+  }
+  return v as MediaImageUploadResponse;
+}
+
+export type AdminImagePreviewResolved =
+  | { mode: "responsive"; media: MediaImageUploadResponse }
+  | { mode: "direct"; src: string };
+
+/**
+ * Нормализация для превью в админке: полный media-объект, CDN base → synthetic media,
+ * иначе прямой URL (внешний, data, или неподходящий под паттерн CDN).
+ */
+export function resolveAdminImageForPreview(
+  url: string | null | undefined,
+  media: unknown
+): AdminImagePreviewResolved | null {
+  const parsed = parseMediaImageUploadResponse(media);
+  if (parsed) return { mode: "responsive", media: parsed };
+  const u = url?.trim();
+  if (!u) return null;
+  const fromCdn = tryBuildMediaImageFromImageUrl(u);
+  if (fromCdn) return { mode: "responsive", media: fromCdn };
+  if (/^data:image\//i.test(u)) return { mode: "direct", src: u };
+  if (/^https?:\/\//i.test(u)) return { mode: "direct", src: u };
+  return null;
+}
+
 export interface TaskDto {
   id: string;
   title: string;
