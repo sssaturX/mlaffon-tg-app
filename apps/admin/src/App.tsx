@@ -1733,114 +1733,144 @@ export function App() {
             />
           </div>
         </div>
-        <div className="admin-field-full">
-          <span className="admin-field-label">Выбор победителей</span>
+        <div className="admin-field-full admin-giveaway-pick">
+          <span className="admin-field-label">Режим розыгрыша</span>
           <p className="muted admin-hint-sm admin-m-0">
-            Пользователям не показывается до завершения розыгрыша. В заданном режиме учитываются
-            только те UUID, кто реально участвовал; недобранные места (если в списке меньше UUID,
-            чем победителей, или кто-то из списка не участвовал) заполняются случайно среди
-            остальных участников, как в честном розыгрыше.
+            Пользователям не показывается до завершения розыгрыша. Переключение режима не двигает
+            остальные поля формы — детали только в панели ниже.
           </p>
-          <label className="admin-checkbox-row admin-mt-3">
-            <input
-              type="radio"
-              name="gw-winner-pick"
-              checked={gwWinnerPickMode === "random"}
-              onChange={() => setGwWinnerPickMode("random")}
-            />
-            <span className="admin-checkbox-row__text">
-              Случайно среди участников (честный розыгрыш)
-            </span>
-          </label>
-          <label className="admin-checkbox-row">
-            <input
-              type="radio"
-              name="gw-winner-pick"
-              checked={gwWinnerPickMode === "predetermined"}
-              onChange={() => setGwWinnerPickMode("predetermined")}
-            />
-            <span className="admin-checkbox-row__text">
-              Задать победителей заранее (UUID по одному на строку, порядок строк = приоритет мест)
-            </span>
-          </label>
-          {gwWinnerPickMode === "predetermined" ? (
-            <div className="admin-mt-3">
-              <div className="admin-field-full">
-                <label htmlFor="gwpreset-search">Добавить по нику или имени</label>
-                <div className="row" style={{ gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-                  <input
-                    id="gwpreset-search"
-                    type="search"
-                    style={{ flex: "1 1 220px", minWidth: 0 }}
-                    value={gwPresetUserSearchDraft}
-                    onChange={(e) => setGwPresetUserSearchDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void fetchGwPresetUsersForGiveaway();
-                      }
-                    }}
-                    placeholder="@username или имя (как в разделе «Пользователи»)"
-                    autoComplete="off"
-                  />
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={!token || gwPresetUserSearchLoading}
-                    onClick={() => void fetchGwPresetUsersForGiveaway()}
+          <div
+            className="admin-giveaway-pick__toggle"
+            role="radiogroup"
+            aria-label="Режим выбора победителей"
+          >
+            <button
+              type="button"
+              className={
+                gwWinnerPickMode === "random"
+                  ? "admin-giveaway-pick__opt admin-giveaway-pick__opt--active"
+                  : "admin-giveaway-pick__opt"
+              }
+              aria-checked={gwWinnerPickMode === "random"}
+              role="radio"
+              onClick={() => setGwWinnerPickMode("random")}
+            >
+              <span className="admin-giveaway-pick__opt-title">Честный розыгрыш</span>
+              <span className="admin-giveaway-pick__opt-desc">
+                Случайный выбор среди участников (как обычный розыгрыш).
+              </span>
+            </button>
+            <button
+              type="button"
+              className={
+                gwWinnerPickMode === "predetermined"
+                  ? "admin-giveaway-pick__opt admin-giveaway-pick__opt--active"
+                  : "admin-giveaway-pick__opt"
+              }
+              aria-checked={gwWinnerPickMode === "predetermined"}
+              role="radio"
+              onClick={() => setGwWinnerPickMode("predetermined")}
+            >
+              <span className="admin-giveaway-pick__opt-title">Список победителей</span>
+              <span className="admin-giveaway-pick__opt-desc">
+                Приоритет по UUID; кто не участвовал или не хватает строк — добор случайно, как в
+                честном режиме.
+              </span>
+            </button>
+          </div>
+          <div className="admin-giveaway-pick__panel">
+            {gwWinnerPickMode === "random" ? (
+              <p className="muted admin-giveaway-pick__panel-fair">
+                Учитываются только реальные участники и веса билетов. Подходит для открытых розыгрышей
+                без заранее заданных имён.
+              </p>
+            ) : (
+              <div className="admin-giveaway-pick__preset-fields">
+                <div className="admin-field-full">
+                  <label htmlFor="gwpreset-search">Добавить по нику или имени</label>
+                  <div
+                    className="row"
+                    style={{ gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}
                   >
-                    {gwPresetUserSearchLoading ? "…" : "Найти"}
-                  </button>
+                    <input
+                      id="gwpreset-search"
+                      type="search"
+                      style={{ flex: "1 1 220px", minWidth: 0 }}
+                      value={gwPresetUserSearchDraft}
+                      onChange={(e) => setGwPresetUserSearchDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void fetchGwPresetUsersForGiveaway();
+                        }
+                      }}
+                      placeholder="@username или имя (как в разделе «Пользователи»)"
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={!token || gwPresetUserSearchLoading}
+                      onClick={() => void fetchGwPresetUsersForGiveaway()}
+                    >
+                      {gwPresetUserSearchLoading ? "…" : "Найти"}
+                    </button>
+                  </div>
+                  {gwPresetUserSearchResults !== null ? (
+                    <ul className="admin-userlist admin-mt-3">
+                      {gwPresetUserSearchResults.length === 0 ? (
+                        <li className="muted">Никого не найдено.</li>
+                      ) : (
+                        gwPresetUserSearchResults.map((u) => (
+                          <li key={u.id}>
+                            <strong>{u.username ? `@${u.username}` : "—"}</strong>
+                            {u.firstName ? (
+                              <span className="muted"> · {u.firstName}</span>
+                            ) : null}
+                            <span
+                              className="mono muted"
+                              style={{ display: "block", fontSize: 12 }}
+                            >
+                              {u.id}
+                            </span>
+                            <button
+                              type="button"
+                              className="secondary"
+                              style={{ marginTop: 6 }}
+                              onClick={() => appendPredeterminedWinnerUuid(u.id)}
+                            >
+                              Добавить в список
+                            </button>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  ) : null}
                 </div>
-                {gwPresetUserSearchResults !== null ? (
-                  <ul className="admin-userlist admin-mt-3">
-                    {gwPresetUserSearchResults.length === 0 ? (
-                      <li className="muted">Никого не найдено.</li>
-                    ) : (
-                      gwPresetUserSearchResults.map((u) => (
-                        <li key={u.id}>
-                          <strong>{u.username ? `@${u.username}` : "—"}</strong>
-                          {u.firstName ? (
-                            <span className="muted"> · {u.firstName}</span>
-                          ) : null}
-                          <span className="mono muted" style={{ display: "block", fontSize: 12 }}>
-                            {u.id}
-                          </span>
-                          <button
-                            type="button"
-                            className="secondary"
-                            style={{ marginTop: 6 }}
-                            onClick={() => appendPredeterminedWinnerUuid(u.id)}
-                          >
-                            Добавить в список
-                          </button>
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                ) : null}
+                <label htmlFor="gwpreset" className="admin-mt-3" style={{ display: "block" }}>
+                  UUID пользователей (порядок строк = приоритет мест)
+                </label>
+                <textarea
+                  id="gwpreset"
+                  value={gwPredeterminedIdsText}
+                  onChange={(e) => setGwPredeterminedIdsText(e.target.value)}
+                  rows={5}
+                  placeholder={"550e8400-e29b-41d4-a716-446655440000\n…"}
+                  className="mono"
+                />
+                <p className="muted admin-hint-sm">
+                  Уникальных UUID не больше {gwWinnerCount} (число победителей). Можно указать меньше
+                  — остальные места при розыгрыше займут случайные участники. Учитываются только те
+                  UUID, кто реально вступил. В развёрнутом розыгрыше у участника есть «В список
+                  победителей».
+                </p>
+                <p className="muted admin-hint-sm admin-m-0">
+                  Сейчас в списке: {parseGiveawayUuidLines(gwPredeterminedIdsText).length} из{" "}
+                  {gwWinnerCount}
+                </p>
               </div>
-              <label htmlFor="gwpreset">UUID пользователей (порядок строк = приоритет мест)</label>
-              <textarea
-                id="gwpreset"
-                value={gwPredeterminedIdsText}
-                onChange={(e) => setGwPredeterminedIdsText(e.target.value)}
-                rows={5}
-                placeholder={"550e8400-e29b-41d4-a716-446655440000\n…"}
-                className="mono"
-              />
-              <p className="muted admin-hint-sm">
-                Уникальных UUID не больше {gwWinnerCount} (число победителей). Можно указать меньше —
-                остальные места при розыгрыше займут случайные участники. Ниже в развёрнутом
-                розыгрыше у каждого участника есть кнопка «В список победителей» — строка попадёт в
-                это поле.
-              </p>
-              <p className="muted admin-hint-sm admin-m-0">
-                Сейчас в списке: {parseGiveawayUuidLines(gwPredeterminedIdsText).length} из{" "}
-                {gwWinnerCount}
-              </p>
-            </div>
-          ) : null}
+            )}
+          </div>
         </div>
         <div>
           <label htmlFor="gends">Окончание (локальное время)</label>

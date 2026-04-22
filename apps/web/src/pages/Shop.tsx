@@ -209,20 +209,26 @@ export default function Shop() {
 
             <div className="shop-popup__item">
               {selectedImageResolved ? (
-                <ShopItemImage
-                  resolved={selectedImageResolved}
-                  alt=""
-                  sizes="72px"
-                  layout="fill"
-                  className={
-                    selectedImageResolved.mode === "responsive"
-                      ? "shop-popup__img--picture"
-                      : undefined
-                  }
-                  directImgClassName="shop-popup__img"
-                />
+                selectedImageResolved.mode === "responsive" ? (
+                  <div className="shop-popup__media-slot">
+                    <ShopItemImage
+                      resolved={selectedImageResolved}
+                      alt=""
+                      sizes="72px"
+                      layout="fill"
+                    />
+                  </div>
+                ) : (
+                  <ShopItemImage
+                    resolved={selectedImageResolved}
+                    alt=""
+                    sizes="72px"
+                    layout="intrinsic"
+                    directImgClassName="shop-popup__img"
+                  />
+                )
               ) : (
-                <div className="shop-popup__img shop-popup__img--ph">
+                <div className="shop-popup__media-slot shop-popup__img--ph">
                   <Package size={26} strokeWidth={1.5} />
                 </div>
               )}
