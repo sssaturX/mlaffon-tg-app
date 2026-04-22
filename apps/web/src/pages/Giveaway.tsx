@@ -10,8 +10,13 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import WebApp from "@twa-dev/sdk";
-import { resolveAdminImageForPreview, type MeResponse } from "shared";
+import {
+  resolveAdminImageForPreview,
+  type HomeGiveawaysResponse,
+  type MeResponse,
+} from "shared";
 import { api, formatApiError } from "../api";
+import type { GiveawayDetailDto } from "../query/fetchers";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -78,25 +83,31 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
     }
     const joinedAt = r.data.joinedAt ?? new Date().toISOString();
     showToast("Вы участвуете в розыгрыше", "success");
-    queryClient.setQueryData(queryKeys.giveaways.detail(id), (prev) => {
-      if (!prev || prev.id !== id) return prev;
-      return {
-        ...prev,
-        isParticipant: true,
-        joinedAt,
-        participantCount: prev.participantCount + 1,
-      };
-    });
-    queryClient.setQueryData(queryKeys.home.giveaways(), (prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        giveaways: prev.giveaways.map((x) =>
-          x.id === id ? { ...x, participantCount: x.participantCount + 1 } : x
-        ),
-        completedGiveaways: prev.completedGiveaways ?? [],
-      };
-    });
+    queryClient.setQueryData<GiveawayDetailDto>(
+      queryKeys.giveaways.detail(id),
+      (prev) => {
+        if (!prev || prev.id !== id) return prev;
+        return {
+          ...prev,
+          isParticipant: true,
+          joinedAt,
+          participantCount: prev.participantCount + 1,
+        };
+      }
+    );
+    queryClient.setQueryData<HomeGiveawaysResponse>(
+      queryKeys.home.giveaways(),
+      (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          giveaways: prev.giveaways.map((x) =>
+            x.id === id ? { ...x, participantCount: x.participantCount + 1 } : x
+          ),
+          completedGiveaways: prev.completedGiveaways ?? [],
+        };
+      }
+    );
     void queryClient.invalidateQueries({
       queryKey: queryKeys.giveaways.list(),
     });
