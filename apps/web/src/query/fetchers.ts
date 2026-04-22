@@ -13,6 +13,7 @@ import type {
 } from "shared";
 import { api } from "../api";
 import { throwIfApiErr } from "./apiQueryError";
+import { withParsedGiveawayImageMedia } from "./giveawayMediaNormalize";
 
 /** STATIC / semi-static: сервер отдаёт Cache-Control; клиент не форсирует no-store. */
 export async function fetchHomeContent(): Promise<HomeContentResponse> {
@@ -28,7 +29,9 @@ export async function fetchHomeGiveaways(): Promise<HomeGiveawaysResponse> {
     httpCache: "default",
   });
   throwIfApiErr(r);
-  return r.data;
+  return {
+    giveaways: r.data.giveaways.map((g) => withParsedGiveawayImageMedia(g)),
+  };
 }
 
 /** Один запрос вместо пары profile+economy; то же тело, что и merge профиля и экономики. */
@@ -122,7 +125,7 @@ export async function fetchGiveawaysList(): Promise<GiveawayListItemDto[]> {
     { httpCache: "default" }
   );
   throwIfApiErr(r);
-  return r.data.giveaways;
+  return r.data.giveaways.map((g) => withParsedGiveawayImageMedia(g));
 }
 
 export type GiveawayDetailDto = {
@@ -152,7 +155,7 @@ export async function fetchGiveawayDetail(id: string): Promise<GiveawayDetailDto
     httpCache: "default",
   });
   throwIfApiErr(r);
-  return r.data;
+  return withParsedGiveawayImageMedia(r.data);
 }
 
 export async function fetchLeaderboard(

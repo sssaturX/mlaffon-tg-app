@@ -1,4 +1,4 @@
-import type { MediaImageUploadResponse } from "shared";
+import { parseMediaImageUploadResponse, type MediaImageUploadResponse } from "shared";
 import { api } from "../api";
 
 export type ShopItemMeta = {
@@ -62,13 +62,7 @@ function normalizeShopItemRow(raw: unknown): ShopItem | null {
   const description =
     typeof row.description === "string" ? row.description : null;
   const imageUrl = typeof row.imageUrl === "string" ? row.imageUrl : null;
-  const rawMedia = row.imageMedia;
-  const imageMedia =
-    rawMedia &&
-    typeof rawMedia === "object" &&
-    typeof (rawMedia as { fallbackSrc?: unknown }).fallbackSrc === "string"
-      ? (rawMedia as MediaImageUploadResponse)
-      : null;
+  const imageMedia = parseMediaImageUploadResponse(row.imageMedia);
   const kind = typeof row.kind === "string" ? row.kind : "";
   let priceCoins = 0;
   if (typeof row.priceCoins === "number" && Number.isFinite(row.priceCoins)) {

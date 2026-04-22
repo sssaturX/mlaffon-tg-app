@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import type { GiveawayListItemDto } from "../query/fetchers";
 import { useGiveawaysList } from "../hooks/queries/useGiveaways";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { ResponsivePicture } from "../components/ResponsivePicture";
+import { GiveawayCardMedia } from "../components/giveaways/GiveawayCardMedia";
 
 function formatCountdown(iso: string): string {
   const end = new Date(iso).getTime();
@@ -104,26 +104,7 @@ export default function GiveawaysPage() {
               to={`/giveaway/${g.id}`}
               className="card giveaway-card giveaway-card--link"
             >
-              {g.imageMedia ? (
-                <div className="giveaway-card__picture-wrap">
-                  <ResponsivePicture
-                    image={g.imageMedia}
-                    alt=""
-                    sizes="(max-width: 640px) 50vw, 280px"
-                    layout="fill"
-                  />
-                </div>
-              ) : g.imageUrl ? (
-                <img
-                  src={g.imageUrl}
-                  alt=""
-                  className="giveaway-card__img"
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : (
-                <div className="giveaway-card__placeholder" aria-hidden />
-              )}
+              <GiveawayCardMedia imageUrl={g.imageUrl} imageMedia={g.imageMedia} />
               <div className="giveaway-card__body">
                 <p className="giveaway-card__headline">{g.prizeText}</p>
                 <p className="giveaway-card__meta muted">

@@ -386,6 +386,11 @@ export function App() {
     "random"
   );
   const [gwPredeterminedIdsText, setGwPredeterminedIdsText] = useState("");
+  const [gwPresetUserSearchDraft, setGwPresetUserSearchDraft] = useState("");
+  const [gwPresetUserSearchResults, setGwPresetUserSearchResults] = useState<
+    AdminUserRow[] | null
+  >(null);
+  const [gwPresetUserSearchLoading, setGwPresetUserSearchLoading] = useState(false);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<GiveawayDetailResponse | null>(null);
@@ -778,6 +783,57 @@ export function App() {
       }
     },
     [token, authHeaders, usersSearch]
+  );
+
+  const fetchGwPresetUsersForGiveaway = useCallback(async () => {
+    if (!token) return;
+    setGwPresetUserSearchLoading(true);
+    setErr(null);
+    try {
+      const params = new URLSearchParams({ limit: "20", offset: "0" });
+      const q = gwPresetUserSearchDraft.trim();
+      if (q.length > 0) params.set("search", q);
+      const r = await fetch(`${apiBase()}/api/admin/users?${params}`, {
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as {
+        users?: AdminUserRow[];
+        error?: { message?: string };
+      };
+      if (!r.ok) {
+        setErr(j.error?.message ?? `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setGwPresetUserSearchResults(j.users ?? []);
+    } catch {
+      setErr("Сеть недоступна");
+    } finally {
+      setGwPresetUserSearchLoading(false);
+    }
+  }, [token, authHeaders, gwPresetUserSearchDraft]);
+
+  const appendPredeterminedWinnerUuid = useCallback(
+    (userId: string) => {
+      const trimmed = userId.trim();
+      if (!trimmed) return;
+      let errMsg: string | null = null;
+      let enablePredetermined = false;
+      setGwPredeterminedIdsText((prev) => {
+        const existing = parseGiveawayUuidLines(prev);
+        if (existing.includes(trimmed)) return prev;
+        if (existing.length >= gwWinnerCount) {
+          errMsg = `Уже ${gwWinnerCount} UUID в списке (равно числу победителей). Увеличьте «Число победителей» или удалите строку.`;
+          return prev;
+        }
+        enablePredetermined = true;
+        return prev.trim() ? `${prev.trim()}\n${trimmed}` : trimmed;
+      });
+      if (errMsg) setErr(errMsg);
+      else setErr(null);
+      if (enablePredetermined) setGwWinnerPickMode("predetermined");
+    },
+    [gwWinnerCount]
   );
 
   const loadGiveawayDetail = useCallback(
@@ -1309,6 +1365,8 @@ export function App() {
       setGwImageMedia(null);
       setGwWinnerPickMode("random");
       setGwPredeterminedIdsText("");
+      setGwPresetUserSearchDraft("");
+      setGwPresetUserSearchResults(null);
       await loadGiveaways();
       await loadStats();
     } catch {
@@ -1679,7 +1737,9 @@ export function App() {
           <span className="admin-field-label">Выбор победителей</span>
           <p className="muted admin-hint-sm admin-m-0">
             Пользователям не показывается до завершения розыгрыша. В заданном режиме учитываются
-            только те UUID, кто реально участвовал; пустые места добираются случайно из остальных.
+            только те UUID, кто реально участвовал; недобранные места (если в списке меньше UUID,
+            чем победителей, или кто-то из списка не участвовал) заполняются случайно среди
+            остальных участников, как в честном розыгрыше.
           </p>
           <label className="admin-checkbox-row admin-mt-3">
             <input
@@ -1705,7 +1765,62 @@ export function App() {
           </label>
           {gwWinnerPickMode === "predetermined" ? (
             <div className="admin-mt-3">
-              <label htmlFor="gwpreset">UUID пользователей</label>
+              <div className="admin-field-full">
+                <label htmlFor="gwpreset-search">Добавить по нику или имени</label>
+                <div className="row" style={{ gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                  <input
+                    id="gwpreset-search"
+                    type="search"
+                    style={{ flex: "1 1 220px", minWidth: 0 }}
+                    value={gwPresetUserSearchDraft}
+                    onChange={(e) => setGwPresetUserSearchDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void fetchGwPresetUsersForGiveaway();
+                      }
+                    }}
+                    placeholder="@username или имя (как в разделе «Пользователи»)"
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={!token || gwPresetUserSearchLoading}
+                    onClick={() => void fetchGwPresetUsersForGiveaway()}
+                  >
+                    {gwPresetUserSearchLoading ? "…" : "Найти"}
+                  </button>
+                </div>
+                {gwPresetUserSearchResults !== null ? (
+                  <ul className="admin-userlist admin-mt-3">
+                    {gwPresetUserSearchResults.length === 0 ? (
+                      <li className="muted">Никого не найдено.</li>
+                    ) : (
+                      gwPresetUserSearchResults.map((u) => (
+                        <li key={u.id}>
+                          <strong>{u.username ? `@${u.username}` : "—"}</strong>
+                          {u.firstName ? (
+                            <span className="muted"> · {u.firstName}</span>
+                          ) : null}
+                          <span className="mono muted" style={{ display: "block", fontSize: 12 }}>
+                            {u.id}
+                          </span>
+                          <button
+                            type="button"
+                            className="secondary"
+                            style={{ marginTop: 6 }}
+                            onClick={() => appendPredeterminedWinnerUuid(u.id)}
+                          >
+                            Добавить в список
+                          </button>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                ) : null}
+              </div>
+              <label htmlFor="gwpreset">UUID пользователей (порядок строк = приоритет мест)</label>
               <textarea
                 id="gwpreset"
                 value={gwPredeterminedIdsText}
@@ -1715,8 +1830,14 @@ export function App() {
                 className="mono"
               />
               <p className="muted admin-hint-sm">
-                Строк с UUID не больше числа победителей ({gwWinnerCount}). Скопировать UUID можно из
-                списка участников после старта или из раздела «Пользователи».
+                Уникальных UUID не больше {gwWinnerCount} (число победителей). Можно указать меньше —
+                остальные места при розыгрыше займут случайные участники. Ниже в развёрнутом
+                розыгрыше у каждого участника есть кнопка «В список победителей» — строка попадёт в
+                это поле.
+              </p>
+              <p className="muted admin-hint-sm admin-m-0">
+                Сейчас в списке: {parseGiveawayUuidLines(gwPredeterminedIdsText).length} из{" "}
+                {gwWinnerCount}
               </p>
             </div>
           ) : null}
@@ -1898,6 +2019,17 @@ export function App() {
                             <li key={p.userId}>
                               <strong>{p.username}</strong>
                               <span className="muted"> · {new Date(p.joinedAt).toLocaleString("ru-RU")}</span>
+                              {!detail.giveaway.drawnAt ? (
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  style={{ marginLeft: 8, fontSize: 12, padding: "2px 8px" }}
+                                  title="Добавить UUID в поле «UUID пользователей» в форме создания розыгрыша выше"
+                                  onClick={() => appendPredeterminedWinnerUuid(p.userId)}
+                                >
+                                  В список победителей
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 className="secondary"
@@ -1905,7 +2037,7 @@ export function App() {
                                 title="Скопировать user id"
                                 onClick={() => void navigator.clipboard.writeText(p.userId)}
                               >
-                                UUID
+                                Копир. UUID
                               </button>
                             </li>
                           ))

@@ -10,7 +10,7 @@ import { api, formatApiError, getToken } from "../api";
 import { refreshProfileOnly } from "../meDomain/meHydration";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
-import { ResponsivePicture } from "../components/ResponsivePicture";
+import { GiveawayCardMedia } from "../components/giveaways/GiveawayCardMedia";
 import { UserPhotoAvatar } from "../components/UserPhotoAvatar";
 import { emailAvatarLetter } from "../utils/emailAvatarLetter";
 import { LiveBroadcastCard, openExternal } from "../components/LiveBroadcastCard";
@@ -800,26 +800,7 @@ export default function Home({ me }: { me: MeResponse | null }) {
                 className="card giveaway-card giveaway-card--link"
                 {...linkPrefetchHandlers(`/giveaway/${g.id}`)}
               >
-                {g.imageMedia ? (
-                  <div className="giveaway-card__picture-wrap">
-                    <ResponsivePicture
-                      image={g.imageMedia}
-                      alt=""
-                      sizes="(max-width: 640px) 50vw, 280px"
-                      layout="fill"
-                    />
-                  </div>
-                ) : g.imageUrl ? (
-                  <img
-                    src={g.imageUrl}
-                    alt=""
-                    className="giveaway-card__img"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                ) : (
-                  <div className="giveaway-card__placeholder" aria-hidden />
-                )}
+                <GiveawayCardMedia imageUrl={g.imageUrl} imageMedia={g.imageMedia} />
                 <div className="giveaway-card__body">
                   <p className="giveaway-card__headline">{g.prizeText}</p>
                   <p className="giveaway-card__meta muted">

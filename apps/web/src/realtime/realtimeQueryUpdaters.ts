@@ -9,8 +9,15 @@ import type { HomeGiveawaysResponse } from "shared";
 import type { GiveawayListItemDto } from "../query/fetchers";
 import type { LiveBroadcastActive } from "../components/LiveBroadcastCard";
 import type { LiveBroadcastPublic } from "../store/liveBroadcastStore";
+import { withParsedGiveawayImageMedia } from "../query/giveawayMediaNormalize";
 import { queryClient } from "../query/queryClient";
 import { queryKeys } from "../query/queryKeys";
+
+function normalizeWsHomeGiveaways(home: HomeGiveawaysResponse): HomeGiveawaysResponse {
+  return {
+    giveaways: home.giveaways.map((g) => withParsedGiveawayImageMedia(g)),
+  };
+}
 
 /** Фиксирует смещение клиент↔сервер в момент применения WS (см. useSyncedCountdownMs). */
 function withDropCountdownOffset<
@@ -136,11 +143,11 @@ export function applyGiveawaysSnapshotToQueries(
 ): void {
   queryClient.setQueryData<HomeGiveawaysResponse>(
     queryKeys.home.giveaways(),
-    data.home
+    normalizeWsHomeGiveaways(data.home)
   );
   queryClient.setQueryData<GiveawayListItemDto[]>(
     queryKeys.giveaways.list(),
-    data.list
+    data.list.map((g) => withParsedGiveawayImageMedia(g))
   );
 }
 
@@ -157,13 +164,13 @@ export function applyGiveawaysIfMissing(
   if (!homeCache) {
     queryClient.setQueryData<HomeGiveawaysResponse>(
       queryKeys.home.giveaways(),
-      data.home
+      normalizeWsHomeGiveaways(data.home)
     );
   }
   if (!listCache) {
     queryClient.setQueryData<GiveawayListItemDto[]>(
       queryKeys.giveaways.list(),
-      data.list
+      data.list.map((g) => withParsedGiveawayImageMedia(g))
     );
   }
 }

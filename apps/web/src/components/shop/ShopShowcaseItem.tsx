@@ -1,8 +1,8 @@
 import { memo, useCallback } from "react";
 import { ArrowRight, Coins, Package } from "lucide-react";
-import type { ImgHTMLAttributes } from "react";
-import { ResponsivePicture } from "../ResponsivePicture";
+import { resolveAdminImageForPreview } from "shared";
 import type { ShopItem } from "../../query/shopQueryFns";
+import { ShopItemImage } from "./ShopItemImage";
 
 export type ShopShowcaseItemProps = {
   item: ShopItem;
@@ -17,7 +17,8 @@ function ShopShowcaseItemInner({
 }: ShopShowcaseItemProps) {
   const meta = item.meta;
   const soldOut = item.stockRemaining === 0;
-  const priorityImage = index < 2 && Boolean(item.imageUrl || item.imageMedia);
+  const imageResolved = resolveAdminImageForPreview(item.imageUrl, item.imageMedia);
+  const priorityImage = index < 2 && imageResolved != null;
   const onClick = useCallback(() => {
     onSelect(item.id);
   }, [onSelect, item.id]);
@@ -29,23 +30,13 @@ function ShopShowcaseItemInner({
       onClick={onClick}
     >
       <div className="shop-showcase-card__media">
-        {item.imageMedia ? (
-          <ResponsivePicture
-            image={item.imageMedia}
+        {imageResolved ? (
+          <ShopItemImage
+            resolved={imageResolved}
             alt=""
             sizes="(max-width: 640px) 50vw, 240px"
             hero={priorityImage}
             layout="fill"
-          />
-        ) : item.imageUrl ? (
-          <img
-            src={item.imageUrl}
-            alt=""
-            loading={priorityImage ? "eager" : "lazy"}
-            decoding="async"
-            {...(priorityImage
-              ? ({ fetchPriority: "high" } as ImgHTMLAttributes<HTMLImageElement>)
-              : {})}
           />
         ) : (
           <Package size={38} strokeWidth={1.5} />

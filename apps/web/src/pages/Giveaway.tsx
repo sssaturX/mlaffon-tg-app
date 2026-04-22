@@ -10,12 +10,12 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import WebApp from "@twa-dev/sdk";
-import type { MeResponse } from "shared";
+import { resolveAdminImageForPreview, type MeResponse } from "shared";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
 import { useActivePlatform } from "../context/PlatformContext";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { ResponsivePicture } from "../components/ResponsivePicture";
+import { ResolvedMediaImage } from "../components/ResolvedMediaImage";
 import { useGiveawayDetail } from "../hooks/queries/useGiveaways";
 import { queryKeys } from "../query/queryKeys";
 
@@ -188,6 +188,8 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
         ? me.coinsTwitch
         : me.coinsKick;
 
+  const heroImageResolved = resolveAdminImageForPreview(g.imageUrl, g.imageMedia);
+
   return (
     <div className="giveaway-detail">
       {isFetching && !isPending ? (
@@ -197,26 +199,27 @@ export default function GiveawayPage({ me }: { me: MeResponse | null }) {
         <Link to="/" className="giveaway-detail__back" aria-label="Назад">
           <ChevronLeft size={22} />
         </Link>
-        {g.imageMedia ? (
+        {!heroImageResolved ? (
+          <div className="giveaway-detail__banner giveaway-detail__banner--ph" />
+        ) : heroImageResolved.mode === "responsive" ? (
           <div className="giveaway-detail__banner-wrap">
-            <ResponsivePicture
-              image={g.imageMedia}
+            <ResolvedMediaImage
+              resolved={heroImageResolved}
               alt=""
               sizes="100vw"
               hero
               layout="fill"
             />
           </div>
-        ) : g.imageUrl ? (
-          <img
-            src={g.imageUrl}
-            alt=""
-            className="giveaway-detail__banner"
-            loading="lazy"
-            decoding="async"
-          />
         ) : (
-          <div className="giveaway-detail__banner giveaway-detail__banner--ph" />
+          <ResolvedMediaImage
+            resolved={heroImageResolved}
+            alt=""
+            sizes="100vw"
+            hero
+            layout="intrinsic"
+            directImgClassName="giveaway-detail__banner"
+          />
         )}
         <h1 className="giveaway-detail__title">{g.title}</h1>
       </div>

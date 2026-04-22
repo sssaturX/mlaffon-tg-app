@@ -3,8 +3,9 @@ import { Coins, Package, ShoppingBag, X } from "lucide-react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api, formatApiError, getToken } from "../api";
 import { TextWithTelegramMentions } from "../components/TextWithTelegramMentions";
-import { ResponsivePicture } from "../components/ResponsivePicture";
 import { ShopShowcaseItem } from "../components/shop/ShopShowcaseItem";
+import { ShopItemImage } from "../components/shop/ShopItemImage";
+import { resolveAdminImageForPreview } from "shared";
 import { queryKeys } from "../query/queryKeys";
 import {
   fetchShopPage,
@@ -75,12 +76,20 @@ export default function Shop() {
   }, [activePlatform]);
 
   useEffect(() => {
-    const url = items[0]?.imageUrl;
-    if (!url) return;
+    const first = items[0];
+    if (!first) return;
+    const resolved = resolveAdminImageForPreview(first.imageUrl, first.imageMedia);
+    const href =
+      resolved?.mode === "responsive"
+        ? resolved.media.fallbackSrc
+        : resolved?.mode === "direct"
+          ? resolved.src
+          : null;
+    if (!href) return;
     const link = document.createElement("link");
     link.rel = "preload";
     link.as = "image";
-    link.href = url;
+    link.href = href;
     link.setAttribute("fetchpriority", "high");
     document.head.appendChild(link);
     return () => {
@@ -92,6 +101,9 @@ export default function Shop() {
     () => items.find((row) => row.id === selectedId) ?? null,
     [items, selectedId]
   );
+  const selectedImageResolved = selected
+    ? resolveAdminImageForPreview(selected.imageUrl, selected.imageMedia)
+    : null;
 
   const me = getMeFromCache();
   const platformCoins =
@@ -196,16 +208,19 @@ export default function Shop() {
             </div>
 
             <div className="shop-popup__item">
-              {selected.imageMedia ? (
-                <ResponsivePicture
-                  image={selected.imageMedia}
+              {selectedImageResolved ? (
+                <ShopItemImage
+                  resolved={selectedImageResolved}
                   alt=""
                   sizes="72px"
                   layout="fill"
-                  className="shop-popup__img--picture"
+                  className={
+                    selectedImageResolved.mode === "responsive"
+                      ? "shop-popup__img--picture"
+                      : undefined
+                  }
+                  directImgClassName="shop-popup__img"
                 />
-              ) : selected.imageUrl ? (
-                <img src={selected.imageUrl} alt="" className="shop-popup__img" />
               ) : (
                 <div className="shop-popup__img shop-popup__img--ph">
                   <Package size={26} strokeWidth={1.5} />
