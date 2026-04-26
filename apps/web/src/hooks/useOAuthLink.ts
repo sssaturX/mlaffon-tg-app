@@ -1,4 +1,4 @@
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";
 import { appEventBus } from "../events/appEventBus";

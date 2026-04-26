@@ -1,5 +1,5 @@
 import { ChevronLeft, Gift, Trophy, Zap } from "lucide-react";
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 import type { MeResponse } from "shared";
 import { setToken } from "../api";
 import { useOAuthLink } from "../hooks/useOAuthLink";

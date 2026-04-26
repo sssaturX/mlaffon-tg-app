@@ -1,4 +1,4 @@
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 
 /** `start_param` из строки initData (startapp=… / привязка link_*). */
 export function getStartParamFromInitData(initData: string): string | null {

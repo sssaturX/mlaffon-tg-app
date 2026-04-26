@@ -1,4 +1,4 @@
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 
 function splitTelegramMentions(text: string): { t: "text" | "mention"; v: string }[] {
   const re = /@([a-zA-Z][a-zA-Z0-9_]{3,32})/g;

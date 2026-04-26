@@ -3,7 +3,7 @@ import { ChevronDown, Flame, Gift, HelpCircle, Trophy } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHomeContent, useHomeGiveaways } from "../hooks/queries/useHomeQueries";
 import { flushSync } from "react-dom";
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 import { Link } from "react-router-dom";
 import type { MeResponse, MediaImageUploadResponse } from "shared";
 import { api, formatApiError, getToken } from "../api";
