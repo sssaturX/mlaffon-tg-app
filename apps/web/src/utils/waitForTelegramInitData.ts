@@ -34,6 +34,8 @@ export function waitForTelegramInitData(
 ): Promise<string | null> {
   const initial = WebApp.initData?.trim() ?? "";
   if (initial.length > 0) return Promise.resolve(initial);
+  /** На сервере нет ни DOM, ни таймеров Telegram WebView — мгновенно отдаём `null`. */
+  if (typeof window === "undefined") return Promise.resolve(null);
 
   return new Promise((resolve) => {
     const start = Date.now();

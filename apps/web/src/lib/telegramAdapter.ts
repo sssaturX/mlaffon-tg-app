@@ -30,12 +30,31 @@ type TelegramGlobal = {
   WebApp?: TelegramWebAppType;
 };
 
+/** Любая глобальная сущность браузера может отсутствовать (SSR/prerender). */
+const hasWindow = (): boolean => typeof window !== "undefined";
+const hasDocument = (): boolean => typeof document !== "undefined";
+const hasNavigator = (): boolean => typeof navigator !== "undefined";
+
 /** Безопасный no-op haptic, если SDK ещё не загружен или вне Telegram. */
 const fallbackHaptic = {
   impactOccurred: () => fallbackHaptic,
   notificationOccurred: () => fallbackHaptic,
   selectionChanged: () => fallbackHaptic,
 };
+
+/**
+ * Универсальное «открыть ссылку в обычной вкладке».
+ * SSR-safe: если `window` нет, ничего не делаем.
+ */
+function webOpen(url: string): void {
+  try {
+    if (hasWindow() && typeof window.open === "function") {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 /**
  * Минимальный фолбэк WebApp для обычного веба.
@@ -48,16 +67,6 @@ const fallbackHaptic = {
  * Все методы — no-op, ссылки открываются обычным `window.open`.
  */
 function createFallbackWebApp(): TelegramWebAppType {
-  const open = (url: string) => {
-    try {
-      if (typeof window !== "undefined" && typeof window.open === "function") {
-        window.open(url, "_blank", "noopener,noreferrer");
-      }
-    } catch {
-      /* ignore */
-    }
-  };
-
   /**
    * Точные типы из `@twa-dev/types` довольно строгие — нам нужен лишь рабочий no-op.
    * Поэтому собираем объект с нужными методами и приводим к целевому типу.
@@ -71,10 +80,8 @@ function createFallbackWebApp(): TelegramWebAppType {
     themeParams: {},
     isExpanded: true,
     isFullscreen: false,
-    viewportHeight:
-      typeof window !== "undefined" ? window.innerHeight : 0,
-    viewportStableHeight:
-      typeof window !== "undefined" ? window.innerHeight : 0,
+    viewportHeight: hasWindow() ? window.innerHeight : 0,
+    viewportStableHeight: hasWindow() ? window.innerHeight : 0,
     headerColor: "#ffffff",
     backgroundColor: "#ffffff",
     isClosingConfirmationEnabled: false,
@@ -113,13 +120,15 @@ function createFallbackWebApp(): TelegramWebAppType {
     offEvent: () => {},
     sendData: () => {},
     switchInlineQuery: () => {},
-    openLink: (url: string) => open(url),
-    openTelegramLink: (url: string) => open(url),
+    openLink: (url: string) => webOpen(url),
+    openTelegramLink: (url: string) => webOpen(url),
     openInvoice: () => {},
     showPopup: () => {},
     showAlert: (message: string, cb?: () => void) => {
       try {
-        if (typeof window !== "undefined") window.alert(message);
+        if (hasWindow() && typeof window.alert === "function") {
+          window.alert(message);
+        }
       } catch {
         /* ignore */
       }
@@ -165,7 +174,7 @@ function getFallback(): TelegramWebAppType {
 /** Реальный `window.Telegram.WebApp`, если он уже подгружен. */
 function readNativeWebApp(): TelegramWebAppType | null {
   try {
-    if (typeof window === "undefined") return null;
+    if (!hasWindow()) return null;
     const tg = (window as unknown as { Telegram?: TelegramGlobal }).Telegram;
     return tg?.WebApp ?? null;
   } catch {
@@ -184,27 +193,26 @@ function readNativeWebApp(): TelegramWebAppType | null {
  *   - уже существующий `window.Telegram.WebApp`
  */
 export function isTelegramEnv(): boolean {
-  if (typeof window === "undefined") return false;
+  if (!hasWindow()) return false;
   try {
     if (readNativeWebApp() != null) return true;
   } catch {
     /* ignore */
   }
   try {
-    const search = window.location?.search ?? "";
+    const search = hasWindow() ? window.location?.search ?? "" : "";
     if (search.includes("tgWebAppData")) return true;
   } catch {
     /* ignore */
   }
   try {
-    const hash = window.location?.hash ?? "";
+    const hash = hasWindow() ? window.location?.hash ?? "" : "";
     if (hash.includes("tgWebAppData")) return true;
   } catch {
     /* ignore */
   }
   try {
-    const ua =
-      typeof navigator !== "undefined" ? navigator.userAgent ?? "" : "";
+    const ua = hasNavigator() ? navigator.userAgent ?? "" : "";
     if (/Telegram/i.test(ua)) return true;
   } catch {
     /* ignore */
@@ -220,11 +228,30 @@ export function isTelegramEnv(): boolean {
 let sdkPromise: Promise<TelegramWebAppType | null> | null = null;
 
 /**
+ * Лёгкий диагностический хук на таймаут SDK.
+ *
+ * Если в проекте появится Sentry/иной мониторинг — здесь надо будет вызвать
+ * `Sentry.captureMessage('telegram_sdk_timeout', 'warning')`. Пока такого нет
+ * в репозитории, ограничиваемся `console.warn` и не тянем новых зависимостей.
+ */
+function reportTelegramSdkTimeout(): void {
+  try {
+    if (typeof console !== "undefined" && typeof console.warn === "function") {
+      console.warn("Telegram SDK timeout, using web fallback");
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
  * Динамически грузит официальный telegram-web-app.js, только если мы в Telegram-окружении.
  *
  * - В обычном браузере — мгновенно резолвится в фолбэк, без сетевого запроса.
  * - В TMA — добавляет `<script async>` в `<head>`, ждёт `onload`/`onerror` или таймаут.
- * - При таймауте удаляет тег скрипта и возвращает фолбэк, чтобы старт приложения не висел.
+ * - При таймауте — НЕ удаляет тег скрипта: если SDK подгрузится позже, `window.Telegram.WebApp`
+ *   всё равно окажется доступен, и Proxy-`TelegramWebApp` начнёт его использовать.
+ * - При сетевой ошибке (`onerror`) тег удаляется — повторное появление SDK невозможно.
  * - Повторные вызовы переиспользуют тот же Promise (не грузим скрипт дважды).
  */
 export function loadTelegramSdk(
@@ -232,7 +259,7 @@ export function loadTelegramSdk(
 ): Promise<TelegramWebAppType | null> {
   if (sdkPromise) return sdkPromise;
 
-  if (typeof window === "undefined" || typeof document === "undefined") {
+  if (!hasWindow() || !hasDocument()) {
     sdkPromise = Promise.resolve(null);
     return sdkPromise;
   }
@@ -253,7 +280,11 @@ export function loadTelegramSdk(
     const settle = (value: TelegramWebAppType | null) => {
       if (settled) return;
       settled = true;
-      window.clearTimeout(timeoutId);
+      try {
+        if (hasWindow()) window.clearTimeout(timeoutId);
+      } catch {
+        /* ignore */
+      }
       resolve(value);
     };
 
@@ -269,6 +300,10 @@ export function loadTelegramSdk(
       const wa = readNativeWebApp();
       settle(wa);
     };
+    /**
+     * Сетевая ошибка: дальше SDK уже не появится — снимаем тег, чтобы он не «висел»,
+     * и резолвимся в фолбэк.
+     */
     const onError = () => {
       try {
         script.parentNode?.removeChild(script);
@@ -281,12 +316,14 @@ export function loadTelegramSdk(
     script.addEventListener("load", onLoad, { once: true });
     script.addEventListener("error", onError, { once: true });
 
+    /**
+     * Таймаут только разблокирует старт приложения. Тег скрипта остаётся в DOM:
+     * если ответ всё-таки придёт через несколько секунд (медленные сети), браузер
+     * выполнит SDK, выставит `window.Telegram.WebApp`, и Proxy-`TelegramWebApp`
+     * автоматически начнёт делегировать вызовы реальному API.
+     */
     const timeoutId = window.setTimeout(() => {
-      try {
-        script.parentNode?.removeChild(script);
-      } catch {
-        /* ignore */
-      }
+      reportTelegramSdkTimeout();
       settle(null);
     }, Math.max(0, timeoutMs));
 
@@ -308,6 +345,48 @@ export function loadTelegramSdk(
  */
 export function getTelegramWebApp(): TelegramWebAppType {
   return readNativeWebApp() ?? getFallback();
+}
+
+/**
+ * Унифицированный «открой ссылку».
+ *
+ * - Если есть реальный `window.Telegram.WebApp.openLink`/`openTelegramLink` — используем его
+ *   (для t.me-ссылок предпочитаем `openTelegramLink`).
+ * - Иначе — обычный `window.open(url, "_blank", "noopener,noreferrer")`.
+ *
+ * SSR-safe: если `window` нет, ничего не делает.
+ */
+export function openLink(
+  url: string,
+  options?: { tryInstantView?: boolean }
+): void {
+  if (!url) return;
+  const native = readNativeWebApp();
+  if (native) {
+    try {
+      const isTelegramHttpLink = /^https?:\/\/(t\.me|telegram\.me|telegram\.dog)\//i.test(url);
+      const wa = native as unknown as {
+        openTelegramLink?: (u: string) => void;
+        openLink?: (u: string, opts?: { try_instant_view?: boolean }) => void;
+      };
+      if (isTelegramHttpLink && typeof wa.openTelegramLink === "function") {
+        wa.openTelegramLink(url);
+        return;
+      }
+      if (typeof wa.openLink === "function") {
+        wa.openLink(
+          url,
+          options?.tryInstantView != null
+            ? { try_instant_view: options.tryInstantView }
+            : undefined
+        );
+        return;
+      }
+    } catch {
+      /* ignore — упадём в web-фолбэк ниже */
+    }
+  }
+  webOpen(url);
 }
 
 /**
