@@ -1,4 +1,4 @@
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 import type { ToastExtraOptions, ToastVariant } from "../context/ToastContext";
 
 const STREAK_TOAST: ToastExtraOptions = {

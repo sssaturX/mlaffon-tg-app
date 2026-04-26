@@ -9,7 +9,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 import {
   resolveAdminImageForPreview,
   type HomeGiveawaysResponse,

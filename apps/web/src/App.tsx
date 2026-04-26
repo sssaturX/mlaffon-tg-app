@@ -18,7 +18,7 @@ import {
   useLocation,
   useSearchParams,
 } from "react-router-dom";
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp, loadTelegramSdk } from "./lib/telegramAdapter";
 import type { MeResponse } from "shared";
 import {
   Home,
@@ -113,21 +113,32 @@ export default function App() {
   const syncMeFromNetwork = useSyncMeFromNetwork();
 
   useEffect(() => {
-    WebApp.ready();
-    WebApp.expand();
-    try {
-      const wa = WebApp as {
-        isFullscreen?: boolean;
-        exitFullscreen?: () => void;
-        disableVerticalSwipes?: () => void;
-      };
-      if (wa.isFullscreen === true && typeof wa.exitFullscreen === "function") {
-        wa.exitFullscreen();
+    let cancelled = false;
+    /**
+     * В обычном вебе `loadTelegramSdk()` сразу резолвится (без сети) и `WebApp.*` уходит в no-op.
+     * В Telegram Mini App дожидаемся загрузки реального SDK с таймаутом, чтобы старт не висел.
+     */
+    void loadTelegramSdk().then(() => {
+      if (cancelled) return;
+      try {
+        WebApp.ready?.();
+        WebApp.expand?.();
+        const wa = WebApp as unknown as {
+          isFullscreen?: boolean;
+          exitFullscreen?: () => void;
+          disableVerticalSwipes?: () => void;
+        };
+        if (wa.isFullscreen === true && typeof wa.exitFullscreen === "function") {
+          wa.exitFullscreen();
+        }
+        wa.disableVerticalSwipes?.();
+      } catch {
+        /* ignore */
       }
-      wa.disableVerticalSwipes?.();
-    } catch {
-      /* ignore */
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -151,6 +162,13 @@ export default function App() {
     let cancelled = false;
     (async () => {
       setError(null);
+
+      /**
+       * Сначала пытаемся подгрузить Telegram SDK (только в TMA).
+       * Вне Telegram это мгновенный no-op без сетевого запроса; в TMA — с таймаутом.
+       */
+      await loadTelegramSdk();
+      if (cancelled) return;
 
       /** Дать WebView один кадр после WebApp.ready() — initData иногда появляется не синхронно. */
       await new Promise<void>((resolve) => {

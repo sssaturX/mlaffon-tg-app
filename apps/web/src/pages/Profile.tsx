@@ -10,7 +10,7 @@ import {
   Users,
 } from "lucide-react";
 import type { MeResponse } from "shared";
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 import {
   api,
   attachWebCredentials,

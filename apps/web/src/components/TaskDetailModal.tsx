@@ -1,7 +1,7 @@
 import { Coins, ImagePlus, Info, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 import type { Platform, TaskDto } from "shared";
 import { HelpSheetModal } from "./HelpSheetModal";
 import { ResponsivePicture } from "./ResponsivePicture";

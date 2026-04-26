@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 import { Sparkles, Ban } from "lucide-react";
 import { api, formatApiError } from "../api";
 import { useToast } from "../context/ToastContext";

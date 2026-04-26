@@ -1,4 +1,4 @@
-import WebApp from "@twa-dev/sdk";
+import { TelegramWebApp as WebApp } from "../lib/telegramAdapter";
 import { memo } from "react";
 
 const creatorName =
