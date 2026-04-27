@@ -25,10 +25,26 @@ import type { WebApp as TelegramWebAppType } from "@twa-dev/types";
 const SCRIPT_ID = "telegram-web-app-sdk";
 const SDK_URL = "https://telegram.org/js/telegram-web-app.js";
 const DEFAULT_TIMEOUT_MS = 600;
+const IS_DEV = import.meta.env.DEV;
 
 type TelegramGlobal = {
   WebApp?: TelegramWebAppType;
 };
+
+type SdkLoadResult = "loaded" | "timeout" | "skipped";
+
+function devDebug(message: string, details?: Record<string, unknown>): void {
+  if (!IS_DEV) return;
+  try {
+    if (details) {
+      console.debug(`[telegram-adapter] ${message}`, details);
+      return;
+    }
+    console.debug(`[telegram-adapter] ${message}`);
+  } catch {
+    /* ignore */
+  }
+}
 
 /** Любая глобальная сущность браузера может отсутствовать (SSR/prerender). */
 const hasWindow = (): boolean => typeof window !== "undefined";
@@ -236,8 +252,8 @@ let sdkPromise: Promise<TelegramWebAppType | null> | null = null;
  */
 function reportTelegramSdkTimeout(): void {
   try {
-    if (typeof console !== "undefined" && typeof console.warn === "function") {
-      console.warn("Telegram SDK timeout, using web fallback");
+    if (IS_DEV && typeof console !== "undefined" && typeof console.warn === "function") {
+      console.warn("[telegram-adapter] Telegram SDK timeout, using web fallback");
     }
   } catch {
     /* ignore */
@@ -257,26 +273,38 @@ function reportTelegramSdkTimeout(): void {
 export function loadTelegramSdk(
   timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<TelegramWebAppType | null> {
-  if (sdkPromise) return sdkPromise;
+  if (sdkPromise) {
+    devDebug("loadTelegramSdk reused existing promise");
+    return sdkPromise;
+  }
 
   if (!hasWindow() || !hasDocument()) {
+    devDebug("loadTelegramSdk skipped", { reason: "no_window_or_document" });
     sdkPromise = Promise.resolve(null);
     return sdkPromise;
   }
 
   const existing = readNativeWebApp();
   if (existing) {
+    devDebug("loadTelegramSdk loaded", { source: "existing_window_telegram" });
     sdkPromise = Promise.resolve(existing);
     return sdkPromise;
   }
 
   if (!isTelegramEnv()) {
+    const wa = readNativeWebApp();
+    devDebug("startup mode: browser fallback", {
+      sdkLoadResult: "skipped",
+      hasInitData: Boolean(wa?.initData?.trim()),
+    });
     sdkPromise = Promise.resolve(null);
     return sdkPromise;
   }
 
+  devDebug("startup mode: Telegram SDK", { sdkLoadResult: "loading" });
   sdkPromise = new Promise<TelegramWebAppType | null>((resolve) => {
     let settled = false;
+    let loadResult: SdkLoadResult = "skipped";
     const settle = (value: TelegramWebAppType | null) => {
       if (settled) return;
       settled = true;
@@ -285,6 +313,7 @@ export function loadTelegramSdk(
       } catch {
         /* ignore */
       }
+      devDebug("loadTelegramSdk result", { result: loadResult });
       resolve(value);
     };
 
@@ -298,6 +327,10 @@ export function loadTelegramSdk(
 
     const onLoad = () => {
       const wa = readNativeWebApp();
+      loadResult = wa ? "loaded" : "skipped";
+      devDebug("initData presence after SDK load", {
+        hasInitData: Boolean(wa?.initData?.trim()),
+      });
       settle(wa);
     };
     /**
@@ -305,6 +338,7 @@ export function loadTelegramSdk(
      * и резолвимся в фолбэк.
      */
     const onError = () => {
+      loadResult = "skipped";
       try {
         script.parentNode?.removeChild(script);
       } catch {
@@ -324,6 +358,11 @@ export function loadTelegramSdk(
      */
     const timeoutId = window.setTimeout(() => {
       reportTelegramSdkTimeout();
+      loadResult = "timeout";
+      const wa = readNativeWebApp();
+      devDebug("initData presence after SDK timeout", {
+        hasInitData: Boolean(wa?.initData?.trim()),
+      });
       settle(null);
     }, Math.max(0, timeoutMs));
 

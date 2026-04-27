@@ -61,7 +61,7 @@ mlaffon.fun {
 
 	# CSP: Telegram Mini App requires frame-ancestors for web.telegram.org
 	header {
-		Content-Security-Policy "default-src 'self'; frame-ancestors 'self' https://web.telegram.org https://telegram.org; connect-src 'self' https://mlaffon.fun wss://mlaffon.fun; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; base-uri 'self'; form-action 'self'"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self' https://web.telegram.org https://telegram.org; object-src 'none'; connect-src 'self' https://mlaffon.fun wss://mlaffon.fun; img-src 'self' data: https:; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com"
 	}
 
 	# Hashed static assets: long-lived immutable cache
@@ -75,6 +75,26 @@ mlaffon.fun {
 	# Service worker must not be cached long-term
 	handle /sw.js {
 		header Cache-Control "public, max-age=0, must-revalidate"
+		root * /opt/mlaffon/current/apps/web/dist
+		file_server
+	}
+
+	# SEO/system files should never fall back to index.html
+	handle /robots.txt {
+		header Cache-Control "public, max-age=300, must-revalidate"
+		root * /opt/mlaffon/current/apps/web/dist
+		file_server
+	}
+
+	handle /sitemap.xml {
+		header Cache-Control "public, max-age=300, must-revalidate"
+		root * /opt/mlaffon/current/apps/web/dist
+		file_server
+	}
+
+	# Ensure browsers don't receive index.html for favicon.ico requests
+	handle /favicon.ico {
+		header Cache-Control "public, max-age=3600, must-revalidate"
 		root * /opt/mlaffon/current/apps/web/dist
 		file_server
 	}
