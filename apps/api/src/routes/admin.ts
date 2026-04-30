@@ -287,6 +287,9 @@ export async function registerAdminRoutes(app: FastifyInstance) {
           createdAt: users.createdAt,
           banned: users.banned,
           banReason: users.banReason,
+          multiAccountSuspected: users.multiAccountSuspected,
+          multiAccountSuspectedAt: users.multiAccountSuspectedAt,
+          multiAccountSharedUsers: users.multiAccountSharedUsers,
           coins: sql<number>`coalesce(${userBalances.coins}, 0)`,
           twitchCoins: sql<number>`coalesce(${userBalances.twitchCoins}, 0)`,
           kickCoins: sql<number>`coalesce(${userBalances.kickCoins}, 0)`,
@@ -395,6 +398,11 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         referralCount: refMap.get(u.id) ?? 0,
         banned: u.banned,
         banReason: u.banReason,
+        multiAccountSuspected: u.multiAccountSuspected,
+        multiAccountSuspectedAt: u.multiAccountSuspectedAt
+          ? u.multiAccountSuspectedAt.toISOString()
+          : null,
+        multiAccountSharedUsers: u.multiAccountSharedUsers,
         streakTwitch: u.streakTwitch,
         streakKick: u.streakKick,
         dropsActivatedCount: dropCountMap.get(u.id) ?? 0,
@@ -410,6 +418,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
   const patchUserBody = z.object({
     banned: z.boolean().optional(),
     banReason: z.string().max(500).nullable().optional(),
+    multiAccountSuspected: z.boolean().optional(),
   });
 
   app.patch("/api/admin/users/:id", async (req, reply) => {
@@ -426,6 +435,11 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     const patch: Record<string, unknown> = {};
     if (p.banned !== undefined) patch.banned = p.banned;
     if (p.banReason !== undefined) patch.banReason = p.banReason;
+    if (p.multiAccountSuspected !== undefined) {
+      patch.multiAccountSuspected = p.multiAccountSuspected;
+      patch.multiAccountSuspectedAt = p.multiAccountSuspected ? sql`now()` : null;
+      patch.multiAccountSharedUsers = p.multiAccountSuspected ? null : null;
+    }
     if (Object.keys(patch).length === 0) {
       return reply.status(400).send({
         error: { code: "bad_request", message: "Нет полей для обновления" },
@@ -444,7 +458,15 @@ export async function registerAdminRoutes(app: FastifyInstance) {
         error: { code: "not_found", message: "Пользователь не найден" },
       });
     }
-    audit(admin, req, p.banned ? "ban_user" : "update_user", "user", id, parsed.data);
+    const action =
+      p.multiAccountSuspected === false
+        ? "clear_multi_account_suspected"
+        : p.multiAccountSuspected === true
+          ? "mark_multi_account_suspected"
+          : p.banned
+            ? "ban_user"
+            : "update_user";
+    audit(admin, req, action, "user", id, parsed.data);
     return { ok: true };
   });
 

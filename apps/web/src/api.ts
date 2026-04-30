@@ -1,6 +1,7 @@
 import { formatApiErrorForUser } from "./utils/userFacingMessages.js";
 
 const TOKEN_KEY = "mlaffon_token";
+const DEVICE_ID_KEY = "mlaffon_device_id";
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -9,6 +10,21 @@ export function getToken(): string | null {
 export function setToken(t: string | null) {
   if (t) localStorage.setItem(TOKEN_KEY, t);
   else localStorage.removeItem(TOKEN_KEY);
+}
+
+function getOrCreateDeviceId(): string | null {
+  try {
+    const existing = localStorage.getItem(DEVICE_ID_KEY);
+    if (existing && existing.length >= 12) return existing;
+    const next =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(DEVICE_ID_KEY, next);
+    return next;
+  } catch {
+    return null;
+  }
 }
 
 export type ApiOk<T> = { ok: true; data: T };
@@ -48,6 +64,8 @@ export async function api<T>(
     ...(restInit.headers ?? {}),
   };
   if (token) (headers as Record<string, string>).Authorization = `Bearer ${token}`;
+  const deviceId = getOrCreateDeviceId();
+  if (deviceId) (headers as Record<string, string>)["x-device-id"] = deviceId;
   if (restInit.body && !(headers as Record<string, string>)["Content-Type"]) {
     (headers as Record<string, string>)["Content-Type"] = "application/json";
   }

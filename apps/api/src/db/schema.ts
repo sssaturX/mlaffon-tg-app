@@ -38,6 +38,10 @@ export const users = pgTable(
     /** Блокировка доступа к API мини-приложения */
     banned: boolean("banned").notNull().default(false),
     banReason: text("ban_reason"),
+    /** Админская пометка: пользователь пойман антифродом как возможный мультиаккаунт */
+    multiAccountSuspected: boolean("multi_account_suspected").notNull().default(false),
+    multiAccountSuspectedAt: timestamp("multi_account_suspected_at", { withTimezone: true }),
+    multiAccountSharedUsers: integer("multi_account_shared_users"),
   },
   (t) => [
     index("users_referred_by_idx").on(t.referredById),

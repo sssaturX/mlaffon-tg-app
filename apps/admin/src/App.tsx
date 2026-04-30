@@ -109,6 +109,9 @@ type AdminUserRow = {
   referralCount: number;
   banned?: boolean;
   banReason?: string | null;
+  multiAccountSuspected?: boolean;
+  multiAccountSuspectedAt?: string | null;
+  multiAccountSharedUsers?: number | null;
   streakTwitch?: number;
   streakKick?: number;
   dropsActivatedCount?: number;
@@ -2275,6 +2278,7 @@ export function App() {
                       <th>Рефералов</th>
                       <th>Регистрация</th>
                       <th>Управление</th>
+                      <th>Антифрод</th>
                       <th>Бан</th>
                     </tr>
                   </thead>
@@ -2289,6 +2293,9 @@ export function App() {
                           </strong>
                           {u.banned === true ? (
                             <span className="admin-user-banned"> заблокирован</span>
+                          ) : null}
+                          {u.multiAccountSuspected === true ? (
+                            <span className="admin-user-suspicious">мультиаккаунт?</span>
                           ) : null}
                         </td>
                         <td className="mono">{u.telegramId}</td>
@@ -2334,6 +2341,53 @@ export function App() {
                           >
                             Открыть
                           </button>
+                        </td>
+                        <td>
+                          {u.multiAccountSuspected === true ? (
+                            <div className="admin-user-risk">
+                              <span>
+                                Подозрение
+                                {typeof u.multiAccountSharedUsers === "number"
+                                  ? ` (${u.multiAccountSharedUsers})`
+                                  : ""}
+                              </span>
+                              <button
+                                type="button"
+                                className="secondary"
+                                disabled={loading}
+                                onClick={async () => {
+                                  if (!token) return;
+                                  if (!window.confirm("Снять пометку подозрения на мультиаккаунт?")) return;
+                                  setLoading(true);
+                                  setErr(null);
+                                  try {
+                                    const r = await fetch(
+                                      `${apiBase()}/api/admin/users/${encodeURIComponent(u.id)}`,
+                                      {
+                                        method: "PATCH",
+                                        headers: authHeaders(true),
+                                        body: JSON.stringify({ multiAccountSuspected: false }),
+                                      }
+                                    );
+                                    const j = (await r.json()) as { error?: { message?: string } };
+                                    if (!r.ok) {
+                                      setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                      return;
+                                    }
+                                    await loadAdminUsers(usersOffset);
+                                  } catch {
+                                    setErr("Сеть недоступна");
+                                  } finally {
+                                    setLoading(false);
+                                  }
+                                }}
+                              >
+                                Снять
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
                         </td>
                         <td>
                           {u.banned === true ? (
