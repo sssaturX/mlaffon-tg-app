@@ -99,7 +99,6 @@ export function ScreenHeader({
 export function routeTitle(pathname: string): string {
   if (pathname === "/") return "Главная";
   if (pathname.startsWith("/tasks")) return "Задания";
-  if (pathname.startsWith("/games")) return "Игры";
   if (pathname.startsWith("/shop")) return "Магазин";
   if (pathname.startsWith("/profile")) return "Профиль";
   if (pathname === "/stream") return "Стрим";

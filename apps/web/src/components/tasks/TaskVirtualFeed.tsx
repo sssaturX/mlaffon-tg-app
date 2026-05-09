@@ -14,6 +14,7 @@ const EST_TASK = 188;
 export const TASK_FEED_VIRTUAL_THRESHOLD = 12;
 
 function sectionHeading(section: string, activePlatform: Platform): string {
+  if (section === "live_stream_tasks") return "ВО ВРЕМЯ СТРИМА";
   if (section === "black_russia") return "BLACK RUSSIA";
   if (section === "stream_tasks")
     return activePlatform === "kick" ? "KICK" : "TWITCH";
@@ -23,7 +24,7 @@ function sectionHeading(section: string, activePlatform: Platform): string {
 }
 
 function sectionHeadingClass(section: string, activePlatform: Platform): string {
-  if (section !== "stream_tasks") return "";
+  if (section !== "stream_tasks" && section !== "live_stream_tasks") return "";
   return activePlatform === "kick"
     ? "task-stream__heading--kick"
     : "task-stream__heading--twitch";

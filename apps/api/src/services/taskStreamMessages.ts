@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { liveBroadcastViews, taskStreamMessages } from "../db/schema.js";
 import { getActiveLiveBroadcast } from "./liveBroadcast.js";
+import { invalidateUserTaskDtoCache } from "./taskUserListCache.js";
 
 function utcMinuteKey(d: Date): string {
   const y = d.getUTCFullYear();
@@ -52,6 +53,7 @@ export async function registerStreamTaskMessage(input: {
     .onConflictDoNothing()
     .returning({ id: taskStreamMessages.id });
   if (inserted.length === 0) return { ok: false, code: "too_frequent" };
+  invalidateUserTaskDtoCache(input.userId);
 
   const [total] = await db
     .select({ c: sql<number>`count(*)::int` })
@@ -64,4 +66,3 @@ export async function registerStreamTaskMessage(input: {
     );
   return { ok: true, accepted: true, totalForPlatform: total?.c ?? 0 };
 }
-

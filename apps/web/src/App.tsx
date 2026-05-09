@@ -23,7 +23,6 @@ import type { MeResponse } from "shared";
 import {
   Home,
   ListTodo,
-  Gamepad2,
   ShoppingBag,
   User,
 } from "lucide-react";
@@ -82,7 +81,6 @@ import { WebLogin } from "./pages/WebLogin";
 
 const HomePage = lazy(() => import("./pages/Home"));
 const Tasks = lazy(() => import("./pages/Tasks"));
-const Games = lazy(() => import("./pages/Games"));
 const Shop = lazy(() => import("./pages/Shop"));
 // Лидерборд скрыт: при возврате — lazy("./pages/Leaderboard"), Route + NavLink «Топ», см. GET /api/v1/leaderboard.
 const Profile = lazy(() => import("./pages/Profile"));
@@ -724,10 +722,7 @@ function AppShell({
                 element={<GiveawayPage me={me} />}
               />
               <Route path="/tasks" element={<Tasks />} />
-              <Route
-                path="/games"
-                element={<Games />}
-              />
+              <Route path="/games" element={<Navigate to="/tasks" replace />} />
               <Route
                 path="/shop"
                 element={<Shop />}
@@ -772,14 +767,6 @@ function AppShell({
             >
               <ListTodo className="nav__icon" aria-hidden />
               <span>Задания</span>
-            </NavLink>
-            <NavLink
-              className={({ isActive }) => (isActive ? "active" : "")}
-              to="/games"
-              {...navPrefetchHandlers("/games")}
-            >
-              <Gamepad2 className="nav__icon" aria-hidden />
-              <span>Игры</span>
             </NavLink>
             <NavLink
               className={({ isActive }) => (isActive ? "active" : "")}

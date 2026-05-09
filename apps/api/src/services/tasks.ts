@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   platformAccounts,
@@ -8,6 +8,7 @@ import {
   tasks,
   transactions,
   userBalances,
+  liveBroadcastViews,
   userStreamStreaks,
   userTasks,
 } from "../db/schema.js";
@@ -42,8 +43,13 @@ import {
   tasksListCacheOutcome,
   tasksListPhaseSeconds,
 } from "../lib/metrics.js";
+import { getActiveLiveBroadcast } from "./liveBroadcast.js";
 
-function periodKeyForTask(task: { type: string }): string {
+function periodKeyForTask(task: { type: string; meta?: unknown }, liveBroadcastId?: string | null): string {
+  const meta = toTaskMeta(task.meta);
+  if (meta.periodKeySource === "live_broadcast") {
+    return liveBroadcastId ? `live:${liveBroadcastId}` : "live:none";
+  }
   if (task.type === "daily") return utcDateString();
   return "once";
 }
@@ -56,6 +62,8 @@ type ProgressSnapshot = {
   linkedKick: boolean;
   twitchMessages: number;
   kickMessages: number;
+  twitchLiveWatched: boolean;
+  kickLiveWatched: boolean;
 };
 
 function toTaskMeta(taskMeta: unknown): Record<string, unknown> {
@@ -163,6 +171,12 @@ function readProgress(
   } else if (source === "stream_messages_kick") {
     current = snapshot.kickMessages;
     label = "Сообщения";
+  } else if (source === "live_watch_twitch") {
+    current = snapshot.twitchLiveWatched ? 1 : 0;
+    label = "Посещение стрима";
+  } else if (source === "live_watch_kick") {
+    current = snapshot.kickLiveWatched ? 1 : 0;
+    label = "Посещение стрима";
   } else {
     return null;
   }
@@ -171,8 +185,13 @@ function readProgress(
   return { current, target, label };
 }
 
-async function buildProgressSnapshot(userId: string): Promise<ProgressSnapshot> {
-  const [refRows, streakRows, linked, twRows, kickRows] = await Promise.all([
+async function buildProgressSnapshot(
+  userId: string,
+  activeLive?: { id: string; platform: string } | null
+): Promise<ProgressSnapshot> {
+  const activeLiveId = activeLive?.id ?? null;
+  const activePlatform = activeLive?.platform === "kick" ? "kick" : activeLive?.platform === "twitch" ? "twitch" : null;
+  const [refRows, streakRows, linked, twRows, kickRows, watchRows] = await Promise.all([
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(referrals)
@@ -193,20 +212,46 @@ async function buildProgressSnapshot(userId: string): Promise<ProgressSnapshot> 
       .select({ c: sql<number>`count(*)::int` })
       .from(taskStreamMessages)
       .where(
-        and(
-          eq(taskStreamMessages.userId, userId),
-          eq(taskStreamMessages.platform, "twitch")
-        )
+        activeLiveId && activePlatform === "twitch"
+          ? and(
+              eq(taskStreamMessages.userId, userId),
+              eq(taskStreamMessages.platform, "twitch"),
+              eq(taskStreamMessages.broadcastId, activeLiveId)
+            )
+          : and(
+              eq(taskStreamMessages.userId, userId),
+              eq(taskStreamMessages.platform, "twitch"),
+              sql`false`
+            )
       ),
     db
       .select({ c: sql<number>`count(*)::int` })
       .from(taskStreamMessages)
       .where(
-        and(
-          eq(taskStreamMessages.userId, userId),
-          eq(taskStreamMessages.platform, "kick")
-        )
+        activeLiveId && activePlatform === "kick"
+          ? and(
+              eq(taskStreamMessages.userId, userId),
+              eq(taskStreamMessages.platform, "kick"),
+              eq(taskStreamMessages.broadcastId, activeLiveId)
+            )
+          : and(
+              eq(taskStreamMessages.userId, userId),
+              eq(taskStreamMessages.platform, "kick"),
+              sql`false`
+            )
       ),
+    activeLiveId
+      ? db
+          .select({ id: liveBroadcastViews.id })
+          .from(liveBroadcastViews)
+          .where(
+            and(
+              eq(liveBroadcastViews.userId, userId),
+              eq(liveBroadcastViews.broadcastId, activeLiveId)
+            )
+          )
+          .limit(1)
+      : Promise.resolve([] as { id: string }[]),
   ]);
   const refRow = refRows[0];
   const streak = streakRows[0];
@@ -221,6 +266,8 @@ async function buildProgressSnapshot(userId: string): Promise<ProgressSnapshot> 
     linkedKick: linkedSet.has("kick"),
     twitchMessages: twMsg?.c ?? 0,
     kickMessages: kickMsg?.c ?? 0,
+    twitchLiveWatched: activePlatform === "twitch" && watchRows.length > 0,
+    kickLiveWatched: activePlatform === "kick" && watchRows.length > 0,
   };
 }
 
@@ -230,12 +277,13 @@ function userTaskMapKey(taskId: string, periodKey: string): string {
 
 /** Порядок секций в списке заданий (meta.uiSection). */
 const SECTION_UI_RANK: Record<string, number> = {
-  black_russia: 0,
-  stream_tasks: 1,
-  twitch: 2,
-  kick: 3,
-  telegram: 4,
-  global: 5,
+  live_stream_tasks: 0,
+  black_russia: 1,
+  stream_tasks: 2,
+  twitch: 3,
+  kick: 4,
+  telegram: 5,
+  global: 6,
 };
 
 function rewardPlatformLabel(taskPlatform: string): "twitch" | "kick" | "split" {
@@ -364,9 +412,20 @@ async function computeUserTaskDtoList(
   if (again) return again;
 
   const todayPk = utcDateString();
-  const allTaskIds = [...new Set(all.map((x) => x.id))];
+  const activeLive = await getActiveLiveBroadcast();
+  const visibleAll = all.filter((t) => {
+    const meta = toTaskMeta(t.meta);
+    if (meta.liveOnly !== true) return true;
+    if (!activeLive) return false;
+    return activeLive.platform === t.platform;
+  });
+  const allTaskIds = [...new Set(visibleAll.map((x) => x.id))];
+  const activeLivePeriodKey = activeLive ? `live:${activeLive.id}` : null;
+  const periodKeys = activeLivePeriodKey
+    ? [todayPk, "once", activeLivePeriodKey]
+    : [todayPk, "once"];
   const [progressSnapshot, userTaskRows] = await Promise.all([
-    buildProgressSnapshot(userId),
+    buildProgressSnapshot(userId, activeLive),
     allTaskIds.length === 0
       ? Promise.resolve([] as (typeof userTasks.$inferSelect)[])
       : db
@@ -376,7 +435,7 @@ async function computeUserTaskDtoList(
             and(
               eq(userTasks.userId, userId),
               inArray(userTasks.taskId, allTaskIds),
-              or(eq(userTasks.periodKey, todayPk), eq(userTasks.periodKey, "once"))
+              inArray(userTasks.periodKey, periodKeys)
             )
           ),
   ]);
@@ -391,7 +450,7 @@ async function computeUserTaskDtoList(
 
   const chainTasks = new Map<string, Array<(typeof all)[number]>>();
   const standaloneTasks: Array<(typeof all)[number]> = [];
-  for (const t of all) {
+  for (const t of visibleAll) {
     const meta = toTaskMeta(t.meta);
     const chainKey = asString(meta.chainKey);
     if (!chainKey) {
@@ -420,7 +479,7 @@ async function computeUserTaskDtoList(
     const sorted = sortChainGroup(group);
     let chosen = sorted[sorted.length - 1]!;
     for (const stage of sorted) {
-      const pk = periodKeyForTask(stage);
+      const pk = periodKeyForTask(stage, activeLive?.id ?? null);
       const ut = getUt(stage.id, pk);
       if (ut?.status !== "completed") {
         chosen = stage;
@@ -430,7 +489,7 @@ async function computeUserTaskDtoList(
     selectedTasks.push(chosen);
   }
 
-  const taskTypeById = new Map(all.map((x) => [x.id, x.type]));
+  const taskTypeById = new Map(visibleAll.map((x) => [x.id, x.type]));
   const completedOneTime = new Set<string>();
   for (const r of userTaskRows) {
     if (r.status !== "completed") continue;
@@ -439,7 +498,7 @@ async function computeUserTaskDtoList(
 
   const platformGateMemo = new Map<string, Promise<boolean>>();
   const gateFor = (t: (typeof all)[number]) => {
-    const key = `${t.platform}:${t.validationType}`;
+    const key = `${t.id}:${t.platform}:${t.validationType}`;
     let p = platformGateMemo.get(key);
     if (!p) {
       p = canCompletePlatformTask(userId, {
@@ -453,7 +512,7 @@ async function computeUserTaskDtoList(
     return p;
   };
 
-  const evidenceTaskIds = all
+  const evidenceTaskIds = visibleAll
     .filter((t) => toTaskMeta(t.meta).requiresEvidence === true)
     .map((t) => t.id);
   const evidenceByTaskStage = new Map<
@@ -490,7 +549,7 @@ async function computeUserTaskDtoList(
     if (!sorted.some((s) => toTaskMeta(s.meta).hard === true)) continue;
     let confirmed = 0;
     for (const stage of sorted) {
-      const pk = periodKeyForTask(stage);
+      const pk = periodKeyForTask(stage, activeLive?.id ?? null);
       const ut = getUt(stage.id, pk);
       const sm = toTaskMeta(stage.meta);
       const evSt = evidenceStageForTask(sm);
@@ -515,7 +574,7 @@ async function computeUserTaskDtoList(
 
   const rows: TaskDto[] = [];
   for (const t of selectedTasks) {
-    const pk = periodKeyForTask(t);
+    const pk = periodKeyForTask(t, activeLive?.id ?? null);
     const ut = getUt(t.id, pk);
 
     let userStatus: UserTaskStatus = "available";
@@ -701,7 +760,16 @@ export async function claimTask(
     .limit(1);
   if (!t) return { ok: false, error: "task_not_found" };
 
-  const pk = periodKeyForTask(t);
+  const meta = toTaskMeta(t.meta);
+  const activeLive = meta.liveOnly === true ? await getActiveLiveBroadcast() : null;
+  if (meta.liveOnly === true) {
+    if (!activeLive) return { ok: false, error: "not_live" };
+    if (activeLive.platform !== t.platform) {
+      return { ok: false, error: "platform_mismatch" };
+    }
+  }
+
+  const pk = periodKeyForTask(t, activeLive?.id ?? null);
 
   if (t.type === "one-time") {
     const [done] = await db
@@ -740,12 +808,11 @@ export async function claimTask(
   });
   if (!platformOk) return { ok: false, error: "platform_required" };
 
-  const progress = readProgress(toTaskMeta(t.meta), await buildProgressSnapshot(userId));
+  const progress = readProgress(meta, await buildProgressSnapshot(userId, activeLive));
   if (progress && progress.current < progress.target) {
     return { ok: false, error: "progress_not_reached" };
   }
 
-  const meta = toTaskMeta(t.meta);
   if (meta.requiresEvidence === true) {
     const stage = evidenceStageForTask(meta);
     const [ev] = await db

@@ -9,6 +9,10 @@ import {
 import { publishBroadcastEvent } from "./realtimePublish.js";
 import { deactivateActiveDropsOnStreamEnd } from "./drops.js";
 import { scheduleLiveAutoEndJob } from "./domainScheduler.js";
+import {
+  flushAllUserTaskDtoCaches,
+  invalidateUserTaskDtoCache,
+} from "./taskUserListCache.js";
 
 export type LivePlatform = "twitch" | "kick";
 
@@ -76,6 +80,7 @@ export async function startLiveBroadcast(input: {
       vpnNote: input.vpnNote?.trim() || null,
     },
   });
+  void flushAllUserTaskDtoCaches();
 
   const autoEndMs = Number.parseInt(
     process.env.LIVE_BROADCAST_AUTO_END_MS ?? "0",
@@ -108,6 +113,7 @@ export async function endLiveBroadcast(): Promise<
   });
 
   void publishBroadcastEvent({ type: "live_ended", v: 1 });
+  void flushAllUserTaskDtoCaches();
   await deactivateActiveDropsOnStreamEnd();
   return { ok: true };
 }
@@ -188,6 +194,7 @@ export async function watchLiveBroadcast(
   }
 
   const res = await applyStreamStreakBroadcastWatch(userId, platform);
+  invalidateUserTaskDtoCache(userId);
 
   return {
     ok: true,

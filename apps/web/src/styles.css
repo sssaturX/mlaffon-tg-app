@@ -5822,6 +5822,37 @@ button.primary.auth-submit:disabled {
   font-size: 13px;
 }
 
+.task-detail-stream-message {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-detail-stream-message__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.task-detail-stream-message__input {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  padding: 12px;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.task-detail-stream-message__input:focus {
+  outline: none;
+  border-color: var(--task-green);
+  box-shadow: 0 0 0 3px rgba(88, 166, 125, 0.18);
+}
+
 .task-detail-reward {
   display: flex;
   align-items: center;

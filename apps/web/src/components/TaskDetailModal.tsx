@@ -122,6 +122,11 @@ function primaryIsRewardClaim(task: TaskDto): boolean {
   return false;
 }
 
+function liveAction(task: TaskDto): string | null {
+  const action = task.meta?.liveAction;
+  return typeof action === "string" ? action : null;
+}
+
 export function TaskDetailModal({
   task,
   open,
@@ -135,6 +140,8 @@ export function TaskDetailModal({
   onEvidenceFilesChange,
   onSubmitEvidence,
   evidenceUploading,
+  streamMessageText,
+  onStreamMessageTextChange,
 }: {
   task: TaskDto | null;
   open: boolean;
@@ -148,6 +155,8 @@ export function TaskDetailModal({
   onEvidenceFilesChange: (files: FileList | null) => void;
   onSubmitEvidence: () => Promise<void>;
   evidenceUploading: boolean;
+  streamMessageText?: string;
+  onStreamMessageTextChange?: (value: string) => void;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [openedLink, setOpenedLink] = useState(false);
@@ -181,6 +190,7 @@ export function TaskDetailModal({
   const actionLabel = task.actionLabel?.trim() || defaultActionLabel(task.platform);
   const done = task.userStatus === "completed";
   const hardDisp = hardStageDisplay(task);
+  const isStreamMessageTask = liveAction(task) === "stream_message" && !done;
 
   function openAction() {
     if (!actionUrl) return;
@@ -397,6 +407,23 @@ export function TaskDetailModal({
                   resubmit={false}
                 />
               )
+            ) : null}
+
+            {isStreamMessageTask ? (
+              <div className="task-detail-stream-message task-detail-modal__block">
+                <label className="task-detail-stream-message__label" htmlFor="task-stream-message-text">
+                  Текст сообщения из чата
+                </label>
+                <textarea
+                  id="task-stream-message-text"
+                  className="task-detail-stream-message__input"
+                  rows={3}
+                  maxLength={500}
+                  value={streamMessageText ?? ""}
+                  onChange={(e) => onStreamMessageTextChange?.(e.target.value)}
+                  placeholder="Например: Всем привет"
+                />
+              </div>
             ) : null}
 
             {task.lastError ? <p className="err task-card__err">{task.lastError}</p> : null}

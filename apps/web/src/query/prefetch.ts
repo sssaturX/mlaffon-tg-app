@@ -3,16 +3,11 @@ import { getStoredActivePlatform } from "../context/PlatformContext";
 import { queryClient } from "./queryClient";
 import { queryKeys } from "./queryKeys";
 import {
-  fetchFortuneConfig,
-  fetchFortuneState,
   fetchGiveawaysList,
   fetchHomeContent,
   fetchHomeGiveaways,
   fetchTasks,
 } from "./fetchers";
-import {
-  FORTUNE_STATE_STALE_MS,
-} from "../hooks/queries/useFortuneQueries";
 import {
   platformQueryParamTasks,
   TASKS_QUERY_STALE_MS,
@@ -68,10 +63,6 @@ export function prefetchRoutePageChunk(pathname: string): void {
   const p = pathname.split("?")[0] || "";
   if (p === "/tasks" || p.startsWith("/tasks/")) {
     void import("../pages/Tasks");
-    return;
-  }
-  if (p === "/games" || p.startsWith("/games/")) {
-    void import("../pages/Games");
     return;
   }
   if (p === "/shop" || p.startsWith("/shop/")) {
@@ -172,23 +163,6 @@ export function prefetchRouteData(pathname: string): void {
     return;
   }
   const platform = getStoredActivePlatform();
-
-  /** Публичный GET /api/v1/games/fortune/config — не требует JWT. */
-  if (pathname.startsWith("/games")) {
-    void queryClient.prefetchQuery({
-      queryKey: queryKeys.fortune.config(),
-      queryFn: fetchFortuneConfig,
-      staleTime: 1000 * 60 * 60 * 24,
-    });
-    if (getToken()) {
-      void queryClient.prefetchQuery({
-        queryKey: queryKeys.fortune.state(),
-        queryFn: fetchFortuneState,
-        staleTime: FORTUNE_STATE_STALE_MS,
-      });
-    }
-    return;
-  }
 
   if (!getToken()) return;
 

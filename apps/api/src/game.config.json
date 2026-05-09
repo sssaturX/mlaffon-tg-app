@@ -9,7 +9,18 @@
   },
   "streamStreak": {
     "bonusEveryStreams": 7,
-    "bonusCoins": 500
+    "bonusCoins": 500,
+    "milestoneBonuses": [
+      { "streams": 3, "coins": 300 },
+      { "streams": 5, "coins": 500 },
+      { "streams": 7, "coins": 800 },
+      { "streams": 10, "coins": 1300 },
+      { "streams": 15, "coins": 2000 },
+      { "streams": 21, "coins": 3200 },
+      { "streams": 30, "coins": 5000 },
+      { "streams": 50, "coins": 12000 },
+      { "streams": 100, "coins": 35000 }
+    ]
   },
   "referral": {
     "referrerReward": 0,

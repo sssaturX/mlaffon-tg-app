@@ -5,13 +5,6 @@ import { gameConfig } from "../config.js";
 import { applyCredit } from "./economy.js";
 import { utcDateString } from "./streak.js";
 
-function addDays(isoDate: string, days: number): string {
-  const [y, m, day] = isoDate.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, day));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
-}
-
 export async function ensureStreamStreakRow(
   userId: string
 ): Promise<{
@@ -44,37 +37,11 @@ export async function ensureStreamStreakRow(
     return { twitch: 0, kick: 0, twitchLast: null, kickLast: null };
   }
 
-  const today = utcDateString();
-  const yesterday = addDays(today, -1);
-  let twitchCurrent = row.twitchCurrent;
-  let kickCurrent = row.kickCurrent;
-  let twitchLast = row.twitchLastUtcDate ?? null;
-  let kickLast = row.kickLastUtcDate ?? null;
-  let changed = false;
-
-  if (twitchLast && twitchLast !== today && twitchLast !== yesterday && twitchCurrent !== 0) {
-    twitchCurrent = 0;
-    changed = true;
-  }
-  if (kickLast && kickLast !== today && kickLast !== yesterday && kickCurrent !== 0) {
-    kickCurrent = 0;
-    changed = true;
-  }
-  if (changed) {
-    await db
-      .update(userStreamStreaks)
-      .set({
-        twitchCurrent,
-        kickCurrent,
-      })
-      .where(eq(userStreamStreaks.userId, userId));
-  }
-
   return {
-    twitch: twitchCurrent,
-    kick: kickCurrent,
-    twitchLast,
-    kickLast,
+    twitch: row.twitchCurrent,
+    kick: row.kickCurrent,
+    twitchLast: row.twitchLastUtcDate ?? null,
+    kickLast: row.kickLastUtcDate ?? null,
   };
 }
 
@@ -84,17 +51,23 @@ async function maybeStreamStreakBonus(
   newStreak: number
 ): Promise<number> {
   const cfg = gameConfig.streamStreak;
+  const milestone = cfg.milestoneBonuses?.find((m) => m.streams === newStreak);
+  const bonusCoins = milestone?.coins ?? (
+    cfg.bonusEveryStreams > 0 &&
+    newStreak > 0 &&
+    newStreak % cfg.bonusEveryStreams === 0
+      ? cfg.bonusCoins
+      : 0
+  );
   if (
-    cfg.bonusEveryStreams <= 0 ||
-    newStreak <= 0 ||
-    newStreak % cfg.bonusEveryStreams !== 0
+    bonusCoins <= 0
   ) {
     return 0;
   }
   const idem = `stream_streak_bonus:${platform}:${userId}:${newStreak}`;
   const res = await applyCredit({
     userId,
-    amount: cfg.bonusCoins,
+    amount: bonusCoins,
     idempotencyKey: idem,
     kind: "streak_bonus",
     platform,
@@ -110,9 +83,8 @@ async function maybeStreamStreakBonus(
  * даже если в тот же UTC-день уже был другой эфир. Повторное нажатие в том же эфире
  * не вызывается (см. live_broadcast_views).
  *
- * Логика: первый эфир за календарный день продолжает цепочку «вчера → сегодня»;
- * второй и следующие эфиры **в тот же день** добавляют ещё +1 к счётчику сессий.
- * Длинный перерыв (не вчера и не сегодня) — сброс в 1.
+ * Логика стрика привязана к последовательности эфиров, а не к календарным дням.
+ * Пропуск обнуляется при завершении конкретного эфира в resetStreamStreakForMissedBroadcastTx.
  */
 export async function applyStreamStreakBroadcastWatch(
   userId: string,
@@ -127,18 +99,9 @@ export async function applyStreamStreakBroadcastWatch(
   const row = await ensureStreamStreakRow(userId);
 
   if (platform === "twitch") {
-    const last = row.twitchLast;
     let newStreak: number;
 
-    if (!last) {
-      newStreak = 1;
-    } else if (last === today) {
-      newStreak = row.twitch + 1;
-    } else if (last === addDays(today, -1)) {
-      newStreak = row.twitch + 1;
-    } else {
-      newStreak = 1;
-    }
+    newStreak = Math.max(0, row.twitch) + 1;
 
     await db
       .update(userStreamStreaks)
@@ -156,18 +119,9 @@ export async function applyStreamStreakBroadcastWatch(
     return { ok: true, streak: newStreak, utcDate: today, bonusCoinsAwarded };
   }
 
-  const last = row.kickLast;
   let newStreak: number;
 
-  if (!last) {
-    newStreak = 1;
-  } else if (last === today) {
-    newStreak = row.kick + 1;
-  } else if (last === addDays(today, -1)) {
-    newStreak = row.kick + 1;
-  } else {
-    newStreak = 1;
-  }
+  newStreak = Math.max(0, row.kick) + 1;
 
   await db
     .update(userStreamStreaks)

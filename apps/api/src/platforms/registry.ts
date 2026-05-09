@@ -5,10 +5,20 @@ import { gameConfig } from "../config.js";
 import type { PlatformProvider, TaskLike } from "./types.js";
 import { getKickAccount, getTwitchAccount } from "../services/platformTokens.js";
 
+function taskMeta(task: TaskLike): Record<string, unknown> {
+  return task.meta && typeof task.meta === "object"
+    ? (task.meta as Record<string, unknown>)
+    : {};
+}
+
 class TwitchProvider implements PlatformProvider {
   id = "twitch" as const;
   async verifyTask(userId: string, task: TaskLike): Promise<boolean> {
     if (task.validationType === "manual") {
+      const meta = taskMeta(task);
+      if (meta.liveAction === "watch_stream" || meta.liveAction === "stream_message") {
+        return true;
+      }
       const [row] = await db
         .select()
         .from(platformAccounts)
@@ -40,6 +50,10 @@ class KickProvider implements PlatformProvider {
   id = "kick" as const;
   async verifyTask(userId: string, task: TaskLike): Promise<boolean> {
     if (task.validationType === "manual") {
+      const meta = taskMeta(task);
+      if (meta.liveAction === "watch_stream" || meta.liveAction === "stream_message") {
+        return true;
+      }
       const [row] = await db
         .select()
         .from(platformAccounts)

@@ -59,6 +59,13 @@ function dispatchLiveEvent(): void {
   }
 }
 
+function invalidateLiveSensitiveTasks(): void {
+  void queryClient.invalidateQueries({
+    queryKey: queryKeys.tasks.all,
+    refetchType: "active",
+  });
+}
+
 export function normalizePredictionState(
   prediction: PredictionStatePayload
 ): PredictionStatePayload | null {
@@ -129,6 +136,7 @@ export function applyLiveStartedToQuery(data: {
     queryKeys.liveBroadcast.current(),
     b
   );
+  invalidateLiveSensitiveTasks();
   dispatchLiveEvent();
 }
 
@@ -137,6 +145,7 @@ export function applyLiveEndedToQuery(): void {
     queryKeys.liveBroadcast.current(),
     { active: false }
   );
+  invalidateLiveSensitiveTasks();
   dispatchLiveEvent();
 }
 

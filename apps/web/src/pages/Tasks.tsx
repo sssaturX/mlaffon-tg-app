@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Lightbulb } from "lucide-react";
 import type { TaskDto } from "shared";
 import { api, formatApiError } from "../api";
@@ -13,8 +14,12 @@ import {
 } from "../query/tasksCache";
 import { ApiQueryError } from "../query/apiQueryError";
 import { TaskVirtualFeed } from "../components/tasks/TaskVirtualFeed";
+import { queryKeys } from "../query/queryKeys";
+import { liveBroadcastWsOnlyQueryFn } from "../realtime/wsOnlyQueryFns";
+import { openExternal } from "../components/LiveBroadcastCard";
 
 const SECTION_ORDER = [
+  "live_stream_tasks",
   "black_russia",
   "stream_tasks",
   "telegram",
@@ -54,6 +59,13 @@ export default function Tasks() {
   const [evidenceUploadingId, setEvidenceUploadingId] = useState<string | null>(null);
   const [helpTask, setHelpTask] = useState<TaskDto | null>(null);
   const [detailTask, setDetailTask] = useState<TaskDto | null>(null);
+  const [streamMessageByTask, setStreamMessageByTask] = useState<Record<string, string>>({});
+  const { data: live } = useQuery({
+    queryKey: queryKeys.liveBroadcast.current(),
+    queryFn: liveBroadcastWsOnlyQueryFn,
+    staleTime: Infinity,
+    enabled: false,
+  });
 
   const loading = tasksQ.isPending;
 
@@ -122,20 +134,104 @@ export default function Tasks() {
     return keys;
   }, [grouped]);
 
-  async function claim(id: string) {
+  function liveAction(t: TaskDto): string | null {
+    const action = t.meta?.liveAction;
+    return typeof action === "string" ? action : null;
+  }
+
+  function progressReached(t: TaskDto): boolean {
+    return (
+      typeof t.progressCurrent === "number" &&
+      typeof t.progressTarget === "number" &&
+      t.progressTarget > 0 &&
+      t.progressCurrent >= t.progressTarget
+    );
+  }
+
+  async function runLivePrerequisite(t: TaskDto): Promise<boolean> {
+    if (progressReached(t)) return true;
+    const action = liveAction(t);
+    if (!action) return true;
+
+    if (!live?.active || live.platform !== t.platform) {
+      const m = "Это задание доступно только во время активного стрима.";
+      setMsg(m);
+      showToast(m, "error");
+      return false;
+    }
+
+    if (action === "watch_stream") {
+      openExternal(live.streamUrl);
+      const r = await api<{
+        ok: boolean;
+        streak: number;
+        bonusCoinsAwarded: number;
+      }>("/api/v1/live-broadcast/watch", {
+        method: "POST",
+        body: JSON.stringify({ broadcastId: live.id }),
+      });
+      if (!r.ok) {
+        const m = formatApiError(r);
+        setMsg(m);
+        showToast(m, "error");
+        return false;
+      }
+      const bonus = r.data.bonusCoinsAwarded ?? 0;
+      showToast(
+        bonus > 0
+          ? `Стрим засчитан. Бонус за стрик: +${bonus.toLocaleString("ru-RU")} монет`
+          : "Стрим засчитан.",
+        "success"
+      );
+      return true;
+    }
+
+    if (action === "stream_message") {
+      const text = (streamMessageByTask[t.id] ?? "").trim();
+      if (text.length < 2) {
+        const m = "Введите текст сообщения из чата.";
+        setMsg(m);
+        showToast(m, "error");
+        return false;
+      }
+      const r = await api<{ accepted: true; totalForPlatform: number }>(
+        "/api/v1/tasks/stream-message",
+        {
+          method: "POST",
+          body: JSON.stringify({ platform: t.platform, text }),
+        }
+      );
+      if (!r.ok) {
+        const m = formatApiError(r);
+        setMsg(m);
+        showToast(m, "error");
+        return false;
+      }
+      showToast("Сообщение зачтено.", "success");
+      return true;
+    }
+
+    return true;
+  }
+
+  async function claim(t: TaskDto) {
+    const id = t.id;
     setMsg(null);
     setClaimingId(id);
-    const r = await api<{
-      ok?: boolean;
-      reward?: number;
-      status?: string;
-      jobId?: string;
-      tasks?: TaskDto[];
-    }>(
-      `/api/v1/tasks/${id}/claim?platform=${encodeURIComponent(activePlatform)}`,
-      { method: "POST" }
-    );
-    setClaimingId(null);
+    try {
+      const prereqOk = await runLivePrerequisite(t);
+      if (!prereqOk) return;
+
+      const r = await api<{
+        ok?: boolean;
+        reward?: number;
+        status?: string;
+        jobId?: string;
+        tasks?: TaskDto[];
+      }>(
+        `/api/v1/tasks/${id}/claim?platform=${encodeURIComponent(activePlatform)}`,
+        { method: "POST" }
+      );
     if (r.ok) {
       if (r.data.status === "pending") {
         setMsg(null);
@@ -167,6 +263,9 @@ export default function Tasks() {
       const m = formatApiError(r);
       setMsg(m);
       showToast(m, "error");
+    }
+    } finally {
+      setClaimingId(null);
     }
   }
 
@@ -266,6 +365,8 @@ export default function Tasks() {
     ) {
       return "Получить";
     }
+    if (liveAction(t) === "watch_stream") return "Зайти на стрим";
+    if (liveAction(t) === "stream_message") return "Проверить сообщение";
     return t.verifyLabel ?? "Проверить";
   }
 
@@ -278,6 +379,16 @@ export default function Tasks() {
       return true;
     }
     if (t.requiresEvidence && t.evidenceStageStatus !== "approved") {
+      return true;
+    }
+    if (liveAction(t) === "stream_message" && !progressReached(t)) {
+      return (streamMessageByTask[t.id] ?? "").trim().length < 2;
+    }
+    if (
+      (liveAction(t) === "watch_stream" || liveAction(t) === "stream_message") &&
+      !progressReached(t) &&
+      (!live?.active || live.platform !== t.platform)
+    ) {
       return true;
     }
     return false;
@@ -331,7 +442,7 @@ export default function Tasks() {
         open={detailTask != null}
         onClose={() => setDetailTask(null)}
         onClaim={() => {
-          if (detailTask) void claim(detailTask.id);
+          if (detailTask) void claim(detailTask);
         }}
         claiming={detailTask != null && claimingId === detailTask.id}
         primaryLabel={
@@ -352,6 +463,11 @@ export default function Tasks() {
           if (detailTask) await submitEvidence(detailTask);
         }}
         evidenceUploading={detailTask != null && evidenceUploadingId === detailTask.id}
+        streamMessageText={detailTask ? streamMessageByTask[detailTask.id] ?? "" : ""}
+        onStreamMessageTextChange={(value) => {
+          if (!detailTask) return;
+          setStreamMessageByTask((prev) => ({ ...prev, [detailTask.id]: value }));
+        }}
       />
     </div>
   );

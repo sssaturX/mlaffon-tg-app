@@ -20,7 +20,7 @@ function streamPreviewThemeClass(
   section: string,
   activePlatform: Platform
 ): string {
-  if (section !== "stream_tasks") return "";
+  if (section !== "stream_tasks" && section !== "live_stream_tasks") return "";
   return activePlatform === "kick"
     ? "task-card-preview--kick-stream"
     : "task-card-preview--twitch-stream";
