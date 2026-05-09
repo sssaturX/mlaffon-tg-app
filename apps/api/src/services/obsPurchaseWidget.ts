@@ -26,7 +26,7 @@ export type ObsWidgetPosition =
 export type ObsWidgetStyle = "auto" | "twitch" | "kick" | "neon" | "minimal";
 export type ObsWidgetDefaultSound = "soft" | "spark" | "bell";
 export type ObsWidgetSpeechVoice = "auto" | "ru-female" | "ru-male" | "any";
-export type ObsWidgetSpeechEngine = "browser" | "speakerpy";
+export type ObsWidgetSpeechEngine = "speakerpy";
 export type ObsWidgetSpeakerpyVoice =
   | "aidar"
   | "baya"
@@ -91,7 +91,7 @@ const DEFAULT_SETTINGS: ObsPurchaseWidgetSettings = {
   durationMs: OBS_ALERT_DURATION_MS,
   showBuyerMessage: true,
   speechEnabled: true,
-  speechEngine: "browser",
+  speechEngine: "speakerpy",
   speechVoice: "auto",
   speakerpyVoice: "baya",
   style: "auto",
@@ -109,7 +109,6 @@ const positions: ObsWidgetPosition[] = [
 const styles: ObsWidgetStyle[] = ["auto", "twitch", "kick", "neon", "minimal"];
 const sounds: ObsWidgetDefaultSound[] = ["soft", "spark", "bell"];
 const speechVoices: ObsWidgetSpeechVoice[] = ["auto", "ru-female", "ru-male", "any"];
-const speechEngines: ObsWidgetSpeechEngine[] = ["browser", "speakerpy"];
 const speakerpyVoices: ObsWidgetSpeakerpyVoice[] = [
   "aidar",
   "baya",
@@ -163,9 +162,7 @@ function normalizeSettings(raw: unknown): ObsPurchaseWidgetSettings {
   const speechVoice = speechVoices.includes(o.speechVoice as ObsWidgetSpeechVoice)
     ? (o.speechVoice as ObsWidgetSpeechVoice)
     : DEFAULT_SETTINGS.speechVoice;
-  const speechEngine = speechEngines.includes(o.speechEngine as ObsWidgetSpeechEngine)
-    ? (o.speechEngine as ObsWidgetSpeechEngine)
-    : DEFAULT_SETTINGS.speechEngine;
+  const speechEngine: ObsWidgetSpeechEngine = "speakerpy";
   const speakerpyVoice = speakerpyVoices.includes(
     o.speakerpyVoice as ObsWidgetSpeakerpyVoice
   )

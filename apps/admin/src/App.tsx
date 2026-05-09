@@ -294,7 +294,7 @@ type ObsPurchaseWidgetSettings = {
   durationMs: number;
   showBuyerMessage: boolean;
   speechEnabled: boolean;
-  speechEngine: "browser" | "speakerpy";
+  speechEngine: "speakerpy";
   speechVoice: "auto" | "ru-female" | "ru-male" | "any";
   speakerpyVoice: "aidar" | "baya" | "kseniya" | "xenia" | "eugene" | "random";
   style: "auto" | "twitch" | "kick" | "neon" | "minimal";
@@ -595,6 +595,7 @@ export function App() {
   const [obsWidgetLoading, setObsWidgetLoading] = useState(false);
   const [obsWidgetSoundUploading, setObsWidgetSoundUploading] = useState(false);
   const [obsWidgetTestSending, setObsWidgetTestSending] = useState(false);
+  const [obsWidgetSpeechTesting, setObsWidgetSpeechTesting] = useState(false);
   const [obsWidgetTestSentAt, setObsWidgetTestSentAt] = useState<string | null>(null);
   const autoRefreshRunningRef = useRef(false);
   const lastStatsAutoRefreshAtRef = useRef(0);
@@ -3404,6 +3405,51 @@ export function App() {
                         <button
                           type="button"
                           className="secondary"
+                          disabled={obsWidgetSpeechTesting}
+                          onClick={async () => {
+                            setObsWidgetSpeechTesting(true);
+                            setErr(null);
+                            try {
+                              const r = await fetch(
+                                `${apiBase()}/api/v1/obs/widget/tts`,
+                                {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    token: obsWidgetSettings.token,
+                                    text: "Проверка озвучки OBS-виджета через SpeakerPy.",
+                                    voice: obsWidgetSettings.speakerpyVoice,
+                                    speed: 1,
+                                  }),
+                                }
+                              );
+                              if (!r.ok) {
+                                const j = (await r.json().catch(() => null)) as
+                                  | { error?: { code?: string; message?: string } }
+                                  | null;
+                                const code = j?.error?.code ? `${j.error.code}: ` : "";
+                                setErr(`${code}${j?.error?.message ?? `Ошибка ${r.status}`}`);
+                                return;
+                              }
+                              const blob = await r.blob();
+                              const url = URL.createObjectURL(blob);
+                              const audio = new Audio(url);
+                              audio.volume = Math.max(0, Math.min(1, obsWidgetSettings.volume));
+                              audio.onended = () => URL.revokeObjectURL(url);
+                              audio.onerror = () => URL.revokeObjectURL(url);
+                              await audio.play();
+                            } catch {
+                              setErr("Не удалось проиграть тест озвучки.");
+                            } finally {
+                              setObsWidgetSpeechTesting(false);
+                            }
+                          }}
+                        >
+                          {obsWidgetSpeechTesting ? "Проверяем…" : "Тест озвучки"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
                           disabled={loading}
                           onClick={async () => {
                             if (!token) return;
@@ -3574,78 +3620,29 @@ export function App() {
 
                     <div className="row admin-mt-3">
                       <div>
-                        <label htmlFor="obsspeechengine">Движок озвучки</label>
+                        <label htmlFor="obsspeakerpyvoice">Голос SpeakerPy</label>
                         <select
-                          id="obsspeechengine"
-                          value={obsWidgetSettings.speechEngine}
+                          id="obsspeakerpyvoice"
+                          value={obsWidgetSettings.speakerpyVoice}
                           onChange={(e) =>
                             setObsWidgetSettings((prev) =>
                               prev
                                 ? {
                                     ...prev,
-                                    speechEngine:
-                                      e.target.value as ObsPurchaseWidgetSettings["speechEngine"],
+                                    speechEngine: "speakerpy",
+                                    speakerpyVoice:
+                                      e.target.value as ObsPurchaseWidgetSettings["speakerpyVoice"],
                                   }
                                 : prev
                             )
                           }
                         >
-                          <option value="speakerpy">SpeakerPy</option>
-                          <option value="browser">Браузер OBS</option>
-                        </select>
-                      </div>
-                      {obsWidgetSettings.speechEngine === "speakerpy" ? (
-                        <div>
-                          <label htmlFor="obsspeakerpyvoice">Голос SpeakerPy</label>
-                          <select
-                            id="obsspeakerpyvoice"
-                            value={obsWidgetSettings.speakerpyVoice}
-                            onChange={(e) =>
-                              setObsWidgetSettings((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      speakerpyVoice:
-                                        e.target.value as ObsPurchaseWidgetSettings["speakerpyVoice"],
-                                    }
-                                  : prev
-                              )
-                            }
-                          >
-                            <option value="baya">Baya</option>
-                            <option value="kseniya">Kseniya</option>
-                            <option value="xenia">Xenia</option>
-                            <option value="eugene">Eugene</option>
-                            <option value="aidar">Aidar</option>
-                            <option value="random">Random</option>
-                          </select>
-                        </div>
-                      ) : null}
-                      <div>
-                        <label htmlFor="obsspeechvoice">
-                          {obsWidgetSettings.speechEngine === "speakerpy"
-                            ? "Fallback голос OBS"
-                            : "Голос озвучки"}
-                        </label>
-                        <select
-                          id="obsspeechvoice"
-                          value={obsWidgetSettings.speechVoice}
-                          onChange={(e) =>
-                            setObsWidgetSettings((prev) =>
-                              prev
-                                ? {
-                                    ...prev,
-                                    speechVoice:
-                                      e.target.value as ObsPurchaseWidgetSettings["speechVoice"],
-                                  }
-                                : prev
-                            )
-                          }
-                        >
-                          <option value="auto">Авто: русский</option>
-                          <option value="ru-female">Русский женский</option>
-                          <option value="ru-male">Русский мужской</option>
-                          <option value="any">Любой доступный</option>
+                          <option value="baya">Baya</option>
+                          <option value="kseniya">Kseniya</option>
+                          <option value="xenia">Xenia</option>
+                          <option value="eugene">Eugene</option>
+                          <option value="aidar">Aidar</option>
+                          <option value="random">Random</option>
                         </select>
                       </div>
                       <div>
@@ -3755,6 +3752,7 @@ export function App() {
                             streamerId: _streamerId,
                             ...body
                           } = obsWidgetSettings;
+                          body.speechEngine = "speakerpy";
                           const r = await fetch(`${apiBase()}/api/admin/obs/purchase-widget`, {
                             method: "PUT",
                             headers: authHeaders(true),

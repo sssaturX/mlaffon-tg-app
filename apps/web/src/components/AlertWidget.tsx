@@ -14,7 +14,7 @@ type WidgetSettings = {
   durationMs: number;
   showBuyerMessage: boolean;
   speechEnabled: boolean;
-  speechEngine: "browser" | "speakerpy";
+  speechEngine: "speakerpy";
   speechVoice: "auto" | "ru-female" | "ru-male" | "any";
   speakerpyVoice: "aidar" | "baya" | "kseniya" | "xenia" | "eugene" | "random";
   style: "auto" | "twitch" | "kick" | "neon" | "minimal";
@@ -55,7 +55,7 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   durationMs: OBS_ALERT_DURATION_MS,
   showBuyerMessage: true,
   speechEnabled: true,
-  speechEngine: "browser",
+  speechEngine: "speakerpy",
   speechVoice: "auto",
   speakerpyVoice: "baya",
   style: "auto",
@@ -376,7 +376,6 @@ function scheduleSpeakerpySpeech(
   let cancelled = false;
   let audio: HTMLAudioElement | null = null;
   let objectUrl: string | null = null;
-  let cleanupFallback: (() => void) | null = null;
   const controller = new AbortController();
 
   const cleanupAudioUrl = () => {
@@ -398,7 +397,14 @@ function scheduleSpeakerpySpeech(
           speed: 1,
         }),
       });
-      if (!response.ok) throw new Error(`speakerpy_tts_${response.status}`);
+      if (!response.ok) {
+        const details = await response.text().catch(() => "");
+        console.warn("[OBS widget] SpeakerPy TTS failed.", {
+          status: response.status,
+          details,
+        });
+        throw new Error(`speakerpy_tts_${response.status}`);
+      }
       const blob = await response.blob();
       if (cancelled) return;
       objectUrl = URL.createObjectURL(blob);
@@ -407,8 +413,10 @@ function scheduleSpeakerpySpeech(
       audio.onended = cleanupAudioUrl;
       audio.onerror = cleanupAudioUrl;
       await audio.play();
-    } catch {
-      if (!cancelled) cleanupFallback = scheduleBrowserSpeech(settings, text);
+    } catch (error) {
+      if (!cancelled) {
+        console.warn("[OBS widget] SpeakerPy speech could not be played.", error);
+      }
     }
   };
 
@@ -420,7 +428,6 @@ function scheduleSpeakerpySpeech(
     cancelled = true;
     controller.abort();
     window.clearTimeout(startTimer);
-    cleanupFallback?.();
     if (audio) {
       audio.pause();
       audio.src = "";
@@ -437,10 +444,7 @@ function scheduleBuyerMessageSpeech(
 ): (() => void) | null {
   const text = buildSpeechText(alert).trim();
   if (!settings.speechEnabled || !text) return null;
-  if (settings.speechEngine === "speakerpy") {
-    return scheduleSpeakerpySpeech(token, settings, text);
-  }
-  return scheduleBrowserSpeech(settings, text);
+  return scheduleSpeakerpySpeech(token, settings, text);
 }
 
 function displayBuyer(alert: PurchaseAlert): string {

@@ -1478,7 +1478,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     durationMs: z.literal(10_000).optional(),
     showBuyerMessage: z.boolean().optional(),
     speechEnabled: z.boolean().optional(),
-    speechEngine: z.enum(["browser", "speakerpy"]).optional(),
+    speechEngine: z.enum(["speakerpy"]).optional(),
     speechVoice: z.enum(["auto", "ru-female", "ru-male", "any"]).optional(),
     speakerpyVoice: z
       .enum(["aidar", "baya", "kseniya", "xenia", "eugene", "random"])
