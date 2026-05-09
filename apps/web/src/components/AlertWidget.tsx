@@ -172,6 +172,19 @@ function isRussianVoice(voice: SpeechSynthesisVoice): boolean {
   );
 }
 
+function isRussianSpeechPreference(preference: WidgetSettings["speechVoice"]): boolean {
+  return preference !== "any";
+}
+
+function hasRussianSpeechVoice(synth: SpeechSynthesis): boolean {
+  return synth.getVoices().some(isRussianVoice);
+}
+
+function normalizeRussianVoiceLang(voice: SpeechSynthesisVoice): string {
+  const lang = voice.lang.trim();
+  return lang.toLowerCase().startsWith("ru") ? lang : "ru-RU";
+}
+
 function voiceMatchesHint(voice: SpeechSynthesisVoice, hints: string[]): boolean {
   const haystack = `${voice.name} ${voice.voiceURI}`.toLowerCase();
   return hints.some((hint) => haystack.includes(hint));
@@ -187,7 +200,6 @@ function selectSpeechVoice(
     return (
       russianVoices.find((voice) => voiceMatchesHint(voice, FEMALE_VOICE_HINTS)) ??
       russianVoices[0] ??
-      voices[0] ??
       null
     );
   }
@@ -196,7 +208,6 @@ function selectSpeechVoice(
     return (
       russianVoices.find((voice) => voiceMatchesHint(voice, MALE_VOICE_HINTS)) ??
       russianVoices[0] ??
-      voices[0] ??
       null
     );
   }
@@ -208,13 +219,13 @@ function selectSpeechVoice(
   return (
     russianVoices.find((voice) => voice.lang.toLowerCase() === "ru-ru") ??
     russianVoices[0] ??
-    voices[0] ??
     null
   );
 }
 
 function waitForSpeechVoices(
   synth: SpeechSynthesis,
+  preference: WidgetSettings["speechVoice"],
   onReady: () => void
 ): () => void {
   let done = false;
@@ -224,22 +235,32 @@ function waitForSpeechVoices(
     if (done) return;
     done = true;
     if (timeout != null) window.clearTimeout(timeout);
-    synth.removeEventListener?.("voiceschanged", finish);
+    synth.removeEventListener?.("voiceschanged", onVoicesChanged);
     onReady();
   };
 
-  if (synth.getVoices().length > 0) {
+  const hasUsableVoices = () => {
+    const voices = synth.getVoices();
+    if (voices.length === 0) return false;
+    return !isRussianSpeechPreference(preference) || hasRussianSpeechVoice(synth);
+  };
+
+  const onVoicesChanged = () => {
+    if (hasUsableVoices()) finish();
+  };
+
+  if (hasUsableVoices()) {
     finish();
     return () => undefined;
   }
 
-  synth.addEventListener?.("voiceschanged", finish);
+  synth.addEventListener?.("voiceschanged", onVoicesChanged);
   timeout = window.setTimeout(finish, SPEECH_VOICE_WAIT_MS);
 
   return () => {
     done = true;
     if (timeout != null) window.clearTimeout(timeout);
-    synth.removeEventListener?.("voiceschanged", finish);
+    synth.removeEventListener?.("voiceschanged", onVoicesChanged);
   };
 }
 
@@ -284,7 +305,9 @@ function scheduleBuyerMessageSpeech(
       const voice = selectSpeechVoice(settings.speechVoice);
       if (voice) {
         utterance.voice = voice;
-        utterance.lang = voice.lang || "ru-RU";
+        utterance.lang = isRussianSpeechPreference(settings.speechVoice)
+          ? normalizeRussianVoiceLang(voice)
+          : voice.lang || "ru-RU";
       }
       utterance.onend = stopResumeTimer;
       utterance.onerror = stopResumeTimer;
@@ -308,7 +331,7 @@ function scheduleBuyerMessageSpeech(
   };
 
   const startTimer = window.setTimeout(() => {
-    cleanupVoiceWait = waitForSpeechVoices(synth, speak);
+    cleanupVoiceWait = waitForSpeechVoices(synth, settings.speechVoice, speak);
   }, SPEECH_START_DELAY_MS);
 
   return () => {
