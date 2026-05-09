@@ -396,6 +396,7 @@ SPEAKERPY_LANGUAGE=ru
 SPEAKERPY_DEVICE=cpu
 SPEAKERPY_CACHE_DIR=/opt/mlaffon/shared/speakerpy-cache/audio
 TORCH_HOME=/opt/mlaffon/shared/speakerpy-cache/torch
+NLTK_DATA=/opt/mlaffon/shared/speakerpy-cache/nltk
 SPEAKERPY_TIMEOUT_MS=45000
 
 # ── Tracing / logging ────────────────────────────────────────────────────────

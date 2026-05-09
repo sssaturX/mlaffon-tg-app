@@ -78,6 +78,20 @@ ensure_venv_pip() {
   "$python_bin" -m pip --version &>/dev/null
 }
 
+verify_speakerpy_python() {
+  local python_bin="$1" nltk_data="$2"
+  NLTK_DATA="$nltk_data" "$python_bin" - <<'PY'
+from speakerpy.lib_sl_text import SeleroText
+from speakerpy.lib_speak import Speaker  # noqa: F401
+from pydub import AudioSegment  # noqa: F401
+import soundfile  # noqa: F401
+
+chunks = list(SeleroText("Проверка SpeakerPy.", to_language="ru").chunk())
+if not chunks:
+    raise RuntimeError("SpeakerPy text tokenizer returned no chunks")
+PY
+}
+
 ensure_speakerpy_runtime() {
   if [[ "${DEPLOY_SKIP_SPEAKERPY:-0}" == "1" ]]; then
     warn "Skipping SpeakerPy setup (DEPLOY_SKIP_SPEAKERPY=1)"
@@ -113,7 +127,8 @@ ensure_speakerpy_runtime() {
   local venv_dir="${SPEAKERPY_VENV_DIR:-${SHARED_DIR}/speakerpy-venv}"
   local cache_dir="${SPEAKERPY_CACHE_DIR:-${SHARED_DIR}/speakerpy-cache/audio}"
   local torch_home="${SPEAKERPY_TORCH_HOME:-${SHARED_DIR}/speakerpy-cache/torch}"
-  mkdir -p "$cache_dir" "$torch_home"
+  local nltk_data="${SPEAKERPY_NLTK_DATA:-${SHARED_DIR}/speakerpy-cache/nltk}"
+  mkdir -p "$cache_dir" "$torch_home" "$nltk_data"
 
   if [[ ! -x "${venv_dir}/bin/python" ]]; then
     log "Creating SpeakerPy venv: ${venv_dir}"
@@ -126,6 +141,14 @@ ensure_speakerpy_runtime() {
     die "SpeakerPy pip bootstrap failed"
   run_retry 3 5 "${venv_dir}/bin/python" -m pip install -r "$req_file" 2>&1 ||
     die "SpeakerPy Python dependencies failed"
+
+  log "Installing SpeakerPy NLTK tokenizer data…"
+  run_retry 3 5 env NLTK_DATA="$nltk_data" "${venv_dir}/bin/python" -m nltk.downloader -q -d "$nltk_data" punkt punkt_tab 2>&1 ||
+    die "SpeakerPy NLTK tokenizer data install failed"
+
+  log "Verifying SpeakerPy Python imports…"
+  verify_speakerpy_python "${venv_dir}/bin/python" "$nltk_data" 2>&1 ||
+    die "SpeakerPy Python import verification failed"
   ok "SpeakerPy Python requirements installed"
 
   append_env_if_missing "SPEAKERPY_TTS_ENABLED" "1"
@@ -136,9 +159,10 @@ ensure_speakerpy_runtime() {
   append_env_if_missing "SPEAKERPY_DEVICE" "cpu"
   append_env_if_missing "SPEAKERPY_TIMEOUT_MS" "45000"
   append_env_if_missing "TORCH_HOME" "$torch_home"
+  append_env_if_missing "NLTK_DATA" "$nltk_data"
 
-  $SUDO chown -R www-data:www-data "$cache_dir" "$torch_home" 2>/dev/null || true
-  $SUDO chmod -R u+rwX,g+rwX,o-rwx "$cache_dir" "$torch_home" 2>/dev/null || true
+  $SUDO chown -R www-data:www-data "$cache_dir" "$torch_home" "$nltk_data" 2>/dev/null || true
+  $SUDO chmod -R u+rwX,g+rwX,o-rwx "$cache_dir" "$torch_home" "$nltk_data" 2>/dev/null || true
   ok "SpeakerPy runtime ready"
 }
 

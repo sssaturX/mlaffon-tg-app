@@ -88,6 +88,7 @@ After all stages: write metadata, clean old releases, print summary.
 | `DEPLOY_SKIP_FAQ_SYNC` | `0` | Skip db:sync-faq |
 | `DEPLOY_DB_SEED` | `0` | Run db:seed |
 | `DEPLOY_SKIP_SPEAKERPY` | `0` | Skip OBS SpeakerPy runtime setup |
+| `SPEAKERPY_NLTK_DATA` | `/opt/mlaffon/shared/speakerpy-cache/nltk` | Override SpeakerPy tokenizer cache path |
 | `RELEASE_RETENTION` | `5` | Number of releases to keep |
 
 ### CDN provider (verify-cdn.sh / purge-cdn.sh)
