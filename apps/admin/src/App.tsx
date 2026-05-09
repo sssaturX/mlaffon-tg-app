@@ -293,6 +293,7 @@ type ObsPurchaseWidgetSettings = {
   position: "bottom" | "center" | "top" | "bottom-left" | "bottom-right";
   durationMs: number;
   showBuyerMessage: boolean;
+  speechEnabled: boolean;
   style: "auto" | "twitch" | "kick" | "neon" | "minimal";
   accentColor: string;
   fontFamily: string;
@@ -3551,6 +3552,20 @@ export function App() {
                           }
                         />
                         <span className="admin-checkbox-row__text">Включить звук</span>
+                      </label>
+                      <label className="admin-checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={obsWidgetSettings.speechEnabled}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev ? { ...prev, speechEnabled: e.target.checked } : prev
+                            )
+                          }
+                        />
+                        <span className="admin-checkbox-row__text">
+                          Озвучивать сообщение покупателя
+                        </span>
                       </label>
                     </div>
 

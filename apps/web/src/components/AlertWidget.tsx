@@ -13,6 +13,7 @@ type WidgetSettings = {
   position: "bottom" | "center" | "top" | "bottom-left" | "bottom-right";
   durationMs: number;
   showBuyerMessage: boolean;
+  speechEnabled: boolean;
   style: "auto" | "twitch" | "kick" | "neon" | "minimal";
   accentColor: string;
   fontFamily: string;
@@ -47,6 +48,7 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   position: "bottom",
   durationMs: OBS_ALERT_DURATION_MS,
   showBuyerMessage: true,
+  speechEnabled: true,
   style: "auto",
   accentColor: "#00d38a",
   fontFamily: "Inter, system-ui, sans-serif",
@@ -107,6 +109,39 @@ function playAlertSound(settings: WidgetSettings): void {
   } catch {
     /* ignore */
   }
+}
+
+function selectRussianVoice(): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis?.getVoices?.() ?? [];
+  return (
+    voices.find((voice) => voice.lang.toLowerCase() === "ru-ru") ??
+    voices.find((voice) => voice.lang.toLowerCase().startsWith("ru")) ??
+    null
+  );
+}
+
+function scheduleBuyerMessageSpeech(
+  settings: WidgetSettings,
+  alert: PurchaseAlert
+): number | null {
+  const text = alert.buyerMessage?.trim();
+  if (!settings.speechEnabled || !text || !("speechSynthesis" in window)) return null;
+
+  return window.setTimeout(() => {
+    try {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "ru-RU";
+      utterance.volume = Math.max(0, Math.min(1, settings.volume));
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      const voice = selectRussianVoice();
+      if (voice) utterance.voice = voice;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      /* ignore */
+    }
+  }, 650);
 }
 
 function displayBuyer(alert: PurchaseAlert): string {
@@ -174,13 +209,17 @@ export function AlertWidget() {
 
   useEffect(() => {
     if (!current) return undefined;
-    playAlertSound(settingsRef.current);
+    const activeSettings = settingsRef.current;
+    playAlertSound(activeSettings);
+    const speechTimer = scheduleBuyerMessageSpeech(activeSettings, current);
 
     const clearTimer = window.setTimeout(() => {
       setCurrent(null);
     }, OBS_ALERT_DURATION_MS);
     return () => {
       window.clearTimeout(clearTimer);
+      if (speechTimer != null) window.clearTimeout(speechTimer);
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     };
   }, [current]);
 

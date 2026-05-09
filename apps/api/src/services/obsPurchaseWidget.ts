@@ -36,6 +36,7 @@ export type ObsPurchaseWidgetSettings = {
   position: ObsWidgetPosition;
   durationMs: number;
   showBuyerMessage: boolean;
+  speechEnabled: boolean;
   style: ObsWidgetStyle;
   accentColor: string;
   fontFamily: string;
@@ -77,6 +78,7 @@ const DEFAULT_SETTINGS: ObsPurchaseWidgetSettings = {
   position: "bottom",
   durationMs: OBS_ALERT_DURATION_MS,
   showBuyerMessage: true,
+  speechEnabled: true,
   style: "auto",
   accentColor: "#00d38a",
   fontFamily: "Inter, system-ui, sans-serif",
@@ -155,6 +157,7 @@ function normalizeSettings(raw: unknown): ObsPurchaseWidgetSettings {
     durationMs: OBS_ALERT_DURATION_MS,
     showBuyerMessage:
       typeof o.showBuyerMessage === "boolean" ? o.showBuyerMessage : true,
+    speechEnabled: typeof o.speechEnabled === "boolean" ? o.speechEnabled : true,
     style,
     accentColor: normalizeHexColor(o.accentColor, DEFAULT_SETTINGS.accentColor),
     fontFamily: normalizeFont(o.fontFamily),

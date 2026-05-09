@@ -1477,6 +1477,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       .optional(),
     durationMs: z.literal(10_000).optional(),
     showBuyerMessage: z.boolean().optional(),
+    speechEnabled: z.boolean().optional(),
     style: z.enum(["auto", "twitch", "kick", "neon", "minimal"]).optional(),
     accentColor: z
       .string()
