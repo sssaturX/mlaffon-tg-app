@@ -716,6 +716,8 @@ export const shopPurchases = pgTable(
     }),
     /** Название товара на момент покупки / перед удалением карточки (для отчётов). */
     itemTitleSnapshot: text("item_title_snapshot").notNull().default(""),
+    /** Короткое сообщение покупателя для OBS-алерта. */
+    buyerMessage: text("buyer_message"),
     priceCoins: integer("price_coins").notNull(),
     platform: text("platform").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })

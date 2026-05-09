@@ -80,6 +80,7 @@ import {
 } from "./services/liveBroadcast.js";
 import { markReferralPercentEligible } from "./services/referralEligibility.js";
 import { handleRealtimeWsConnection } from "./services/realtimeWs.js";
+import { handleObsWidgetWsConnection } from "./services/obsPurchaseWidget.js";
 import { startRealtimeSubscriber } from "./services/realtimePublish.js";
 import { seedDefaultPointPlatforms } from "./services/platformBalances.js";
 import { trackSecurityFingerprint } from "./services/securitySignals.js";
@@ -215,6 +216,7 @@ await app.register(rateLimit, {
     const p = req.url.split("?")[0] ?? "";
     if (
       p === "/api/v1/ws" ||
+      p === "/api/v1/obs/widget/ws" ||
       p === "/health" ||
       p === "/api/v1/telegram/webhook"
     ) {
@@ -265,6 +267,11 @@ app.get("/api/v1/ws", { websocket: true }, (socket, req) => {
   /** `req.url` иногда без query за прокси; у Node `raw.url` — путь + query. */
   const pathAndQuery = req.raw.url ?? req.url;
   void handleRealtimeWsConnection(socket, pathAndQuery, req.ip, req.log);
+});
+
+app.get("/api/v1/obs/widget/ws", { websocket: true }, (socket, req) => {
+  const pathAndQuery = req.raw.url ?? req.url;
+  void handleObsWidgetWsConnection(socket, pathAndQuery);
 });
 await registerOAuthRoutes(app);
 await registerAdminRoutes(app);
@@ -1193,6 +1200,7 @@ app.get("/api/v1/shop/items", async (req, reply) => {
 const shopPurchaseBody = z.object({
   itemId: z.string().min(1),
   platform: z.enum(["twitch", "kick"]),
+  buyerMessage: z.string().max(150).optional().nullable(),
 });
 
 const streamTaskMessageBody = z.object({
@@ -1333,8 +1341,8 @@ app.post("/api/v1/shop/purchase", async (req, reply) => {
       error: { code: "bad_request", message: "Выберите товар и платформу." },
     });
   }
-  const { itemId, platform } = parsed.data;
-  const res = await purchaseItem(userId, itemId, platform);
+  const { itemId, platform, buyerMessage } = parsed.data;
+  const res = await purchaseItem(userId, itemId, platform, buyerMessage);
   if (!res.ok) {
     const shopMsg: Record<string, string> = {
       item_not_found: "Товар недоступен",

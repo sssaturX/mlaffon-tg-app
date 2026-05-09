@@ -6,8 +6,12 @@ import {
   transactions,
   userBalances,
   userInventory,
+  users,
 } from "../db/schema.js";
-import { publishBalanceUpdate } from "./realtimePublish.js";
+import {
+  publishBalanceUpdate,
+  publishObsWidgetEvent,
+} from "./realtimePublish.js";
 import { getShopGlobalCopyForClient } from "./shopSettings.js";
 import { nanoid } from "nanoid";
 import type { MediaImageUploadResponse } from "shared";
@@ -22,6 +26,12 @@ import {
   invalidateShopBundleCache,
   setShopBundleCache,
 } from "./shopBundleCache.js";
+import { getActiveLiveBroadcast } from "./liveBroadcast.js";
+import {
+  getObsPurchaseWidgetSettings,
+  normalizeBuyerMessage,
+  type ObsPurchaseAlertEvent,
+} from "./obsPurchaseWidget.js";
 
 export type ShopClientPlatform = "twitch" | "kick";
 export type EconomyPlatform = "twitch" | "kick";
@@ -174,7 +184,8 @@ export async function getShopClientBundle(platform: ShopClientPlatform): Promise
 export async function purchaseItem(
   userId: string,
   itemId: string,
-  platform: EconomyPlatform
+  platform: EconomyPlatform,
+  buyerMessageRaw?: string | null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const [item] = await db
     .select()
@@ -195,6 +206,7 @@ export async function purchaseItem(
   }
 
   const idem = `shop:${userId}:${itemId}:${nanoid()}`;
+  const buyerMessage = normalizeBuyerMessage(buyerMessageRaw);
 
   const result = await db.transaction(async (tx) => {
     const [existing] = await tx
@@ -276,15 +288,23 @@ export async function purchaseItem(
         });
     }
 
-    await tx.insert(shopPurchases).values({
+    const [purchase] = await tx.insert(shopPurchases).values({
       userId,
       shopItemId: item.id,
       itemTitleSnapshot: item.title,
+      buyerMessage,
       priceCoins: item.priceCoins,
       platform,
+    }).returning({
+      id: shopPurchases.id,
+      createdAt: shopPurchases.createdAt,
     });
 
-    return { ok: true as const };
+    return {
+      ok: true as const,
+      purchaseId: purchase?.id ?? "",
+      createdAt: purchase?.createdAt ?? new Date(),
+    };
   }).catch((e: Error) => {
     if (e.message === "out_of_stock_race") {
       return { ok: false as const, error: "out_of_stock" };
@@ -295,6 +315,81 @@ export async function purchaseItem(
   if (result.ok) {
     void publishBalanceUpdate(userId);
     invalidateShopBundleCache();
+    void publishPurchaseAlert({
+      userId,
+      item: {
+        title: item.title,
+        imageUrl: item.imageUrl,
+        priceCoins: item.priceCoins,
+        meta: item.meta,
+      },
+      platform,
+      buyerMessage,
+      createdAt: result.createdAt,
+    });
   }
   return result;
+}
+
+async function publishPurchaseAlert(input: {
+  userId: string;
+  item: {
+    title: string;
+    imageUrl: string | null;
+    priceCoins: number;
+    meta: unknown;
+  };
+  platform: EconomyPlatform;
+  buyerMessage: string | null;
+  createdAt: Date;
+}): Promise<void> {
+  const [buyer, activeLive, settings] = await Promise.all([
+    db
+      .select({
+        username: users.username,
+        firstName: users.firstName,
+        lastName: users.lastName,
+      })
+      .from(users)
+      .where(eq(users.id, input.userId))
+      .limit(1),
+    getActiveLiveBroadcast(),
+    getObsPurchaseWidgetSettings(),
+  ]);
+
+  const user = buyer[0];
+  const username = user?.username?.trim().replace(/^@+/, "") || null;
+  const fullName = [user?.firstName, user?.lastName]
+    .map((v) => v?.trim())
+    .filter(Boolean)
+    .join(" ");
+  const buyerName = fullName || (username ? `@${username}` : "Покупатель");
+  const media =
+    input.item.meta && typeof input.item.meta === "object" && !Array.isArray(input.item.meta)
+      ? parseStoredMediaImage((input.item.meta as Record<string, unknown>).imageMedia)
+      : null;
+  const streamPlatform =
+    activeLive?.platform === "kick" || activeLive?.platform === "twitch"
+      ? activeLive.platform
+      : input.platform;
+
+  const event: ObsPurchaseAlertEvent = {
+    type: "purchase_alert",
+    v: 1,
+    data: {
+      buyerName,
+      buyerUsername: username,
+      productName: input.item.title,
+      productImage: media?.fallbackSrc ?? input.item.imageUrl ?? null,
+      price: input.item.priceCoins,
+      currency: input.platform === "twitch" ? "Twitch coins" : "Kick coins",
+      buyerMessage: input.buyerMessage,
+      createdAt: input.createdAt.toISOString(),
+      streamerId: settings.streamerId,
+      purchasePlatform: input.platform,
+      streamPlatform,
+    },
+  };
+
+  await publishObsWidgetEvent(settings.streamerId, event);
 }

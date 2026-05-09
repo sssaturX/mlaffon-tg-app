@@ -4,6 +4,10 @@ import { REALTIME_REDIS_CHANNEL } from "../lib/realtimeChannel.js";
 import { db } from "../db/index.js";
 import { outboxEvents } from "../db/schema.js";
 import { broadcastJson, sendToUser } from "./realtimeWs.js";
+import {
+  sendToObsWidget,
+  type ObsWidgetWireEvent,
+} from "./obsPurchaseWidget.js";
 import type { GiveawayListItem } from "./giveaways.js";
 import { buildMeEconomyPatch } from "./me.js";
 const PUBLISH_RETRIES = 2;
@@ -113,6 +117,21 @@ export async function publishUserEvent(
   }
 }
 
+export async function publishObsWidgetEvent(
+  streamerId: string,
+  event: ObsWidgetWireEvent
+): Promise<void> {
+  const payload = JSON.stringify({
+    scope: "obs_widget" as const,
+    streamerId,
+    event,
+  });
+  const ok = await redisPublishWithRetry(payload);
+  if (!ok) {
+    sendToObsWidget(streamerId, event);
+  }
+}
+
 export async function publishBalanceUpdate(userId: string): Promise<void> {
   let patch;
   try {
@@ -158,12 +177,19 @@ export async function startRealtimeSubscriber(
       const parsed = JSON.parse(msg) as {
         scope?: string;
         userId?: string;
+        streamerId?: string;
         event?: unknown;
       };
       if (parsed.scope === "user" && parsed.userId && parsed.event) {
         sendToUser(parsed.userId, parsed.event);
       } else if (parsed.scope === "broadcast" && parsed.event) {
         broadcastJson(parsed.event);
+      } else if (
+        parsed.scope === "obs_widget" &&
+        parsed.streamerId &&
+        parsed.event
+      ) {
+        sendToObsWidget(parsed.streamerId, parsed.event as ObsWidgetWireEvent);
       }
     } catch {
       const u = msg.trim();

@@ -90,11 +90,24 @@ const GiveawayPage = lazy(() => import("./pages/Giveaway"));
 const GiveawaysPage = lazy(() => import("./pages/Giveaways"));
 const BannedScreen = lazy(() => import("./pages/BannedScreen"));
 const WelcomeGate = lazy(() => import("./pages/WelcomeGate"));
+const AlertWidget = lazy(() => import("./components/AlertWidget"));
 
 const devAuth =
   import.meta.env.VITE_ALLOW_DEV === "1" || import.meta.env.DEV;
 
 export default function App() {
+  const location = useLocation();
+  if (location.pathname.startsWith("/obs/widget")) {
+    return (
+      <Suspense fallback={null}>
+        <AlertWidget />
+      </Suspense>
+    );
+  }
+  return <MainApp />;
+}
+
+function MainApp() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { showToast } = useToast();

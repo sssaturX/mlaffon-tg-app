@@ -64,15 +64,18 @@ export default function Shop() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [buying, setBuying] = useState(false);
   const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
+  const [buyerMessage, setBuyerMessage] = useState("");
 
   const onSelectItem = useCallback((id: string) => {
     setPurchaseErr(null);
+    setBuyerMessage("");
     setSelectedId(id);
   }, []);
 
   useEffect(() => {
     setSelectedId(null);
     setPurchaseErr(null);
+    setBuyerMessage("");
   }, [activePlatform]);
 
   useEffect(() => {
@@ -145,6 +148,7 @@ export default function Shop() {
         body: JSON.stringify({
           itemId: selected.id,
           platform: activePlatform,
+          buyerMessage: buyerMessage.trim() || null,
         }),
       });
       if (!r.ok) {
@@ -154,6 +158,7 @@ export default function Shop() {
       }
       showToast(`${selected.title} — покупка выполнена!`, "success");
       setSelectedId(null);
+      setBuyerMessage("");
       void refetch();
       patchEconomy(null);
     } finally {
@@ -265,6 +270,23 @@ export default function Shop() {
                 <TextWithTelegramMentions text={globalCopy.warning} />
               </div>
             ) : null}
+
+            <div className="shop-popup__buyer-message">
+              <label htmlFor="shopBuyerMessage">
+                Сообщение для стрима (необязательно)
+              </label>
+              <textarea
+                id="shopBuyerMessage"
+                value={buyerMessage}
+                maxLength={150}
+                rows={3}
+                placeholder="Например: Удачного стрима!"
+                onChange={(e) => setBuyerMessage(e.target.value.slice(0, 150))}
+              />
+              <p className="shop-popup__buyer-message-count">
+                {buyerMessage.length}/150
+              </p>
+            </div>
 
             {cantAfford ? (
               <p className="shop-popup__insufficient">

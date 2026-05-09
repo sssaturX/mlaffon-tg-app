@@ -73,8 +73,16 @@ import {
   startPrediction,
 } from "../services/predictions.js";
 import { readMultipartImagePart } from "../lib/readMultipartImage.js";
+import { readMultipartSoundPart } from "../lib/readMultipartSound.js";
 import { mediaImageUploadResponseSchema } from "../lib/mediaImageJson.js";
 import { runMediaImageUpload } from "../services/mediaUploadService.js";
+import {
+  getObsPurchaseWidgetSettings,
+  publicWidgetSettings,
+  regenerateObsPurchaseWidgetToken,
+  updateObsPurchaseWidgetSettings,
+  uploadObsWidgetSound,
+} from "../services/obsPurchaseWidget.js";
 import {
   adminAdjustBalance,
   adminDeleteUser,
@@ -1455,6 +1463,88 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     });
     audit(admin, req, "update_shop_global_copy", "settings", null, parsed.data);
     return { ok: true };
+  });
+
+  const obsWidgetSettingsBody = z.object({
+    soundEnabled: z.boolean().optional(),
+    soundUrl: z.string().url().nullable().optional(),
+    defaultSound: z.enum(["soft", "spark", "bell"]).optional(),
+    volume: z.number().min(0).max(1).optional(),
+    position: z
+      .enum(["bottom", "center", "top", "bottom-left", "bottom-right"])
+      .optional(),
+    durationMs: z.number().int().min(5000).max(8000).optional(),
+    showBuyerMessage: z.boolean().optional(),
+    style: z.enum(["auto", "twitch", "kick", "neon", "minimal"]).optional(),
+    accentColor: z
+      .string()
+      .regex(/^#[0-9a-f]{6}$/i)
+      .optional(),
+    fontFamily: z.string().max(120).optional(),
+  });
+
+  app.get("/api/admin/obs/purchase-widget", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "read:shop", reply)) return;
+    const settings = await getObsPurchaseWidgetSettings();
+    return {
+      ...settings,
+      publicSettings: publicWidgetSettings(settings),
+    };
+  });
+
+  app.put("/api/admin/obs/purchase-widget", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_shop", reply)) return;
+    const parsed = obsWidgetSettingsBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: { code: "bad_request", message: parsed.error.message },
+      });
+    }
+    const settings = await updateObsPurchaseWidgetSettings(parsed.data);
+    audit(admin, req, "update_obs_purchase_widget", "settings", null, parsed.data);
+    return settings;
+  });
+
+  app.post("/api/admin/obs/purchase-widget/regenerate-token", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_shop", reply)) return;
+    const settings = await regenerateObsPurchaseWidgetToken();
+    audit(admin, req, "regenerate_obs_purchase_widget_token", "settings", null);
+    return settings;
+  });
+
+  app.post("/api/admin/obs/purchase-widget/sound", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_shop", reply)) return;
+    const part = await readMultipartSoundPart(req);
+    if (!part.ok) {
+      return reply.status(part.status).send({
+        error: { code: part.code, message: part.message },
+      });
+    }
+    try {
+      const uploaded = await uploadObsWidgetSound(part);
+      if (!uploaded.ok) {
+        return reply.status(uploaded.status).send({
+          error: { code: uploaded.code, message: uploaded.message },
+        });
+      }
+      const settings = await updateObsPurchaseWidgetSettings({
+        soundUrl: uploaded.url,
+        soundEnabled: true,
+      });
+      audit(admin, req, "upload_obs_purchase_widget_sound", "settings", null, {
+        url: uploaded.url,
+      });
+      return settings;
+    } catch (e) {
+      req.log.error({ err: e }, "obs_widget_sound_upload_failed");
+      return reply.status(503).send({
+        error: { code: "storage_failed", message: "Не удалось сохранить звук." },
+      });
+    }
   });
 
   app.get("/api/admin/ban-appeals", async (req, reply) => {

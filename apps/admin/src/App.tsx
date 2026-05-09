@@ -40,6 +40,17 @@ function apiBase(): string {
   return env;
 }
 
+function webBaseForObs(): string {
+  const env = (import.meta.env.VITE_WEB_ORIGIN ?? "").trim().replace(/\/$/, "");
+  if (env) return env;
+  if (typeof window === "undefined") return "";
+  const u = new URL(window.location.origin);
+  if (u.hostname.startsWith("admin.")) {
+    u.hostname = u.hostname.replace(/^admin\./, "");
+  }
+  return u.toString().replace(/\/$/, "");
+}
+
 /**
  * `<input type="datetime-local">` — без часового пояса; нужны локальные компоненты даты/времени.
  * Раньше использовали `toISOString().slice(0, 16)` (UTC), браузер читал те же цифры как локальные —
@@ -270,6 +281,21 @@ type AdminShopPurchaseRow = {
   firstName: string | null;
   lastName: string | null;
   telegramChatLink: string | null;
+};
+
+type ObsPurchaseWidgetSettings = {
+  token: string;
+  streamerId: string;
+  soundEnabled: boolean;
+  soundUrl: string | null;
+  defaultSound: "soft" | "spark" | "bell";
+  volume: number;
+  position: "bottom" | "center" | "top" | "bottom-left" | "bottom-right";
+  durationMs: number;
+  showBuyerMessage: boolean;
+  style: "auto" | "twitch" | "kick" | "neon" | "minimal";
+  accentColor: string;
+  fontFamily: string;
 };
 
 type AdminTaskEvidenceRow = {
@@ -560,6 +586,10 @@ export function App() {
   const [shopGlobalNotice, setShopGlobalNotice] = useState("");
   const [shopGlobalWarning, setShopGlobalWarning] = useState("");
   const [shopGlobalCopyLoading, setShopGlobalCopyLoading] = useState(false);
+  const [obsWidgetSettings, setObsWidgetSettings] =
+    useState<ObsPurchaseWidgetSettings | null>(null);
+  const [obsWidgetLoading, setObsWidgetLoading] = useState(false);
+  const [obsWidgetSoundUploading, setObsWidgetSoundUploading] = useState(false);
   const autoRefreshRunningRef = useRef(false);
   const lastStatsAutoRefreshAtRef = useRef(0);
   const usersPrevSearchRef = useRef<string | undefined>(undefined);
@@ -1034,6 +1064,28 @@ export function App() {
     }
   }, [token, authHeaders]);
 
+  const loadObsPurchaseWidget = useCallback(async (opts?: AdminFetchOpts) => {
+    if (!token) return;
+    const silent = opts?.silent === true;
+    if (!silent) setObsWidgetLoading(true);
+    try {
+      const r = await fetch(`${apiBase()}/api/admin/obs/purchase-widget`, {
+        headers: authHeaders(),
+      });
+      const j = (await r.json()) as
+        | ObsPurchaseWidgetSettings
+        | { error?: { message?: string } };
+      if (!r.ok) {
+        setErr("error" in j ? (j.error?.message ?? `Ошибка ${r.status}`) : `Ошибка ${r.status}`);
+        if (r.status === 401) setToken(null);
+        return;
+      }
+      setObsWidgetSettings(j as ObsPurchaseWidgetSettings);
+    } finally {
+      if (!silent) setObsWidgetLoading(false);
+    }
+  }, [token, authHeaders]);
+
   const loadTaskEvidence = useCallback(async (opts?: AdminFetchOpts) => {
     if (!token) return;
     const silent = opts?.silent === true;
@@ -1160,8 +1212,16 @@ export function App() {
     if (!token || tab !== "shop") return;
     void loadAdminShop();
     void loadShopGlobalCopy();
+    void loadObsPurchaseWidget();
     void loadAdminShopPurchases();
-  }, [token, tab, loadAdminShop, loadShopGlobalCopy, loadAdminShopPurchases]);
+  }, [
+    token,
+    tab,
+    loadAdminShop,
+    loadShopGlobalCopy,
+    loadObsPurchaseWidget,
+    loadAdminShopPurchases,
+  ]);
 
   useEffect(() => {
     if (token && tab === "predictions") {
@@ -3266,6 +3326,324 @@ export function App() {
                   Сохранить тексты
                 </button>
               </>
+            )}
+          </div>
+
+          <div className="card stack admin-mt-3">
+            <h3 className="admin-mt-0">OBS-виджет покупок</h3>
+            <p className="muted admin-m-0">
+              Browser Source в OBS открывает ссылку без логина. Алерт появится после успешной покупки
+              товара и возьмёт Twitch/Kick стиль из текущего активного эфира.
+            </p>
+            {obsWidgetLoading || !obsWidgetSettings ? (
+              <p className="muted">Загружаем настройки виджета…</p>
+            ) : (
+              (() => {
+                const obsUrl = `${webBaseForObs()}/obs/widget?token=${encodeURIComponent(
+                  obsWidgetSettings.token
+                )}`;
+                return (
+                  <>
+                    <div className="admin-mt-3">
+                      <label htmlFor="obsurl">OBS-ссылка</label>
+                      <div className="row">
+                        <input id="obsurl" readOnly value={obsUrl} className="mono" />
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => void navigator.clipboard?.writeText(obsUrl)}
+                        >
+                          Скопировать
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={loading}
+                          onClick={async () => {
+                            if (!token) return;
+                            if (!window.confirm("Сгенерировать новый токен? Старый OBS URL перестанет работать.")) return;
+                            setLoading(true);
+                            setErr(null);
+                            try {
+                              const r = await fetch(
+                                `${apiBase()}/api/admin/obs/purchase-widget/regenerate-token`,
+                                { method: "POST", headers: authHeaders() }
+                              );
+                              const j = (await r.json()) as
+                                | ObsPurchaseWidgetSettings
+                                | { error?: { message?: string } };
+                              if (!r.ok) {
+                                setErr("error" in j ? (j.error?.message ?? `Ошибка ${r.status}`) : `Ошибка ${r.status}`);
+                                return;
+                              }
+                              setObsWidgetSettings(j as ObsPurchaseWidgetSettings);
+                            } catch {
+                              setErr("Сеть недоступна");
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                        >
+                          Новый токен
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="row admin-mt-3">
+                      <div>
+                        <label htmlFor="obsposition">Позиция</label>
+                        <select
+                          id="obsposition"
+                          value={obsWidgetSettings.position}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    position: e.target.value as ObsPurchaseWidgetSettings["position"],
+                                  }
+                                : prev
+                            )
+                          }
+                        >
+                          <option value="bottom">Снизу по центру</option>
+                          <option value="center">В центре</option>
+                          <option value="top">Сверху по центру</option>
+                          <option value="bottom-left">Снизу слева</option>
+                          <option value="bottom-right">Снизу справа</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="obsstyle">Стиль</label>
+                        <select
+                          id="obsstyle"
+                          value={obsWidgetSettings.style}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    style: e.target.value as ObsPurchaseWidgetSettings["style"],
+                                  }
+                                : prev
+                            )
+                          }
+                        >
+                          <option value="auto">Авто по текущему эфиру</option>
+                          <option value="twitch">Twitch</option>
+                          <option value="kick">Kick</option>
+                          <option value="neon">Neon</option>
+                          <option value="minimal">Minimal</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="row admin-mt-3">
+                      <div>
+                        <label htmlFor="obsduration">Длительность, мс</label>
+                        <input
+                          id="obsduration"
+                          type="number"
+                          min={5000}
+                          max={8000}
+                          step={250}
+                          value={obsWidgetSettings.durationMs}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev ? { ...prev, durationMs: Number(e.target.value) } : prev
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="obscolor">Акцентный цвет</label>
+                        <input
+                          id="obscolor"
+                          type="color"
+                          value={obsWidgetSettings.accentColor}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev ? { ...prev, accentColor: e.target.value } : prev
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="obsfont">Шрифт CSS</label>
+                        <input
+                          id="obsfont"
+                          value={obsWidgetSettings.fontFamily}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev ? { ...prev, fontFamily: e.target.value } : prev
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="row admin-mt-3">
+                      <label className="admin-checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={obsWidgetSettings.showBuyerMessage}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev ? { ...prev, showBuyerMessage: e.target.checked } : prev
+                            )
+                          }
+                        />
+                        <span className="admin-checkbox-row__text">
+                          Показывать сообщение покупателя
+                        </span>
+                      </label>
+                      <label className="admin-checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={obsWidgetSettings.soundEnabled}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev ? { ...prev, soundEnabled: e.target.checked } : prev
+                            )
+                          }
+                        />
+                        <span className="admin-checkbox-row__text">Включить звук</span>
+                      </label>
+                    </div>
+
+                    <div className="row admin-mt-3">
+                      <div>
+                        <label htmlFor="obssound">Стандартный звук</label>
+                        <select
+                          id="obssound"
+                          value={obsWidgetSettings.defaultSound}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    defaultSound: e.target.value as ObsPurchaseWidgetSettings["defaultSound"],
+                                    soundUrl: null,
+                                  }
+                                : prev
+                            )
+                          }
+                        >
+                          <option value="soft">Soft</option>
+                          <option value="spark">Spark</option>
+                          <option value="bell">Bell</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="obsvolume">Громкость</label>
+                        <input
+                          id="obsvolume"
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={obsWidgetSettings.volume}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev ? { ...prev, volume: Number(e.target.value) } : prev
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="obssoundfile">Свой звук, до 2 МБ</label>
+                        <input
+                          id="obssoundfile"
+                          type="file"
+                          accept="audio/*"
+                          disabled={obsWidgetSoundUploading}
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0] ?? null;
+                            if (!file || !token) return;
+                            if (!/^audio\//i.test(file.type)) {
+                              setErr("Выберите аудиофайл.");
+                              return;
+                            }
+                            if (file.size > 2 * 1024 * 1024) {
+                              setErr("Слишком большой звук. Максимум 2 МБ.");
+                              return;
+                            }
+                            const fd = new FormData();
+                            fd.set("file", file, file.name);
+                            setObsWidgetSoundUploading(true);
+                            setErr(null);
+                            try {
+                              const r = await fetch(
+                                `${apiBase()}/api/admin/obs/purchase-widget/sound`,
+                                {
+                                  method: "POST",
+                                  headers: { Authorization: `Bearer ${token}` },
+                                  body: fd,
+                                }
+                              );
+                              const j = (await r.json()) as
+                                | ObsPurchaseWidgetSettings
+                                | { error?: { message?: string } };
+                              if (!r.ok) {
+                                setErr("error" in j ? (j.error?.message ?? `Ошибка ${r.status}`) : `Ошибка ${r.status}`);
+                                return;
+                              }
+                              setObsWidgetSettings(j as ObsPurchaseWidgetSettings);
+                            } catch {
+                              setErr("Сеть недоступна при загрузке звука.");
+                            } finally {
+                              setObsWidgetSoundUploading(false);
+                              e.currentTarget.value = "";
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {obsWidgetSettings.soundUrl ? (
+                      <p className="muted admin-m-0">
+                        Загружен свой звук: <code>{obsWidgetSettings.soundUrl}</code>
+                      </p>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={loading}
+                      onClick={async () => {
+                        if (!token) return;
+                        setLoading(true);
+                        setErr(null);
+                        try {
+                          const {
+                            token: _token,
+                            streamerId: _streamerId,
+                            ...body
+                          } = obsWidgetSettings;
+                          const r = await fetch(`${apiBase()}/api/admin/obs/purchase-widget`, {
+                            method: "PUT",
+                            headers: authHeaders(true),
+                            body: JSON.stringify(body),
+                          });
+                          const j = (await r.json()) as
+                            | ObsPurchaseWidgetSettings
+                            | { error?: { message?: string } };
+                          if (!r.ok) {
+                            setErr("error" in j ? (j.error?.message ?? `Ошибка ${r.status}`) : `Ошибка ${r.status}`);
+                            return;
+                          }
+                          setObsWidgetSettings(j as ObsPurchaseWidgetSettings);
+                        } catch {
+                          setErr("Сеть недоступна");
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                    >
+                      Сохранить настройки виджета
+                    </button>
+                  </>
+                );
+              })()
             )}
           </div>
         </>
