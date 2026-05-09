@@ -387,6 +387,17 @@ WS_MAX_CONCURRENT_PER_IP=8
 AUTH_RATE_LIMIT_MAX=15
 AUTH_RATE_LIMIT_WINDOW_MS=900000
 
+# ── OBS TTS: SpeakerPy ───────────────────────────────────────────────────────
+# deploy/release.sh устанавливает ffmpeg, venv и requirements-speakerpy.txt автоматически.
+SPEAKERPY_TTS_ENABLED=1
+SPEAKERPY_PYTHON_BIN=/opt/mlaffon/shared/speakerpy-venv/bin/python
+SPEAKERPY_MODEL_ID=ru_v3
+SPEAKERPY_LANGUAGE=ru
+SPEAKERPY_DEVICE=cpu
+SPEAKERPY_CACHE_DIR=/opt/mlaffon/shared/speakerpy-cache/audio
+TORCH_HOME=/opt/mlaffon/shared/speakerpy-cache/torch
+SPEAKERPY_TIMEOUT_MS=45000
+
 # ── Tracing / logging ────────────────────────────────────────────────────────
 LOG_LEVEL=info
 API_SLOW_REQUEST_MS=2000

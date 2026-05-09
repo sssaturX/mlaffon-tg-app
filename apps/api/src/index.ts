@@ -65,6 +65,7 @@ import { registerDropRoutes } from "./routes/drops.js";
 import { registerPushRoutes } from "./routes/push.js";
 import { registerTelegramWebhookRoutes } from "./routes/telegramWebhook.js";
 import { registerMediaRoutes } from "./routes/media.js";
+import { registerObsTtsRoutes } from "./routes/obsTts.js";
 import { MAX_ORIGINAL_IMAGE_BYTES } from "./services/mediaConfig.js";
 import { maybeStartTelegramLongPolling } from "./services/telegramPolling.js";
 import {
@@ -281,6 +282,7 @@ await registerDropRoutes(app);
 await registerPushRoutes(app);
 await registerTelegramWebhookRoutes(app);
 await registerMediaRoutes(app);
+await registerObsTtsRoutes(app);
 
 import {
   registerMetricsHooks,

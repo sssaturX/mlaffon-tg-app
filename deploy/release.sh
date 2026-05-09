@@ -22,6 +22,7 @@
 #   DEPLOY_ALLOW_DESTRUCTIVE=0         # pass --force to drizzle push
 #   DEPLOY_SKIP_FAQ_SYNC=0             # skip db:sync-faq
 #   DEPLOY_DB_SEED=0                   # run db:seed (default: 0)
+#   DEPLOY_SKIP_SPEAKERPY=0            # skip SpeakerPy system/python setup
 # =============================================================================
 
 set -euo pipefail
@@ -43,6 +44,78 @@ if [[ "$TARGET_REF" == "--dry-run" ]]; then
 fi
 
 DEPLOY_LOG="${SHARED_LOGS}/deploy-$(date +%Y%m%d_%H%M%S).log"
+
+append_env_if_missing() {
+  local key="$1" value="$2"
+  if [[ -n "$(read_env_val "$SHARED_ENV" "$key")" ]]; then
+    return 0
+  fi
+  printf '\n%s=%s\n' "$key" "$value" >> "$SHARED_ENV"
+  ok "Env default added: ${key}"
+}
+
+ensure_speakerpy_runtime() {
+  if [[ "${DEPLOY_SKIP_SPEAKERPY:-0}" == "1" ]]; then
+    warn "Skipping SpeakerPy setup (DEPLOY_SKIP_SPEAKERPY=1)"
+    return 0
+  fi
+
+  local req_file="${RELEASE_DIR}/apps/api/scripts/requirements-speakerpy.txt"
+  if [[ ! -f "$req_file" ]]; then
+    warn "SpeakerPy requirements not found: ${req_file} — skipping"
+    return 0
+  fi
+
+  log "Ensuring SpeakerPy system packages…"
+  local missing_packages=()
+  command -v ffmpeg &>/dev/null || missing_packages+=(ffmpeg)
+  command -v python3 &>/dev/null || missing_packages+=(python3)
+  if ! python3 -m venv --help &>/dev/null; then
+    missing_packages+=(python3-venv)
+  fi
+  if ! python3 -m pip --version &>/dev/null; then
+    missing_packages+=(python3-pip)
+  fi
+
+  if (( ${#missing_packages[@]} > 0 )); then
+    command -v apt-get &>/dev/null ||
+      die "Missing packages (${missing_packages[*]}) and apt-get is unavailable"
+    log "Installing apt packages: ${missing_packages[*]}"
+    $SUDO apt-get update -qq
+    $SUDO apt-get install -y -qq "${missing_packages[@]}"
+  fi
+  ok "SpeakerPy system packages ready"
+
+  local venv_dir="${SPEAKERPY_VENV_DIR:-${SHARED_DIR}/speakerpy-venv}"
+  local cache_dir="${SPEAKERPY_CACHE_DIR:-${SHARED_DIR}/speakerpy-cache/audio}"
+  local torch_home="${SPEAKERPY_TORCH_HOME:-${SHARED_DIR}/speakerpy-cache/torch}"
+  mkdir -p "$cache_dir" "$torch_home"
+
+  if [[ ! -x "${venv_dir}/bin/python" ]]; then
+    log "Creating SpeakerPy venv: ${venv_dir}"
+    python3 -m venv "$venv_dir"
+  fi
+
+  log "Installing SpeakerPy Python requirements…"
+  run_retry 3 5 "${venv_dir}/bin/python" -m pip install --upgrade pip wheel setuptools 2>&1 ||
+    die "SpeakerPy pip bootstrap failed"
+  run_retry 3 5 "${venv_dir}/bin/python" -m pip install -r "$req_file" 2>&1 ||
+    die "SpeakerPy Python dependencies failed"
+  ok "SpeakerPy Python requirements installed"
+
+  append_env_if_missing "SPEAKERPY_TTS_ENABLED" "1"
+  append_env_if_missing "SPEAKERPY_PYTHON_BIN" "${venv_dir}/bin/python"
+  append_env_if_missing "SPEAKERPY_CACHE_DIR" "$cache_dir"
+  append_env_if_missing "SPEAKERPY_MODEL_ID" "ru_v3"
+  append_env_if_missing "SPEAKERPY_LANGUAGE" "ru"
+  append_env_if_missing "SPEAKERPY_DEVICE" "cpu"
+  append_env_if_missing "SPEAKERPY_TIMEOUT_MS" "45000"
+  append_env_if_missing "TORCH_HOME" "$torch_home"
+
+  $SUDO chown -R www-data:www-data "$cache_dir" "$torch_home" 2>/dev/null || true
+  $SUDO chmod -R u+rwX,g+rwX,o-rwx "$cache_dir" "$torch_home" 2>/dev/null || true
+  ok "SpeakerPy runtime ready"
+}
 
 # ── Trap: auto-rollback on error after symlink switch ────────────────────────
 auto_rollback() {
@@ -197,6 +270,7 @@ ok "Linked ${RELEASE_DIR}/apps/api/.env → ${SHARED_ENV}"
 step 6 "Install dependencies (npm ci)"
 cd "$RELEASE_DIR"
 npm ci --prefer-offline 2>&1
+ensure_speakerpy_runtime
 ok "Dependencies installed"
 
 # ═══════════════════════════════════════════════════════════════════════════════

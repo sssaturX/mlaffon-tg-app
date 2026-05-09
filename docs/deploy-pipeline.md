@@ -87,6 +87,7 @@ After all stages: write metadata, clean old releases, print summary.
 | `DEPLOY_ALLOW_DESTRUCTIVE` | `0` | Allow destructive migrations |
 | `DEPLOY_SKIP_FAQ_SYNC` | `0` | Skip db:sync-faq |
 | `DEPLOY_DB_SEED` | `0` | Run db:seed |
+| `DEPLOY_SKIP_SPEAKERPY` | `0` | Skip OBS SpeakerPy runtime setup |
 | `RELEASE_RETENTION` | `5` | Number of releases to keep |
 
 ### CDN provider (verify-cdn.sh / purge-cdn.sh)

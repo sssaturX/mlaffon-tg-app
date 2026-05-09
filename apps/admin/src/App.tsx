@@ -294,7 +294,9 @@ type ObsPurchaseWidgetSettings = {
   durationMs: number;
   showBuyerMessage: boolean;
   speechEnabled: boolean;
+  speechEngine: "browser" | "speakerpy";
   speechVoice: "auto" | "ru-female" | "ru-male" | "any";
+  speakerpyVoice: "aidar" | "baya" | "kseniya" | "xenia" | "eugene" | "random";
   style: "auto" | "twitch" | "kick" | "neon" | "minimal";
   accentColor: string;
   fontFamily: string;
@@ -3572,7 +3574,59 @@ export function App() {
 
                     <div className="row admin-mt-3">
                       <div>
-                        <label htmlFor="obsspeechvoice">Голос озвучки</label>
+                        <label htmlFor="obsspeechengine">Движок озвучки</label>
+                        <select
+                          id="obsspeechengine"
+                          value={obsWidgetSettings.speechEngine}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    speechEngine:
+                                      e.target.value as ObsPurchaseWidgetSettings["speechEngine"],
+                                  }
+                                : prev
+                            )
+                          }
+                        >
+                          <option value="speakerpy">SpeakerPy</option>
+                          <option value="browser">Браузер OBS</option>
+                        </select>
+                      </div>
+                      {obsWidgetSettings.speechEngine === "speakerpy" ? (
+                        <div>
+                          <label htmlFor="obsspeakerpyvoice">Голос SpeakerPy</label>
+                          <select
+                            id="obsspeakerpyvoice"
+                            value={obsWidgetSettings.speakerpyVoice}
+                            onChange={(e) =>
+                              setObsWidgetSettings((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      speakerpyVoice:
+                                        e.target.value as ObsPurchaseWidgetSettings["speakerpyVoice"],
+                                    }
+                                  : prev
+                              )
+                            }
+                          >
+                            <option value="baya">Baya</option>
+                            <option value="kseniya">Kseniya</option>
+                            <option value="xenia">Xenia</option>
+                            <option value="eugene">Eugene</option>
+                            <option value="aidar">Aidar</option>
+                            <option value="random">Random</option>
+                          </select>
+                        </div>
+                      ) : null}
+                      <div>
+                        <label htmlFor="obsspeechvoice">
+                          {obsWidgetSettings.speechEngine === "speakerpy"
+                            ? "Fallback голос OBS"
+                            : "Голос озвучки"}
+                        </label>
                         <select
                           id="obsspeechvoice"
                           value={obsWidgetSettings.speechVoice}

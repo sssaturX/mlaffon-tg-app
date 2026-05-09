@@ -14,7 +14,9 @@ type WidgetSettings = {
   durationMs: number;
   showBuyerMessage: boolean;
   speechEnabled: boolean;
+  speechEngine: "browser" | "speakerpy";
   speechVoice: "auto" | "ru-female" | "ru-male" | "any";
+  speakerpyVoice: "aidar" | "baya" | "kseniya" | "xenia" | "eugene" | "random";
   style: "auto" | "twitch" | "kick" | "neon" | "minimal";
   accentColor: string;
   fontFamily: string;
@@ -40,7 +42,7 @@ type WidgetEvent =
 
 const OBS_ALERT_DURATION_MS = 10_000;
 const SPEECH_START_DELAY_MS = 650;
-const SPEECH_VOICE_WAIT_MS = 4_000;
+const SPEECH_VOICE_WAIT_MS = 8_000;
 const SPEECH_RESUME_INTERVAL_MS = 250;
 
 const DEFAULT_SETTINGS: WidgetSettings = {
@@ -53,7 +55,9 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   durationMs: OBS_ALERT_DURATION_MS,
   showBuyerMessage: true,
   speechEnabled: true,
+  speechEngine: "browser",
   speechVoice: "auto",
+  speakerpyVoice: "baya",
   style: "auto",
   accentColor: "#00d38a",
   fontFamily: "Inter, system-ui, sans-serif",
@@ -65,6 +69,14 @@ function obsWsUrl(token: string): string {
   base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
   base.pathname = "/api/v1/obs/widget/ws";
   base.search = `?token=${encodeURIComponent(token)}`;
+  return base.toString();
+}
+
+function apiUrl(pathname: string): string {
+  const env = (import.meta.env.VITE_API_ORIGIN ?? "").trim().replace(/\/$/, "");
+  const base = env ? new URL(env) : new URL(window.location.origin);
+  base.pathname = pathname;
+  base.search = "";
   return base.toString();
 }
 
@@ -162,13 +174,17 @@ const MALE_VOICE_HINTS = [
 ];
 
 function isRussianVoice(voice: SpeechSynthesisVoice): boolean {
-  const lang = voice.lang.toLowerCase();
+  const lang = voice.lang.trim().replace(/_/g, "-").toLowerCase();
   const name = voice.name.toLowerCase();
+  const uri = voice.voiceURI.toLowerCase();
   return (
     lang === "ru-ru" ||
-    lang.startsWith("ru") ||
+    lang === "ru" ||
+    lang.startsWith("ru-") ||
     name.includes("russian") ||
-    name.includes("рус")
+    name.includes("рус") ||
+    uri.includes("russian") ||
+    uri.includes("рус")
   );
 }
 
@@ -181,8 +197,9 @@ function hasRussianSpeechVoice(synth: SpeechSynthesis): boolean {
 }
 
 function normalizeRussianVoiceLang(voice: SpeechSynthesisVoice): string {
-  const lang = voice.lang.trim();
-  return lang.toLowerCase().startsWith("ru") ? lang : "ru-RU";
+  const lang = voice.lang.trim().replace(/_/g, "-");
+  const normalized = lang.toLowerCase();
+  return normalized === "ru" || normalized.startsWith("ru-") ? lang : "ru-RU";
 }
 
 function voiceMatchesHint(voice: SpeechSynthesisVoice, hints: string[]): boolean {
@@ -275,11 +292,10 @@ function buildSpeechText(alert: PurchaseAlert): string {
   return parts.join(" ");
 }
 
-function scheduleBuyerMessageSpeech(
+function scheduleBrowserSpeech(
   settings: WidgetSettings,
-  alert: PurchaseAlert
+  text: string
 ): (() => void) | null {
-  const text = buildSpeechText(alert).trim();
   if (!settings.speechEnabled || !text || !("speechSynthesis" in window)) return null;
 
   const synth = window.speechSynthesis;
@@ -303,6 +319,13 @@ function scheduleBuyerMessageSpeech(
       utterance.rate = 1;
       utterance.pitch = 1;
       const voice = selectSpeechVoice(settings.speechVoice);
+      if (isRussianSpeechPreference(settings.speechVoice) && !voice) {
+        console.warn(
+          "[OBS widget] Russian speech voice is unavailable. Install/enable a Russian voice in the OBS browser environment to avoid English fallback."
+        );
+        stopResumeTimer();
+        return;
+      }
       if (voice) {
         utterance.voice = voice;
         utterance.lang = isRussianSpeechPreference(settings.speechVoice)
@@ -341,6 +364,83 @@ function scheduleBuyerMessageSpeech(
     cleanupVoiceWait?.();
     stopResumeTimer();
   };
+}
+
+function scheduleSpeakerpySpeech(
+  token: string,
+  settings: WidgetSettings,
+  text: string
+): (() => void) | null {
+  if (!settings.speechEnabled || !text) return null;
+
+  let cancelled = false;
+  let audio: HTMLAudioElement | null = null;
+  let objectUrl: string | null = null;
+  let cleanupFallback: (() => void) | null = null;
+  const controller = new AbortController();
+
+  const cleanupAudioUrl = () => {
+    if (!objectUrl) return;
+    URL.revokeObjectURL(objectUrl);
+    objectUrl = null;
+  };
+
+  const play = async () => {
+    try {
+      const response = await fetch(apiUrl("/api/v1/obs/widget/tts"), {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          text,
+          voice: settings.speakerpyVoice,
+          speed: 1,
+        }),
+      });
+      if (!response.ok) throw new Error(`speakerpy_tts_${response.status}`);
+      const blob = await response.blob();
+      if (cancelled) return;
+      objectUrl = URL.createObjectURL(blob);
+      audio = new Audio(objectUrl);
+      audio.volume = Math.max(0, Math.min(1, settings.volume));
+      audio.onended = cleanupAudioUrl;
+      audio.onerror = cleanupAudioUrl;
+      await audio.play();
+    } catch {
+      if (!cancelled) cleanupFallback = scheduleBrowserSpeech(settings, text);
+    }
+  };
+
+  const startTimer = window.setTimeout(() => {
+    void play();
+  }, SPEECH_START_DELAY_MS);
+
+  return () => {
+    cancelled = true;
+    controller.abort();
+    window.clearTimeout(startTimer);
+    cleanupFallback?.();
+    if (audio) {
+      audio.pause();
+      audio.src = "";
+      audio = null;
+    }
+    cleanupAudioUrl();
+  };
+}
+
+function scheduleBuyerMessageSpeech(
+  token: string,
+  settings: WidgetSettings,
+  alert: PurchaseAlert
+): (() => void) | null {
+  const text = buildSpeechText(alert).trim();
+  if (!settings.speechEnabled || !text) return null;
+  if (settings.speechEngine === "speakerpy") {
+    return scheduleSpeakerpySpeech(token, settings, text);
+  }
+  return scheduleBrowserSpeech(settings, text);
 }
 
 function displayBuyer(alert: PurchaseAlert): string {
@@ -410,7 +510,7 @@ export function AlertWidget() {
     if (!current) return undefined;
     const activeSettings = settingsRef.current;
     playAlertSound(activeSettings);
-    const cleanupSpeech = scheduleBuyerMessageSpeech(activeSettings, current);
+    const cleanupSpeech = scheduleBuyerMessageSpeech(token, activeSettings, current);
 
     const clearTimer = window.setTimeout(() => {
       setCurrent(null);
