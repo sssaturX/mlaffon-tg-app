@@ -38,6 +38,8 @@ type WidgetEvent =
   | { type: "purchase_alert"; v: 1; data: PurchaseAlert };
 
 const OBS_ALERT_DURATION_MS = 10_000;
+const SPEECH_START_DELAY_MS = 650;
+const SPEECH_VOICE_WAIT_MS = 1_200;
 
 const DEFAULT_SETTINGS: WidgetSettings = {
   streamerId: "default",
@@ -120,14 +122,50 @@ function selectRussianVoice(): SpeechSynthesisVoice | null {
   );
 }
 
+function waitForSpeechVoices(
+  synth: SpeechSynthesis,
+  onReady: () => void
+): () => void {
+  let done = false;
+  let timeout: number | null = null;
+
+  const finish = () => {
+    if (done) return;
+    done = true;
+    if (timeout != null) window.clearTimeout(timeout);
+    synth.removeEventListener?.("voiceschanged", finish);
+    onReady();
+  };
+
+  if (synth.getVoices().length > 0) {
+    finish();
+    return () => undefined;
+  }
+
+  synth.addEventListener?.("voiceschanged", finish);
+  timeout = window.setTimeout(finish, SPEECH_VOICE_WAIT_MS);
+
+  return () => {
+    done = true;
+    if (timeout != null) window.clearTimeout(timeout);
+    synth.removeEventListener?.("voiceschanged", finish);
+  };
+}
+
 function scheduleBuyerMessageSpeech(
   settings: WidgetSettings,
   alert: PurchaseAlert
-): number | null {
+): (() => void) | null {
   const text = alert.buyerMessage?.trim();
   if (!settings.speechEnabled || !text || !("speechSynthesis" in window)) return null;
 
-  return window.setTimeout(() => {
+  const synth = window.speechSynthesis;
+  let cancelled = false;
+  let started = false;
+  let cleanupVoiceWait: (() => void) | null = null;
+
+  const speak = () => {
+    if (cancelled) return;
     try {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = "ru-RU";
@@ -136,12 +174,25 @@ function scheduleBuyerMessageSpeech(
       utterance.pitch = 1;
       const voice = selectRussianVoice();
       if (voice) utterance.voice = voice;
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
+      synth.cancel();
+      synth.speak(utterance);
+      started = true;
+      if (synth.paused) synth.resume();
     } catch {
       /* ignore */
     }
-  }, 650);
+  };
+
+  const startTimer = window.setTimeout(() => {
+    cleanupVoiceWait = waitForSpeechVoices(synth, speak);
+  }, SPEECH_START_DELAY_MS);
+
+  return () => {
+    cancelled = true;
+    window.clearTimeout(startTimer);
+    cleanupVoiceWait?.();
+    if (started) synth.cancel();
+  };
 }
 
 function displayBuyer(alert: PurchaseAlert): string {
@@ -211,15 +262,14 @@ export function AlertWidget() {
     if (!current) return undefined;
     const activeSettings = settingsRef.current;
     playAlertSound(activeSettings);
-    const speechTimer = scheduleBuyerMessageSpeech(activeSettings, current);
+    const cleanupSpeech = scheduleBuyerMessageSpeech(activeSettings, current);
 
     const clearTimer = window.setTimeout(() => {
       setCurrent(null);
     }, OBS_ALERT_DURATION_MS);
     return () => {
       window.clearTimeout(clearTimer);
-      if (speechTimer != null) window.clearTimeout(speechTimer);
-      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      cleanupSpeech?.();
     };
   }, [current]);
 
