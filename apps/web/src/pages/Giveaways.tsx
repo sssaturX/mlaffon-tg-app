@@ -113,7 +113,7 @@ export default function GiveawaysPage() {
             >
               <GiveawayCardMedia imageUrl={g.imageUrl} imageMedia={g.imageMedia} />
               <div className="giveaway-card__body">
-                <p className="giveaway-card__headline">{g.prizeText}</p>
+                <p className="giveaway-card__headline">{g.title}</p>
                 <p className="giveaway-card__meta muted">
                   {platformShort(g.platform)} ·{" "}
                   {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}

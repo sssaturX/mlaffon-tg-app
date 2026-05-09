@@ -590,6 +590,8 @@ export function App() {
     useState<ObsPurchaseWidgetSettings | null>(null);
   const [obsWidgetLoading, setObsWidgetLoading] = useState(false);
   const [obsWidgetSoundUploading, setObsWidgetSoundUploading] = useState(false);
+  const [obsWidgetTestSending, setObsWidgetTestSending] = useState(false);
+  const [obsWidgetTestSentAt, setObsWidgetTestSentAt] = useState<string | null>(null);
   const autoRefreshRunningRef = useRef(false);
   const lastStatsAutoRefreshAtRef = useRef(0);
   const usersPrevSearchRef = useRef<string | undefined>(undefined);
@@ -1735,29 +1737,29 @@ export function App() {
       <h2>Розыгрыши</h2>
       <form className="card stack" onSubmit={createGiveaway}>
         <div>
-          <label htmlFor="gprize">Заголовок на карточке</label>
-          <input
-            id="gprize"
-            value={gwPrize}
-            onChange={(e) => setGwPrize(e.target.value)}
-            placeholder="Как на главной и в списке розыгрышей"
-            required
-          />
-          <p className="muted admin-m-0" style={{ fontSize: 12, marginTop: 6 }}>
-            Жирная строка на превью (одна строка без дубля под ней).
-          </p>
-        </div>
-        <div>
-          <label htmlFor="gtitle">Заголовок на странице розыгрыша</label>
+          <label htmlFor="gtitle">Название на превью и странице</label>
           <input
             id="gtitle"
             value={gwTitle}
             onChange={(e) => setGwTitle(e.target.value)}
-            placeholder="Крупный заголовок под баннером"
+            placeholder="Например: Большой розыгрыш монет"
             required
           />
           <p className="muted admin-m-0" style={{ fontSize: 12, marginTop: 6 }}>
-            Отображается на экране «Розыгрыш» (h1), не дублируется на карточке.
+            Это же название будет на карточке в списке и заголовком на странице розыгрыша.
+          </p>
+        </div>
+        <div>
+          <label htmlFor="gprize">Приз</label>
+          <input
+            id="gprize"
+            value={gwPrize}
+            onChange={(e) => setGwPrize(e.target.value)}
+            placeholder="Например: 5 победителей по 2к монет"
+            required
+          />
+          <p className="muted admin-m-0" style={{ fontSize: 12, marginTop: 6 }}>
+            Показывается в блоке приза на странице розыгрыша.
           </p>
         </div>
         <div>
@@ -2054,8 +2056,8 @@ export function App() {
             <li key={g.id}>
               <div className="admin-gw-row">
                 <div className="admin-gw-main">
-                  <strong>{g.prizeText}</strong>
-                  <div className="muted">Страница: {g.title}</div>
+                  <strong>{g.title}</strong>
+                  <div className="muted">Приз: {g.prizeText}</div>
                   <div className="muted admin-muted-gap">
                     до {new Date(g.endsAt).toLocaleString("ru-RU")} ·{" "}
                     {g.active ? "активен" : "выкл"} · участников {g.participantCount} · победителей{" "}
@@ -3358,6 +3360,46 @@ export function App() {
                         <button
                           type="button"
                           className="secondary"
+                          disabled={obsWidgetTestSending}
+                          onClick={async () => {
+                            if (!token) return;
+                            setObsWidgetTestSending(true);
+                            setObsWidgetTestSentAt(null);
+                            setErr(null);
+                            try {
+                              const r = await fetch(
+                                `${apiBase()}/api/admin/obs/purchase-widget/test`,
+                                { method: "POST", headers: authHeaders() }
+                              );
+                              const j = (await r.json()) as {
+                                ok?: boolean;
+                                sentAt?: string;
+                                error?: { message?: string };
+                              };
+                              if (!r.ok) {
+                                setErr(j.error?.message ?? `Ошибка ${r.status}`);
+                                return;
+                              }
+                              const sentAt = j.sentAt ? new Date(j.sentAt) : new Date();
+                              setObsWidgetTestSentAt(
+                                sentAt.toLocaleTimeString("ru-RU", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  second: "2-digit",
+                                })
+                              );
+                            } catch {
+                              setErr("Сеть недоступна");
+                            } finally {
+                              setObsWidgetTestSending(false);
+                            }
+                          }}
+                        >
+                          {obsWidgetTestSending ? "Отправляем…" : "Тест виджета"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
                           disabled={loading}
                           onClick={async () => {
                             if (!token) return;
@@ -3387,6 +3429,11 @@ export function App() {
                           Новый токен
                         </button>
                       </div>
+                      {obsWidgetTestSentAt ? (
+                        <p className="muted admin-m-0">
+                          Тестовый алерт отправлен в {obsWidgetTestSentAt}. OBS-ссылка должна быть открыта.
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="row admin-mt-3">

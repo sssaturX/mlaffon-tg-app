@@ -861,7 +861,7 @@ export default function Home({ me }: { me: MeResponse | null }) {
                       imageMedia={g.imageMedia}
                     />
                     <div className="giveaway-card__body">
-                      <p className="giveaway-card__headline">{g.prizeText}</p>
+                      <p className="giveaway-card__headline">{g.title}</p>
                       <p className="giveaway-card__meta muted">
                         {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
                         {g.winnerCount} победител
@@ -917,7 +917,7 @@ export default function Home({ me }: { me: MeResponse | null }) {
                     imageMedia={g.imageMedia}
                   />
                   <div className="giveaway-card__body">
-                    <p className="giveaway-card__headline">{g.prizeText}</p>
+                    <p className="giveaway-card__headline">{g.title}</p>
                     <p className="giveaway-card__meta muted">
                       {g.participantCount.toLocaleString("ru-RU")} уч. ·{" "}
                       {g.winnerCount} победител

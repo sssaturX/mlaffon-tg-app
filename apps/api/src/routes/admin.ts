@@ -78,11 +78,13 @@ import { mediaImageUploadResponseSchema } from "../lib/mediaImageJson.js";
 import { runMediaImageUpload } from "../services/mediaUploadService.js";
 import {
   getObsPurchaseWidgetSettings,
+  type ObsPurchaseAlertEvent,
   publicWidgetSettings,
   regenerateObsPurchaseWidgetToken,
   updateObsPurchaseWidgetSettings,
   uploadObsWidgetSound,
 } from "../services/obsPurchaseWidget.js";
+import { publishObsWidgetEvent } from "../services/realtimePublish.js";
 import {
   adminAdjustBalance,
   adminDeleteUser,
@@ -1513,6 +1515,44 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     const settings = await regenerateObsPurchaseWidgetToken();
     audit(admin, req, "regenerate_obs_purchase_widget_token", "settings", null);
     return settings;
+  });
+
+  app.post("/api/admin/obs/purchase-widget/test", async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin || !requirePermission(admin, "admin:manage_shop", reply)) return;
+    const [settings, activeLive] = await Promise.all([
+      getObsPurchaseWidgetSettings(),
+      getActiveLiveBroadcast(),
+    ]);
+    const fallbackPlatform = settings.style === "kick" ? "kick" : "twitch";
+    const streamPlatform =
+      activeLive?.platform === "kick" || activeLive?.platform === "twitch"
+        ? activeLive.platform
+        : fallbackPlatform;
+    const sentAt = new Date().toISOString();
+    const event: ObsPurchaseAlertEvent = {
+      type: "purchase_alert",
+      v: 1,
+      data: {
+        buyerName: "Тестовый покупатель",
+        buyerUsername: "test_user",
+        productName: "Тестовый товар",
+        productImage: null,
+        price: 777,
+        currency: streamPlatform === "twitch" ? "Twitch coins" : "Kick coins",
+        buyerMessage: "Проверка OBS-виджета из админки",
+        createdAt: sentAt,
+        streamerId: settings.streamerId,
+        purchasePlatform: streamPlatform,
+        streamPlatform,
+      },
+    };
+    await publishObsWidgetEvent(settings.streamerId, event);
+    audit(admin, req, "test_obs_purchase_widget", "settings", null, {
+      streamerId: settings.streamerId,
+      streamPlatform,
+    });
+    return { ok: true, sentAt, streamerId: settings.streamerId };
   });
 
   app.post("/api/admin/obs/purchase-widget/sound", async (req, reply) => {
