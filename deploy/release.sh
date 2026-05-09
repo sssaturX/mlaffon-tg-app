@@ -54,6 +54,30 @@ append_env_if_missing() {
   ok "Env default added: ${key}"
 }
 
+ensure_venv_pip() {
+  local venv_dir="$1"
+  local python_bin="${venv_dir}/bin/python"
+
+  if "$python_bin" -m pip --version &>/dev/null; then
+    return 0
+  fi
+
+  warn "SpeakerPy venv exists but pip is unavailable; repairing venv"
+  "$python_bin" -m ensurepip --upgrade &>/dev/null || true
+  if "$python_bin" -m pip --version &>/dev/null; then
+    return 0
+  fi
+
+  python3 -m venv --upgrade-deps "$venv_dir" &>/dev/null || true
+  if "$python_bin" -m pip --version &>/dev/null; then
+    return 0
+  fi
+
+  warn "SpeakerPy venv repair failed; recreating ${venv_dir}"
+  python3 -m venv --clear "$venv_dir"
+  "$python_bin" -m pip --version &>/dev/null
+}
+
 ensure_speakerpy_runtime() {
   if [[ "${DEPLOY_SKIP_SPEAKERPY:-0}" == "1" ]]; then
     warn "Skipping SpeakerPy setup (DEPLOY_SKIP_SPEAKERPY=1)"
@@ -95,6 +119,7 @@ ensure_speakerpy_runtime() {
     log "Creating SpeakerPy venv: ${venv_dir}"
     python3 -m venv "$venv_dir"
   fi
+  ensure_venv_pip "$venv_dir" || die "SpeakerPy pip bootstrap failed"
 
   log "Installing SpeakerPy Python requirements…"
   run_retry 3 5 "${venv_dir}/bin/python" -m pip install --upgrade pip wheel setuptools 2>&1 ||
