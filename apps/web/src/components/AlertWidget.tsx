@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { AnimationEvent, CSSProperties } from "react";
 import { Package } from "lucide-react";
 
 type StreamPlatform = "twitch" | "kick";
@@ -36,6 +36,8 @@ type WidgetEvent =
   | { type: "widget_settings"; v: 1; data: WidgetSettings }
   | { type: "purchase_alert"; v: 1; data: PurchaseAlert };
 
+const OBS_ALERT_DURATION_MS = 10_000;
+
 const DEFAULT_SETTINGS: WidgetSettings = {
   streamerId: "default",
   soundEnabled: true,
@@ -43,7 +45,7 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   defaultSound: "soft",
   volume: 0.7,
   position: "bottom",
-  durationMs: 6500,
+  durationMs: OBS_ALERT_DURATION_MS,
   showBuyerMessage: true,
   style: "auto",
   accentColor: "#00d38a",
@@ -120,8 +122,12 @@ export function AlertWidget() {
   const [settings, setSettings] = useState<WidgetSettings>(DEFAULT_SETTINGS);
   const [queue, setQueue] = useState<PurchaseAlert[]>([]);
   const [current, setCurrent] = useState<PurchaseAlert | null>(null);
-  const [hiding, setHiding] = useState(false);
   const reconnectTimer = useRef<number | null>(null);
+  const settingsRef = useRef(settings);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -159,26 +165,33 @@ export function AlertWidget() {
   }, [token]);
 
   useEffect(() => {
-    if (current || hiding || queue.length === 0) return undefined;
+    if (current || queue.length === 0) return undefined;
     const [next, ...rest] = queue;
     setQueue(rest);
     setCurrent(next ?? null);
-    if (!next) return undefined;
-    setHiding(false);
-    playAlertSound(settings);
+    return undefined;
+  }, [current, queue]);
 
-    const hideTimer = window.setTimeout(() => {
-      setHiding(true);
-    }, settings.durationMs);
+  useEffect(() => {
+    if (!current) return undefined;
+    playAlertSound(settingsRef.current);
+
     const clearTimer = window.setTimeout(() => {
       setCurrent(null);
-      setHiding(false);
-    }, settings.durationMs + 460);
+    }, OBS_ALERT_DURATION_MS);
     return () => {
-      window.clearTimeout(hideTimer);
       window.clearTimeout(clearTimer);
     };
-  }, [current, hiding, queue, settings]);
+  }, [current]);
+
+  const handleAlertAnimationEnd = (event: AnimationEvent<HTMLDivElement>) => {
+    if (
+      event.currentTarget === event.target &&
+      event.animationName === "obs-alert-lifetime"
+    ) {
+      setCurrent(null);
+    }
+  };
 
   const effectiveStyle =
     settings.style === "auto" ? current?.streamPlatform ?? "twitch" : settings.style;
@@ -195,9 +208,8 @@ export function AlertWidget() {
     >
       {current ? (
         <div
-          className={`obs-alert obs-alert--${effectiveStyle} ${
-            hiding ? "obs-alert--hide" : "obs-alert--show"
-          }`}
+          className={`obs-alert obs-alert--${effectiveStyle} obs-alert--show`}
+          onAnimationEnd={handleAlertAnimationEnd}
         >
           <div className="obs-alert__shine" />
           <div className="obs-alert__media">

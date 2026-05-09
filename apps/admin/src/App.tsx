@@ -3491,15 +3491,11 @@ export function App() {
                         <input
                           id="obsduration"
                           type="number"
-                          min={5000}
-                          max={8000}
-                          step={250}
-                          value={obsWidgetSettings.durationMs}
-                          onChange={(e) =>
-                            setObsWidgetSettings((prev) =>
-                              prev ? { ...prev, durationMs: Number(e.target.value) } : prev
-                            )
-                          }
+                          min={10000}
+                          max={10000}
+                          step={10000}
+                          value={10000}
+                          readOnly
                         />
                       </div>
                       <div>

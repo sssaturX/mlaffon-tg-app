@@ -1182,7 +1182,7 @@ body:has(.obs-widget-page),
 }
 
 .obs-alert--show {
-  animation: obs-alert-in 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: obs-alert-lifetime 10s linear both;
 }
 
 .obs-alert--hide {
@@ -1288,6 +1288,29 @@ body:has(.obs-widget-page),
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes obs-alert-lifetime {
+  0% {
+    opacity: 0;
+    transform: translateY(34px) scale(0.98);
+    visibility: visible;
+  }
+  3.6% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    visibility: visible;
+  }
+  95.8% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    visibility: visible;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+    visibility: hidden;
   }
 }
 

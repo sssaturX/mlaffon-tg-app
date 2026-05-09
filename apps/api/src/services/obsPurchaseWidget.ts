@@ -14,6 +14,7 @@ import {
 
 const SETTINGS_KEY = "obs_purchase_widget";
 const DEFAULT_STREAMER_ID = "default";
+export const OBS_ALERT_DURATION_MS = 10_000;
 
 export type ObsWidgetPosition =
   | "bottom"
@@ -74,7 +75,7 @@ const DEFAULT_SETTINGS: ObsPurchaseWidgetSettings = {
   defaultSound: "soft",
   volume: 0.7,
   position: "bottom",
-  durationMs: 6500,
+  durationMs: OBS_ALERT_DURATION_MS,
   showBuyerMessage: true,
   style: "auto",
   accentColor: "#00d38a",
@@ -151,7 +152,7 @@ function normalizeSettings(raw: unknown): ObsPurchaseWidgetSettings {
     defaultSound,
     volume: clampNumber(o.volume, 0, 1, DEFAULT_SETTINGS.volume),
     position,
-    durationMs: Math.round(clampNumber(o.durationMs, 5000, 8000, DEFAULT_SETTINGS.durationMs)),
+    durationMs: OBS_ALERT_DURATION_MS,
     showBuyerMessage:
       typeof o.showBuyerMessage === "boolean" ? o.showBuyerMessage : true,
     style,
