@@ -294,6 +294,7 @@ type ObsPurchaseWidgetSettings = {
   durationMs: number;
   showBuyerMessage: boolean;
   speechEnabled: boolean;
+  speechVoice: "auto" | "ru-female" | "ru-male" | "any";
   style: "auto" | "twitch" | "kick" | "neon" | "minimal";
   accentColor: string;
   fontFamily: string;
@@ -3564,12 +3565,35 @@ export function App() {
                           }
                         />
                         <span className="admin-checkbox-row__text">
-                          Озвучивать сообщение покупателя
+                          Озвучивать алерт и сообщение покупателя
                         </span>
                       </label>
                     </div>
 
                     <div className="row admin-mt-3">
+                      <div>
+                        <label htmlFor="obsspeechvoice">Голос озвучки</label>
+                        <select
+                          id="obsspeechvoice"
+                          value={obsWidgetSettings.speechVoice}
+                          onChange={(e) =>
+                            setObsWidgetSettings((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    speechVoice:
+                                      e.target.value as ObsPurchaseWidgetSettings["speechVoice"],
+                                  }
+                                : prev
+                            )
+                          }
+                        >
+                          <option value="auto">Авто: русский</option>
+                          <option value="ru-female">Русский женский</option>
+                          <option value="ru-male">Русский мужской</option>
+                          <option value="any">Любой доступный</option>
+                        </select>
+                      </div>
                       <div>
                         <label htmlFor="obssound">Стандартный звук</label>
                         <select

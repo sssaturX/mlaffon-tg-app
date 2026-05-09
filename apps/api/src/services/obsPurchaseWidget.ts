@@ -25,6 +25,7 @@ export type ObsWidgetPosition =
 
 export type ObsWidgetStyle = "auto" | "twitch" | "kick" | "neon" | "minimal";
 export type ObsWidgetDefaultSound = "soft" | "spark" | "bell";
+export type ObsWidgetSpeechVoice = "auto" | "ru-female" | "ru-male" | "any";
 
 export type ObsPurchaseWidgetSettings = {
   token: string;
@@ -37,6 +38,7 @@ export type ObsPurchaseWidgetSettings = {
   durationMs: number;
   showBuyerMessage: boolean;
   speechEnabled: boolean;
+  speechVoice: ObsWidgetSpeechVoice;
   style: ObsWidgetStyle;
   accentColor: string;
   fontFamily: string;
@@ -79,6 +81,7 @@ const DEFAULT_SETTINGS: ObsPurchaseWidgetSettings = {
   durationMs: OBS_ALERT_DURATION_MS,
   showBuyerMessage: true,
   speechEnabled: true,
+  speechVoice: "auto",
   style: "auto",
   accentColor: "#00d38a",
   fontFamily: "Inter, system-ui, sans-serif",
@@ -93,6 +96,7 @@ const positions: ObsWidgetPosition[] = [
 ];
 const styles: ObsWidgetStyle[] = ["auto", "twitch", "kick", "neon", "minimal"];
 const sounds: ObsWidgetDefaultSound[] = ["soft", "spark", "bell"];
+const speechVoices: ObsWidgetSpeechVoice[] = ["auto", "ru-female", "ru-male", "any"];
 
 const widgetSockets = new Map<string, Set<WebSocket>>();
 
@@ -135,6 +139,9 @@ function normalizeSettings(raw: unknown): ObsPurchaseWidgetSettings {
   const defaultSound = sounds.includes(o.defaultSound as ObsWidgetDefaultSound)
     ? (o.defaultSound as ObsWidgetDefaultSound)
     : DEFAULT_SETTINGS.defaultSound;
+  const speechVoice = speechVoices.includes(o.speechVoice as ObsWidgetSpeechVoice)
+    ? (o.speechVoice as ObsWidgetSpeechVoice)
+    : DEFAULT_SETTINGS.speechVoice;
 
   return {
     ...DEFAULT_SETTINGS,
@@ -158,6 +165,7 @@ function normalizeSettings(raw: unknown): ObsPurchaseWidgetSettings {
     showBuyerMessage:
       typeof o.showBuyerMessage === "boolean" ? o.showBuyerMessage : true,
     speechEnabled: typeof o.speechEnabled === "boolean" ? o.speechEnabled : true,
+    speechVoice,
     style,
     accentColor: normalizeHexColor(o.accentColor, DEFAULT_SETTINGS.accentColor),
     fontFamily: normalizeFont(o.fontFamily),

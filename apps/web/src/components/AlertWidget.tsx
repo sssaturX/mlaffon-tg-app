@@ -14,6 +14,7 @@ type WidgetSettings = {
   durationMs: number;
   showBuyerMessage: boolean;
   speechEnabled: boolean;
+  speechVoice: "auto" | "ru-female" | "ru-male" | "any";
   style: "auto" | "twitch" | "kick" | "neon" | "minimal";
   accentColor: string;
   fontFamily: string;
@@ -39,7 +40,8 @@ type WidgetEvent =
 
 const OBS_ALERT_DURATION_MS = 10_000;
 const SPEECH_START_DELAY_MS = 650;
-const SPEECH_VOICE_WAIT_MS = 1_200;
+const SPEECH_VOICE_WAIT_MS = 4_000;
+const SPEECH_RESUME_INTERVAL_MS = 250;
 
 const DEFAULT_SETTINGS: WidgetSettings = {
   streamerId: "default",
@@ -51,6 +53,7 @@ const DEFAULT_SETTINGS: WidgetSettings = {
   durationMs: OBS_ALERT_DURATION_MS,
   showBuyerMessage: true,
   speechEnabled: true,
+  speechVoice: "auto",
   style: "auto",
   accentColor: "#00d38a",
   fontFamily: "Inter, system-ui, sans-serif",
@@ -113,11 +116,99 @@ function playAlertSound(settings: WidgetSettings): void {
   }
 }
 
-function selectRussianVoice(): SpeechSynthesisVoice | null {
-  const voices = window.speechSynthesis?.getVoices?.() ?? [];
+const FEMALE_VOICE_HINTS = [
+  "alena",
+  "alenka",
+  "anna",
+  "daria",
+  "elena",
+  "irina",
+  "milena",
+  "oksana",
+  "svetlana",
+  "tatiana",
+  "tatyana",
+  "victoria",
+  "yulia",
+  "алена",
+  "анна",
+  "дарья",
+  "елена",
+  "ирина",
+  "милена",
+  "оксана",
+  "светлана",
+  "татьяна",
+  "юлия",
+];
+
+const MALE_VOICE_HINTS = [
+  "alexander",
+  "aleksey",
+  "dmitry",
+  "maxim",
+  "nikolay",
+  "pavel",
+  "sergey",
+  "yuri",
+  "александр",
+  "алексей",
+  "дмитрий",
+  "максим",
+  "николай",
+  "павел",
+  "сергей",
+  "юрий",
+];
+
+function isRussianVoice(voice: SpeechSynthesisVoice): boolean {
+  const lang = voice.lang.toLowerCase();
+  const name = voice.name.toLowerCase();
   return (
-    voices.find((voice) => voice.lang.toLowerCase() === "ru-ru") ??
-    voices.find((voice) => voice.lang.toLowerCase().startsWith("ru")) ??
+    lang === "ru-ru" ||
+    lang.startsWith("ru") ||
+    name.includes("russian") ||
+    name.includes("рус")
+  );
+}
+
+function voiceMatchesHint(voice: SpeechSynthesisVoice, hints: string[]): boolean {
+  const haystack = `${voice.name} ${voice.voiceURI}`.toLowerCase();
+  return hints.some((hint) => haystack.includes(hint));
+}
+
+function selectSpeechVoice(
+  preference: WidgetSettings["speechVoice"]
+): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis?.getVoices?.() ?? [];
+  const russianVoices = voices.filter(isRussianVoice);
+
+  if (preference === "ru-female") {
+    return (
+      russianVoices.find((voice) => voiceMatchesHint(voice, FEMALE_VOICE_HINTS)) ??
+      russianVoices[0] ??
+      voices[0] ??
+      null
+    );
+  }
+
+  if (preference === "ru-male") {
+    return (
+      russianVoices.find((voice) => voiceMatchesHint(voice, MALE_VOICE_HINTS)) ??
+      russianVoices[0] ??
+      voices[0] ??
+      null
+    );
+  }
+
+  if (preference === "any") {
+    return russianVoices[0] ?? voices[0] ?? null;
+  }
+
+  return (
+    russianVoices.find((voice) => voice.lang.toLowerCase() === "ru-ru") ??
+    russianVoices[0] ??
+    voices[0] ??
     null
   );
 }
@@ -152,17 +243,35 @@ function waitForSpeechVoices(
   };
 }
 
+function buildSpeechText(alert: PurchaseAlert): string {
+  const parts = [
+    `${displayBuyer(alert)} купил товар ${alert.productName} за ${alert.price.toLocaleString(
+      "ru-RU"
+    )} ${alert.currency}.`,
+  ];
+  const message = alert.buyerMessage?.trim();
+  if (message) parts.push(`Сообщение покупателя: ${message}`);
+  return parts.join(" ");
+}
+
 function scheduleBuyerMessageSpeech(
   settings: WidgetSettings,
   alert: PurchaseAlert
 ): (() => void) | null {
-  const text = alert.buyerMessage?.trim();
+  const text = buildSpeechText(alert).trim();
   if (!settings.speechEnabled || !text || !("speechSynthesis" in window)) return null;
 
   const synth = window.speechSynthesis;
   let cancelled = false;
-  let started = false;
   let cleanupVoiceWait: (() => void) | null = null;
+  let resumeTimer: number | null = null;
+  let speakTimer: number | null = null;
+
+  const stopResumeTimer = () => {
+    if (resumeTimer == null) return;
+    window.clearInterval(resumeTimer);
+    resumeTimer = null;
+  };
 
   const speak = () => {
     if (cancelled) return;
@@ -172,12 +281,27 @@ function scheduleBuyerMessageSpeech(
       utterance.volume = Math.max(0, Math.min(1, settings.volume));
       utterance.rate = 1;
       utterance.pitch = 1;
-      const voice = selectRussianVoice();
-      if (voice) utterance.voice = voice;
+      const voice = selectSpeechVoice(settings.speechVoice);
+      if (voice) {
+        utterance.voice = voice;
+        utterance.lang = voice.lang || "ru-RU";
+      }
+      utterance.onend = stopResumeTimer;
+      utterance.onerror = stopResumeTimer;
       synth.cancel();
-      synth.speak(utterance);
-      started = true;
-      if (synth.paused) synth.resume();
+      speakTimer = window.setTimeout(() => {
+        speakTimer = null;
+        if (cancelled) return;
+        synth.speak(utterance);
+        if (synth.paused) synth.resume();
+        resumeTimer = window.setInterval(() => {
+          if (cancelled || (!synth.speaking && !synth.pending)) {
+            stopResumeTimer();
+            return;
+          }
+          if (synth.paused) synth.resume();
+        }, SPEECH_RESUME_INTERVAL_MS);
+      }, 0);
     } catch {
       /* ignore */
     }
@@ -190,8 +314,9 @@ function scheduleBuyerMessageSpeech(
   return () => {
     cancelled = true;
     window.clearTimeout(startTimer);
+    if (speakTimer != null) window.clearTimeout(speakTimer);
     cleanupVoiceWait?.();
-    if (started) synth.cancel();
+    stopResumeTimer();
   };
 }
 
