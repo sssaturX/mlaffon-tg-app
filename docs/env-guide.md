@@ -388,7 +388,7 @@ AUTH_RATE_LIMIT_MAX=15
 AUTH_RATE_LIMIT_WINDOW_MS=900000
 
 # ── OBS TTS: SpeakerPy ───────────────────────────────────────────────────────
-# deploy/release.sh устанавливает ffmpeg, venv и requirements-speakerpy.txt автоматически.
+# deploy/release.sh устанавливает ffmpeg, PortAudio/libsndfile, venv и requirements-speakerpy.txt автоматически.
 SPEAKERPY_TTS_ENABLED=1
 SPEAKERPY_PYTHON_BIN=/opt/mlaffon/shared/speakerpy-venv/bin/python
 SPEAKERPY_MODEL_ID=ru_v3

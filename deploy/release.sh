@@ -114,6 +114,10 @@ ensure_speakerpy_runtime() {
   if ! python3 -m pip --version &>/dev/null; then
     missing_packages+=(python3-pip)
   fi
+  if command -v dpkg-query &>/dev/null; then
+    dpkg-query -s libportaudio2 &>/dev/null || missing_packages+=(libportaudio2)
+    dpkg-query -s libsndfile1 &>/dev/null || missing_packages+=(libsndfile1)
+  fi
 
   if (( ${#missing_packages[@]} > 0 )); then
     command -v apt-get &>/dev/null ||
