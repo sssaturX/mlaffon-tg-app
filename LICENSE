@@ -1,0 +1,129 @@
+PROPRIETARY SOFTWARE LICENSE
+All Rights Reserved
+
+Copyright (c) 2026 Mlaffon. All rights reserved.
+
+This file is also provided in Russian below. If there is a conflict of meaning,
+the English text controls for legal interpretation.
+
+------------------------------------------------------------------------------
+ENGLISH
+------------------------------------------------------------------------------
+
+1. Ownership
+   The software in this repository, including without limitation all source
+   code, object code, scripts, documentation, designs, configuration, assets,
+   and other materials (the "Software"), is the exclusive property of the
+   copyright holder ("Licensor").
+
+2. No license to use, copy, or steal
+   Except for the limited permission in section 3, no rights are granted.
+   You may not, without a separate written license signed by Licensor:
+
+   a. copy, reproduce, or download the Software except as needed to view
+      this public repository on GitHub;
+   b. modify, translate, adapt, or create derivative works of the Software;
+   c. distribute, publish, sublicense, sell, rent, lease, or otherwise
+      provide the Software to any third party;
+   d. use the Software, in whole or in part, for any personal, commercial,
+      educational, production, or competing purpose;
+   e. remove, obscure, or alter copyright, trademark, or license notices;
+   f. use Licensor's names, logos, or trademarks except for factual
+      reference to this repository.
+
+   Forking this repository does not grant you any of the rights above.
+   A GitHub fork is allowed only as a technical means to propose a change
+   back to this original repository, and only if you do not use, publish,
+   or exploit that fork independently.
+
+3. Limited viewing permission
+   You may view the Software as published by Licensor on GitHub. This
+   permission is revocable, non-transferable, and does not include any
+   right to run, copy (beyond ordinary browser/GitHub caching), modify,
+   or redistribute the Software.
+
+4. Contributions
+   If you submit a pull request, issue, comment, or other contribution,
+   you grant Licensor a perpetual, irrevocable, worldwide, royalty-free
+   license to use, modify, and incorporate that contribution into the
+   Software without obligation to you. Do not submit material you do not
+   have the right to license.
+
+5. No warranty
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+   THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+   OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+   ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+   OTHER DEALINGS IN THE SOFTWARE.
+
+6. Termination
+   Any use outside this license automatically terminates the limited
+   permission in section 3. Licensor may also terminate that permission
+   at any time. Upon termination you must delete all copies of the Software
+   in your possession, other than copies retained solely as required by law.
+
+7. Trademarks
+   "Mlaffon" and related marks are trademarks of Licensor. This license
+   does not grant any trademark rights.
+
+8. Contact
+   For a commercial or other written license, open an issue in this
+   repository or contact the copyright holder via GitHub.
+
+SPDX-License-Identifier: LicenseRef-Mlaffon-Proprietary
+
+------------------------------------------------------------------------------
+РУССКИЙ
+------------------------------------------------------------------------------
+
+1. Права
+   Программное обеспечение в этом репозитории, включая исходный код,
+   документацию, дизайн, конфигурацию, ассеты и прочие материалы
+   («ПО»), является исключительной собственностью правообладателя
+   («Лицензиар»).
+
+2. Запрет использования и копирования
+   Кроме ограниченного разрешения в пункте 3, никакие права не
+   предоставляются. Без отдельного письменного разрешения Лицензиара
+   запрещается:
+
+   a. копировать или скачивать ПО, кроме просмотра этой публичной
+      страницы на GitHub;
+   b. изменять ПО и создавать производные работы;
+   c. распространять, публиковать, продавать, сдавать в аренду или
+      иным образом передавать ПО третьим лицам;
+   d. использовать ПО целиком или частично в личных, коммерческих,
+      учебных, продакшен- или конкурирующих целях;
+   e. удалять или изменять уведомления об авторских правах;
+   f. использовать имена, логотипы и товарные знаки Лицензиара
+      иначе чем для фактической ссылки на этот репозиторий.
+
+   Форк на GitHub не даёт прав на использование кода. Форк допустим
+   только как технический способ предложить правку в исходный
+   репозиторий, без самостоятельного использования или публикации.
+
+3. Просмотр
+   Разрешается просматривать ПО на GitHub. Это разрешение можно
+   отозвать; оно не включает право запускать, копировать (кроме
+   обычного кэша браузера/GitHub), изменять или распространять ПО.
+
+4. Контрибуции
+   Отправляя pull request, issue или иной вклад, вы безвозмездно
+   предоставляете Лицензиару бессрочную лицензию на использование
+   этого вклада в составе ПО.
+
+5. Отказ от гарантий
+   ПО ПРЕДОСТАВЛЯЕТСЯ «КАК ЕСТЬ», БЕЗ КАКИХ-ЛИБО ГАРАНТИЙ. АВТОРЫ
+   И ПРАВООБЛАДАТЕЛИ НЕ НЕСУТ ОТВЕТСТВЕННОСТИ ЗА УБЫТКИ, СВЯЗАННЫЕ
+   С ПО ИЛИ ЕГО ИСПОЛЬЗОВАНИЕМ.
+
+6. Прекращение
+   Любое использование за рамками этой лицензии автоматически
+   прекращает разрешение из пункта 3. После прекращения нужно
+   удалить все копии ПО, кроме случаев, когда хранение требуется
+   по закону.
+
+Публикация исходников на GitHub не делает этот проект open source
+и не является разрешением копировать продукт.

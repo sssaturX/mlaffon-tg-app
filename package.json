@@ -1,6 +1,16 @@
 {
   "name": "mlaffon-app-tg",
   "private": true,
+  "license": "UNLICENSED",
+  "author": "Mlaffon",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sssaturX/mlaffon-tg-app.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sssaturX/mlaffon-tg-app/issues"
+  },
+  "homepage": "https://mlaffon.fun",
   "workspaces": [
     "apps/*",
     "packages/*"

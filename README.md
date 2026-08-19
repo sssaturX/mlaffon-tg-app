@@ -1,124 +1,95 @@
-# Mlaffon — Telegram Mini App (MVP)
+# Mlaffon
 
-Монорепозиторий: **Fastify + Drizzle + PostgreSQL** (API), **Redis + BullMQ** (очередь проверок заданий), **Vite + React** (мини-приложение) с SDK Telegram.
+Telegram Mini App for streamer economy: tasks, shop, games, giveaways, predictions, and live drops.
 
-Интеграции: **Twitch OAuth + Helix**, **Kick OAuth + PKCE** (API с fallback), **шифрование токенов** (AES-256-GCM), **rate limits** на claim и OAuth callback.
+[![License: Proprietary](https://img.shields.io/badge/license-Proprietary-b91c1c)](LICENSE)
+[![CI](https://github.com/sssaturX/mlaffon-tg-app/actions/workflows/ci.yml/badge.svg)](https://github.com/sssaturX/mlaffon-tg-app/actions/workflows/ci.yml)
 
-**ТЗ заказчика и статус реализации:** [docs/TZ-README.md](docs/TZ-README.md).
+> **This is not open source.** Source is published so the product can be reviewed and maintained. Copying, running, forking for reuse, or shipping a clone is forbidden. See [LICENSE](LICENSE).
 
-## Требования
+Live product: [mlaffon.fun](https://mlaffon.fun)
 
-- Node.js 20+
-- Docker (Postgres + Redis) или свои инстансы
+## Stack
 
-## Быстрый старт
+| Part | Tech |
+|------|------|
+| API | Fastify, Drizzle, PostgreSQL |
+| Queue | Redis, BullMQ |
+| Web | Vite, React, Telegram Mini App SDK |
+| Admin | Vite + React |
+| Auth | Telegram initData, JWT, Twitch / Kick OAuth |
 
-1. Поднимите Postgres и Redis:
+Tokens at rest are encrypted (AES-256-GCM). Claim and OAuth routes are rate-limited.
+
+## Repository layout
+
+```
+apps/api      REST API, workers, OAuth, economy, shop, tasks
+apps/web      Mini App SPA
+apps/admin    Admin panel
+packages/shared   Shared DTO types
+deploy        Caddy / systemd / release scripts
+docs          Architecture and operations
+```
+
+## Quick start (local)
+
+You need **Node.js 20+** and **Docker** (Postgres + Redis).
 
 ```bash
 docker compose up -d
-```
-
-2. Установите зависимости из корня:
-
-```bash
 npm install
-```
-
-3. Скопируйте окружение для API:
-
-```bash
 cp .env.example apps/api/.env
 ```
 
-(На Windows в PowerShell: `copy .env.example apps\api\.env`.)
-
-Отредактируйте `apps/api/.env`: для локальной разработки без бота оставьте `ALLOW_DEV_AUTH=1` и любой `JWT_SECRET`. Задайте `TOKENS_ENCRYPTION_KEY` (например 64 hex-символа) и `REDIS_URL`. Для Twitch/Kick укажите OAuth-клиенты и **точно такие же** redirect URI в консолях разработчика, как в `.env`.
-
-4. Примените схему БД и сиды:
+Fill placeholders in `apps/api/.env`. For a local run without Telegram, `ALLOW_DEV_AUTH=1` plus `JWT_SECRET` and `TOKENS_ENCRYPTION_KEY` is enough.
 
 ```bash
 cd apps/api
 npx drizzle-kit push
 npm run db:seed
 cd ../..
+
+npm run worker -w api   # separate terminal: task checks, outbox, timers
+npm run dev             # API :3001  ·  web :5173  (proxies /api)
 ```
 
-Если база уже была с одним полем `coins`, после появления раздельных `twitch_coins` / `kick_coins` один раз перенесите старый баланс (например в Twitch):
+Without the worker, realtime events stay in `outbox_events` and do not reach Redis / WebSocket.
 
-```sql
-UPDATE user_balances
-SET twitch_coins = coins, twitch_lifetime_earned = lifetime_earned
-WHERE twitch_coins = 0 AND coins > 0;
-```
+## Production
 
-5. Запуск **воркера** очереди (отдельный терминал): проверки заданий, недельные рефералы, **outbox broadcast** (~500 ms), delayed jobs (дроп, эфир, **автозакрытие предикта**).
+- Bot: [@BotFather](https://t.me/BotFather), HTTPS Mini App URL
+- Strong `JWT_SECRET`, real `TELEGRAM_BOT_TOKEN`, `ALLOW_DEV_AUTH=0`
+- Static web from `apps/web/dist`, admin from `apps/admin/dist`
 
-```bash
-npm run worker -w api
-```
+Server path (Caddy + systemd): [docs/SIMPLE-START.md](docs/SIMPLE-START.md). Also [docs/vps-deploy.md](docs/vps-deploy.md) and [deploy/](deploy/).
 
-Опционально второй процесс только для `fraud-review`:
+## API (short)
 
-```bash
-npm run worker:fraud -w api
-```
-
-**Без основного воркера** broadcast-события (дроп, эфир, предикт в ленту) **не уходят в Redis/WS** — они копятся в таблице `outbox_events`. Предикты дополнительно подстрахованы ленивым закрытием при чтении API. Подробнее: [docs/MASTER_PROMPT_PRODUCTION.md](docs/MASTER_PROMPT_PRODUCTION.md), [docs/AI_AGENT_EVENT_SYSTEM_MASTER.md](docs/AI_AGENT_EVENT_SYSTEM_MASTER.md).
-
-6. Запуск API и веба:
-
-```bash
-npm run dev
-```
-
-- API: `http://localhost:3001`
-- Web: `http://localhost:5173` (прокси `/api` → API)
-
-В браузере без Telegram при `ALLOW_DEV_AUTH=1` фронт в dev-режиме вызовет `/api/v1/auth/dev` и создаст тестового пользователя.
-
-**На сервере** отдельные терминалы не обязательны: **Docker** (`docker compose up -d`) работает в фоне; API и воркер запускаются через **systemd** (два сервиса). См. [docs/vps-deploy.md](docs/vps-deploy.md).
-
-### Задания с `validation_type: api`
-
-Начисление идёт **асинхронно**: `POST /tasks/:id/claim` отвечает **202** со статусом `pending`, воркер дергает Helix/Kick и при успехе начисляет монеты. Нужен запущенный `npm run worker -w api` и Redis.
-
-## Продакшен (Telegram)
-
-1. Создайте бота у [@BotFather](https://t.me/BotFather), включите Mini App, укажите URL фронта (HTTPS).
-2. Задайте `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, сильный `JWT_SECRET`, отключите `ALLOW_DEV_AUTH`.
-3. Соберите фронт и отдайте статику (на проде **напрямую из `apps/web/dist`**, см. [docs/vps-deploy.md](docs/vps-deploy.md)) или через CDN.
-
-**Простой запуск на сервере (Caddy, systemd, один путь к репо):** [docs/SIMPLE-START.md](docs/SIMPLE-START.md).  
-Подробнее и альтернативы: [docs/vps-deploy.md](docs/vps-deploy.md), Caddy: [docs/caddy-mlaffon.md](docs/caddy-mlaffon.md). Файлы конфигов: [deploy/](deploy/).
-
-## Структура
-
-- `apps/api` — REST API, OAuth Twitch/Kick, Helix, шифрование токенов, BullMQ-воркер проверок заданий, экономика, лидерборд, рефералы, игры, магазин.
-- `apps/web` — SPA: главная, задания, игры, магазин, топ, профиль.
-- `packages/shared` — общие типы DTO.
-
-## API (кратко)
-
-| Метод | Путь |
+| Method | Path |
 |--------|------|
 | POST | `/api/v1/auth/telegram` |
-| POST | `/api/v1/auth/dev` (только `ALLOW_DEV_AUTH=1`) |
+| POST | `/api/v1/auth/dev` (`ALLOW_DEV_AUTH=1` only) |
 | GET | `/api/v1/me` |
-| GET | `/api/v1/live-broadcast` |
-| POST | `/api/v1/live-broadcast/watch` |
 | GET | `/api/v1/tasks?platform=` |
 | POST | `/api/v1/tasks/:id/claim` |
-| GET | `/api/v1/leaderboard?sort=&platform=` |
-| GET | `/api/v1/referrals` |
-| GET | `/api/v1/oauth/twitch/url`, `/api/v1/oauth/kick/url` (Bearer) |
-| GET | `/api/v1/oauth/twitch/callback`, `/api/v1/oauth/kick/callback` (браузер) |
-| POST | `/api/v1/platforms/:platform/connect` (только `ALLOW_DEV_AUTH=1`, stub) |
-| DELETE | `/api/v1/platforms/:platform` |
-| GET/POST | `/api/v1/games/fortune`, `/spin` |
 | GET/POST | `/api/v1/shop/items`, `/purchase` |
+| GET | `/api/v1/oauth/twitch/url`, `/api/v1/oauth/kick/url` |
 | POST | `/api/v1/account/delete` |
 
-Игровые коэффициенты и награды: `apps/api/src/game.config.json`.
+Full map: [docs/api-routes.md](docs/api-routes.md). Game knobs: `apps/api/src/game.config.json`.
 
-Правила API-заданий (Helix follow/subscription, Kick follow): поле `tasks.meta` в БД, см. `apps/api/src/taskMeta.ts` и сид `apps/api/src/seed.ts`.
+## Docs
+
+- Product / TZ status: [docs/TZ-README.md](docs/TZ-README.md)
+- Environment: [docs/env-guide.md](docs/env-guide.md)
+- Security notes: [docs/security.md](docs/security.md)
+- How to report a vuln: [SECURITY.md](SECURITY.md)
+
+## License
+
+Copyright © 2026 Mlaffon. **All rights reserved.**
+
+The code is **source-available**, not MIT/Apache/GPL. You may view this GitHub page. You may **not** copy, modify (except a PR back here), distribute, or use the software without a written license from the copyright holder.
+
+See [LICENSE](LICENSE), [NOTICE](NOTICE), and [CONTRIBUTING.md](CONTRIBUTING.md).

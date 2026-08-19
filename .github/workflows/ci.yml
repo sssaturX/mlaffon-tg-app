@@ -81,7 +81,9 @@ jobs:
 
       - name: Check for secrets in code
         run: |
-          if grep -r "AAGaDNN\|sd692vdy\|65281d83c32\|205b23bba536" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.json" apps/ packages/ ; then
+          if grep -RInE '(BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk_live_[A-Za-z0-9]{10,}|AKIA[0-9A-Z]{16})' \
+            --include='*.ts' --include='*.tsx' --include='*.js' --include='*.json' --include='*.md' --include='*.yml' \
+            apps packages deploy docs; then
             echo "::error::Potential secrets found in source code!"
             exit 1
           fi
